@@ -1,6 +1,18 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+const chromiumArgs = [
+  "--enable-unsafe-webgpu",
+  ...(process.platform === "linux"
+    ? [
+        "--use-angle=vulkan",
+        "--enable-features=Vulkan",
+        "--disable-vulkan-surface",
+        "--use-webgpu-adapter=swiftshader",
+        "--use-gpu-in-tests",
+      ]
+    : []),
+];
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -22,7 +34,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         channel: "chrome",
-        launchOptions: { args: ["--enable-unsafe-webgpu"] },
+        launchOptions: { args: chromiumArgs },
       },
     },
   ],
