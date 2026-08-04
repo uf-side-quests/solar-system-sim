@@ -395,6 +395,11 @@ type PositionSampleValidation = Readonly<{
   nearPositions: number;
 }>;
 
+type PropagationRequest = Readonly<{
+  elapsedSeconds: number;
+  sunPositionAu: readonly [number, number, number];
+}>;
+
 export class SmallBodyGpuLayer {
   readonly #canvas: HTMLCanvasElement;
   readonly #context: GPUCanvasContext;
@@ -426,6 +431,8 @@ export class SmallBodyGpuLayer {
   #lastSunXAu = Number.NaN;
   #lastSunYAu = Number.NaN;
   #lastSunZAu = Number.NaN;
+  #pendingPropagation: PropagationRequest | undefined;
+  #propagationLoop: Promise<void> | undefined;
   #positionRevision = 0;
   #lastRenderedPositionRevision = -1;
   #showAsteroids = true;
@@ -724,7 +731,7 @@ export class SmallBodyGpuLayer {
     });
     const validatedAuthorityPositions =
       await layer.validateAuthoritativePositions(snapshot);
-    layer.setTimeSeconds(0, [0, 0, 0]);
+    await layer.setTimeSeconds(0, [0, 0, 0]);
     const positionValidation = await layer.validatePositionSample();
     const adapterName =
       layer.#adapter.info.description ||
@@ -751,17 +758,49 @@ export class SmallBodyGpuLayer {
   public setTimeSeconds(
     elapsedSeconds: number,
     sunPositionAu: readonly [number, number, number],
-  ): void {
+  ): Promise<void> {
+    if (!Number.isFinite(elapsedSeconds)) {
+      return Promise.resolve();
+    }
+    const pending = this.#pendingPropagation;
+    if (
+      pending?.elapsedSeconds === elapsedSeconds &&
+      pending.sunPositionAu[0] === sunPositionAu[0] &&
+      pending.sunPositionAu[1] === sunPositionAu[1] &&
+      pending.sunPositionAu[2] === sunPositionAu[2]
+    ) {
+      return this.#propagationLoop ?? Promise.resolve();
+    }
     const unchangedSunPosition =
       sunPositionAu[0] === this.#lastSunXAu &&
       sunPositionAu[1] === this.#lastSunYAu &&
       sunPositionAu[2] === this.#lastSunZAu;
-    if (
-      !Number.isFinite(elapsedSeconds) ||
-      (elapsedSeconds === this.#lastElapsedSeconds && unchangedSunPosition)
-    ) {
-      return;
+    if (elapsedSeconds === this.#lastElapsedSeconds && unchangedSunPosition) {
+      return this.#propagationLoop ?? Promise.resolve();
     }
+
+    this.#pendingPropagation = {
+      elapsedSeconds,
+      sunPositionAu: [...sunPositionAu],
+    };
+    this.#propagationLoop ??= this.#drainPropagationQueue();
+    return this.#propagationLoop;
+  }
+
+  async #drainPropagationQueue(): Promise<void> {
+    try {
+      while (this.#pendingPropagation !== undefined && !this.#disposed) {
+        const request = this.#pendingPropagation;
+        this.#pendingPropagation = undefined;
+        await this.#propagateTimeSeconds(request);
+      }
+    } finally {
+      this.#propagationLoop = undefined;
+    }
+  }
+
+  async #propagateTimeSeconds(request: PropagationRequest): Promise<void> {
+    const { elapsedSeconds, sunPositionAu } = request;
     const uniforms = new ArrayBuffer(32);
     const view = new DataView(uniforms);
     view.setFloat32(0, elapsedSeconds / 86_400, true);
@@ -795,6 +834,12 @@ export class SmallBodyGpuLayer {
       );
       pass.end();
       this.#device.queue.submit([encoder.finish()]);
+      if (this.#computeChunkSize < this.#objectCount) {
+        await this.#device.queue.onSubmittedWorkDone();
+      }
+    }
+    if (this.#disposed) {
+      return;
     }
     this.#lastElapsedSeconds = elapsedSeconds;
     this.#lastSunXAu = sunPositionAu[0];

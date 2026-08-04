@@ -2545,11 +2545,19 @@ export function SolarSystemScene({
             performance.now() - lastSmallBodyGpuUpdateAt >=
               SMALL_BODY_GPU_UPDATE_INTERVAL_MS
           ) {
-            gpuLayer.setTimeSeconds(current.timeSeconds, [
-              sunState.positionM[0] / ASTRONOMICAL_UNIT_M,
-              sunState.positionM[1] / ASTRONOMICAL_UNIT_M,
-              sunState.positionM[2] / ASTRONOMICAL_UNIT_M,
-            ]);
+            void gpuLayer
+              .setTimeSeconds(current.timeSeconds, [
+                sunState.positionM[0] / ASTRONOMICAL_UNIT_M,
+                sunState.positionM[1] / ASTRONOMICAL_UNIT_M,
+                sunState.positionM[2] / ASTRONOMICAL_UNIT_M,
+              ])
+              .catch((cause: unknown) => {
+                if (active) {
+                  onGpuError(
+                    cause instanceof Error ? cause.message : String(cause),
+                  );
+                }
+              });
             lastSmallBodyGpuUpdateAt = performance.now();
           }
         }
