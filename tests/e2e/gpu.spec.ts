@@ -19,6 +19,11 @@ test("validates and presents the complete small-body catalogue directly on WebGP
   });
   await expect(scene).toHaveAttribute("data-gpu-presentation", "direct-webgpu");
   await expect(canvas).toHaveAttribute("data-presentation", "direct-webgpu");
+  const submittedObjects =
+    Number(await canvas.getAttribute("data-submitted-asteroids")) +
+    Number(await canvas.getAttribute("data-submitted-comets"));
+  expect(submittedObjects).toBeGreaterThan(0);
+  expect(submittedObjects).toBeLessThan(1_556_349);
   await expect(
     page.getByText("1,556,349 propagated · 1,791 unavailable"),
   ).toBeVisible();

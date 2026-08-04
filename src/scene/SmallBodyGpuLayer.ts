@@ -15,8 +15,75 @@ const COMPUTE_WORKGROUP_SIZE = 256;
 const POSITION_STRIDE_BYTES = 16;
 const MINIMUM_CATEGORY_CATALOGUE_SAMPLES = 1_024;
 const MAXIMUM_DENSITY_RENDER_WIDTH = 1_920;
+const MAXIMUM_FALLBACK_CATEGORY_DRAW_COUNT = 50_000;
 const J2000_OBLIQUITY_COSINE = Math.cos(J2000_MEAN_OBLIQUITY_RAD);
 const J2000_OBLIQUITY_SINE = Math.sin(J2000_MEAN_OBLIQUITY_RAD);
+
+function greatestCommonDivisor(left: number, right: number): number {
+  let first = left;
+  let second = right;
+  while (second !== 0) {
+    const remainder = first % second;
+    first = second;
+    second = remainder;
+  }
+  return first;
+}
+
+function permutationStep(count: number): number {
+  if (count <= 1) {
+    return 1;
+  }
+  let step = Math.max(1, Math.floor(count * 0.618_033_988_749_894_8));
+  while (greatestCommonDivisor(step, count) !== 1) {
+    step += 1;
+  }
+  return step;
+}
+
+function createRenderIndexBuffer(
+  device: GPUDevice,
+  snapshot: SbdbSnapshot,
+): GPUBuffer {
+  const { asteroids, comets, total } = snapshot.manifest.counts;
+  const asteroidIndices = new Uint32Array(asteroids);
+  const cometIndices = new Uint32Array(comets);
+  let asteroidCursor = 0;
+  let cometCursor = 0;
+  for (let index = 0; index < total; index += 1) {
+    const record = readSmallBodyOrbitRecord(snapshot.orbitalRecords, index);
+    if ((record.flags & 2) === 0) {
+      asteroidIndices[asteroidCursor] = index;
+      asteroidCursor += 1;
+    } else {
+      cometIndices[cometCursor] = index;
+      cometCursor += 1;
+    }
+  }
+  if (asteroidCursor !== asteroids || cometCursor !== comets) {
+    throw new Error("Small-body category counts do not match the snapshot");
+  }
+
+  const indexBuffer = device.createBuffer({
+    label: "Deterministically permuted small-body render indices",
+    size: total * Uint32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.INDEX,
+    mappedAtCreation: true,
+  });
+  const renderIndices = new Uint32Array(indexBuffer.getMappedRange());
+  const asteroidStep = permutationStep(asteroids);
+  const cometStep = permutationStep(comets);
+  for (let outputIndex = 0; outputIndex < asteroids; outputIndex += 1) {
+    renderIndices[outputIndex] =
+      asteroidIndices[(outputIndex * asteroidStep) % asteroids] ?? 0;
+  }
+  for (let outputIndex = 0; outputIndex < comets; outputIndex += 1) {
+    renderIndices[asteroids + outputIndex] =
+      cometIndices[(outputIndex * cometStep) % comets] ?? 0;
+  }
+  indexBuffer.unmap();
+  return indexBuffer;
+}
 
 function densityRenderSize(canvas: HTMLCanvasElement): Readonly<{
   width: number;
@@ -248,16 +315,6 @@ struct VertexOutput {
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
 @group(0) @binding(1) var<uniform> camera: CameraUniforms;
 
-fn catalogueHash(index: u32) -> f32 {
-  var value = index;
-  value = (value ^ 61u) ^ (value >> 16u);
-  value *= 9u;
-  value = value ^ (value >> 4u);
-  value *= 0x27d4eb2du;
-  value = value ^ (value >> 15u);
-  return f32(value & 0x00ffffffu) / 16777215.0;
-}
-
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
   let body = positions[vertexIndex];
@@ -270,12 +327,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
   if (
     body.w < 0.0 ||
     !categoryVisible ||
-    (camera.focusRadiusAu > 0.0 && distance(body.xyz, camera.focusCenter) > camera.focusRadiusAu) ||
-    catalogueHash(vertexIndex) > select(
-      camera.asteroidVisibilityFraction,
-      camera.cometVisibilityFraction,
-      body.w > 0.5,
-    )
+    (camera.focusRadiusAu > 0.0 && distance(body.xyz, camera.focusCenter) > camera.focusRadiusAu)
   ) {
     output.position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     output.kind = -1.0;
@@ -358,9 +410,11 @@ export class SmallBodyGpuLayer {
   readonly #cameraUniformBuffer: GPUBuffer;
   readonly #trailFadeUniformBuffer: GPUBuffer;
   readonly #positionBuffer: GPUBuffer;
+  readonly #renderIndexBuffer: GPUBuffer;
   readonly #objectCount: number;
   readonly #asteroidCount: number;
   readonly #cometCount: number;
+  readonly #maximumCategoryDrawCount: number;
   readonly #format: GPUTextureFormat;
   readonly #viewProjection = new Matrix4();
   readonly #lastRenderedViewProjection = new Float32Array(16).fill(Number.NaN);
@@ -405,9 +459,11 @@ export class SmallBodyGpuLayer {
     cameraUniformBuffer: GPUBuffer,
     trailFadeUniformBuffer: GPUBuffer,
     positionBuffer: GPUBuffer,
+    renderIndexBuffer: GPUBuffer,
     objectCount: number,
     asteroidCount: number,
     cometCount: number,
+    maximumCategoryDrawCount: number,
     format: GPUTextureFormat,
     renderTarget: GPUTexture,
   ) {
@@ -426,9 +482,11 @@ export class SmallBodyGpuLayer {
     this.#cameraUniformBuffer = cameraUniformBuffer;
     this.#trailFadeUniformBuffer = trailFadeUniformBuffer;
     this.#positionBuffer = positionBuffer;
+    this.#renderIndexBuffer = renderIndexBuffer;
     this.#objectCount = objectCount;
     this.#asteroidCount = asteroidCount;
     this.#cometCount = cometCount;
+    this.#maximumCategoryDrawCount = maximumCategoryDrawCount;
     this.#format = format;
     this.#renderTarget = renderTarget;
   }
@@ -501,6 +559,7 @@ export class SmallBodyGpuLayer {
       size: outputBytes,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    const renderIndexBuffer = createRenderIndexBuffer(device, snapshot);
     const simulationUniformBuffer = device.createBuffer({
       label: "Small-body simulation time",
       size: 32,
@@ -636,9 +695,13 @@ export class SmallBodyGpuLayer {
       cameraUniformBuffer,
       trailFadeUniformBuffer,
       positionBuffer,
+      renderIndexBuffer,
       snapshot.manifest.counts.total,
       snapshot.manifest.counts.asteroids,
       snapshot.manifest.counts.comets,
+      adapter.info.isFallbackAdapter
+        ? MAXIMUM_FALLBACK_CATEGORY_DRAW_COUNT
+        : Number.MAX_SAFE_INTEGER,
       format,
       renderTarget,
     );
@@ -829,6 +892,14 @@ export class SmallBodyGpuLayer {
       this.#cometCount,
       MINIMUM_CATEGORY_CATALOGUE_SAMPLES,
     );
+    const asteroidDrawCount = Math.min(
+      this.#maximumCategoryDrawCount,
+      Math.ceil(this.#asteroidCount * asteroidVisibilityFraction),
+    );
+    const cometDrawCount = Math.min(
+      this.#maximumCategoryDrawCount,
+      Math.ceil(this.#cometCount * cometVisibilityFraction),
+    );
     const cameraUniformView = new DataView(cameraUniforms);
     cameraUniformView.setFloat32(64, asteroidVisibilityFraction, true);
     cameraUniformView.setFloat32(68, cometVisibilityFraction, true);
@@ -883,7 +954,13 @@ export class SmallBodyGpuLayer {
     }
     pass.setPipeline(this.#renderPipeline);
     pass.setBindGroup(0, this.#renderBindGroup);
-    pass.draw(this.#objectCount);
+    pass.setIndexBuffer(this.#renderIndexBuffer, "uint32");
+    if (this.#showAsteroids) {
+      pass.drawIndexed(asteroidDrawCount);
+    }
+    if (this.#showComets) {
+      pass.drawIndexed(cometDrawCount, 1, this.#asteroidCount);
+    }
     pass.end();
     encoder.copyTextureToTexture(
       { texture: this.#renderTarget },
@@ -896,6 +973,8 @@ export class SmallBodyGpuLayer {
       asteroidVisibilityFraction.toFixed(8);
     this.#canvas.dataset["cometVisibilityFraction"] =
       cometVisibilityFraction.toFixed(8);
+    this.#canvas.dataset["submittedAsteroids"] = String(asteroidDrawCount);
+    this.#canvas.dataset["submittedComets"] = String(cometDrawCount);
     this.#canvas.dataset["pointOpacity"] =
       levelOfDetail.pointOpacity.toFixed(4);
     this.#canvas.dataset["asteroidsVisible"] = String(this.#showAsteroids);
@@ -1128,6 +1207,14 @@ export class SmallBodyGpuLayer {
       this.#cometCount,
       MINIMUM_CATEGORY_CATALOGUE_SAMPLES,
     );
+    const asteroidDrawCount = Math.min(
+      this.#maximumCategoryDrawCount,
+      Math.ceil(this.#asteroidCount * asteroidVisibilityFraction),
+    );
+    const cometDrawCount = Math.min(
+      this.#maximumCategoryDrawCount,
+      Math.ceil(this.#cometCount * cometVisibilityFraction),
+    );
     const cameraUniformView = new DataView(cameraUniforms);
     cameraUniformView.setFloat32(64, asteroidVisibilityFraction, true);
     cameraUniformView.setFloat32(68, cometVisibilityFraction, true);
@@ -1165,7 +1252,9 @@ export class SmallBodyGpuLayer {
     });
     pass.setPipeline(this.#renderPipeline);
     pass.setBindGroup(0, this.#renderBindGroup);
-    pass.draw(this.#objectCount);
+    pass.setIndexBuffer(this.#renderIndexBuffer, "uint32");
+    pass.drawIndexed(asteroidDrawCount);
+    pass.drawIndexed(cometDrawCount, 1, this.#asteroidCount);
     pass.end();
     encoder.copyTextureToBuffer(
       { texture: renderTarget },
