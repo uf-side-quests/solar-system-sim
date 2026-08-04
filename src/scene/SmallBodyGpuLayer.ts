@@ -16,6 +16,7 @@ const POSITION_STRIDE_BYTES = 16;
 const MINIMUM_CATEGORY_CATALOGUE_SAMPLES = 1_024;
 const MAXIMUM_DENSITY_RENDER_WIDTH = 1_920;
 const MAXIMUM_FALLBACK_CATEGORY_DRAW_COUNT = 50_000;
+const FALLBACK_COMPUTE_CHUNK_SIZE = 16_384;
 const J2000_OBLIQUITY_COSINE = Math.cos(J2000_MEAN_OBLIQUITY_RAD);
 const J2000_OBLIQUITY_SINE = Math.sin(J2000_MEAN_OBLIQUITY_RAD);
 
@@ -123,7 +124,7 @@ struct SimulationUniforms {
   sunXAu: f32,
   sunYAu: f32,
   sunZAu: f32,
-  padding0: u32,
+  startIndex: u32,
   padding1: u32,
   padding2: u32,
 }
@@ -250,7 +251,7 @@ fn rotateFromOrbitalPlane(
 
 @compute @workgroup_size(${String(COMPUTE_WORKGROUP_SIZE)})
 fn propagate(@builtin(global_invocation_id) invocation: vec3<u32>) {
-  let index = invocation.x;
+  let index = simulation.startIndex + invocation.x;
   if (index >= simulation.objectCount) {
     return;
   }
@@ -415,6 +416,7 @@ export class SmallBodyGpuLayer {
   readonly #asteroidCount: number;
   readonly #cometCount: number;
   readonly #maximumCategoryDrawCount: number;
+  readonly #computeChunkSize: number;
   readonly #format: GPUTextureFormat;
   readonly #viewProjection = new Matrix4();
   readonly #lastRenderedViewProjection = new Float32Array(16).fill(Number.NaN);
@@ -464,6 +466,7 @@ export class SmallBodyGpuLayer {
     asteroidCount: number,
     cometCount: number,
     maximumCategoryDrawCount: number,
+    computeChunkSize: number,
     format: GPUTextureFormat,
     renderTarget: GPUTexture,
   ) {
@@ -487,6 +490,7 @@ export class SmallBodyGpuLayer {
     this.#asteroidCount = asteroidCount;
     this.#cometCount = cometCount;
     this.#maximumCategoryDrawCount = maximumCategoryDrawCount;
+    this.#computeChunkSize = computeChunkSize;
     this.#format = format;
     this.#renderTarget = renderTarget;
   }
@@ -702,8 +706,14 @@ export class SmallBodyGpuLayer {
       adapter.info.isFallbackAdapter
         ? MAXIMUM_FALLBACK_CATEGORY_DRAW_COUNT
         : Number.MAX_SAFE_INTEGER,
+      adapter.info.isFallbackAdapter
+        ? FALLBACK_COMPUTE_CHUNK_SIZE
+        : snapshot.manifest.counts.total,
       format,
       renderTarget,
+    );
+    canvas.dataset["gpuFallbackAdapter"] = String(
+      adapter.info.isFallbackAdapter,
     );
     void device.lost.then((information) => {
       if (!layer.#disposed) {
@@ -759,18 +769,33 @@ export class SmallBodyGpuLayer {
     view.setFloat32(8, sunPositionAu[0], true);
     view.setFloat32(12, sunPositionAu[1], true);
     view.setFloat32(16, sunPositionAu[2], true);
-    this.#device.queue.writeBuffer(this.#simulationUniformBuffer, 0, uniforms);
-    const encoder = this.#device.createCommandEncoder({
-      label: "Small-body propagation commands",
-    });
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(this.#computePipeline);
-    pass.setBindGroup(0, this.#computeBindGroup);
-    pass.dispatchWorkgroups(
-      Math.ceil(this.#objectCount / COMPUTE_WORKGROUP_SIZE),
-    );
-    pass.end();
-    this.#device.queue.submit([encoder.finish()]);
+    for (
+      let startIndex = 0;
+      startIndex < this.#objectCount;
+      startIndex += this.#computeChunkSize
+    ) {
+      view.setUint32(20, startIndex, true);
+      this.#device.queue.writeBuffer(
+        this.#simulationUniformBuffer,
+        0,
+        uniforms,
+      );
+      const encoder = this.#device.createCommandEncoder({
+        label: "Small-body propagation commands",
+      });
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.#computePipeline);
+      pass.setBindGroup(0, this.#computeBindGroup);
+      const chunkObjectCount = Math.min(
+        this.#computeChunkSize,
+        this.#objectCount - startIndex,
+      );
+      pass.dispatchWorkgroups(
+        Math.ceil(chunkObjectCount / COMPUTE_WORKGROUP_SIZE),
+      );
+      pass.end();
+      this.#device.queue.submit([encoder.finish()]);
+    }
     this.#lastElapsedSeconds = elapsedSeconds;
     this.#lastSunXAu = sunPositionAu[0];
     this.#lastSunYAu = sunPositionAu[1];
