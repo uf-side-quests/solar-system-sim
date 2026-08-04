@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "NASA/JPL SBDB (Small-Body DataBase) Query API",
+  "endpoint": "https://ssd-api.jpl.nasa.gov/sbdb_query.api",
+  "retrievedAt": "2026-08-02T02:22:11.772Z",
+  "retrievalStartedAt": "2026-08-02T02:18:13.541Z",
+  "referenceEpoch": {
+    "value": 2461041.5,
+    "format": "Julian day",
+    "timeScale": "TDB"
+  },
+  "coordinateModel": {
+    "origin": "Sun",
+    "frame": "J2000 ecliptic orbital elements",
+    "propagation": "GPU two-body Kepler propagation",
+    "numericPrecision": "IEEE-754 binary32 with epoch rebasing"
+  },
+  "counts": {
+    "numberedAsteroids": 895910,
+    "unnumberedAsteroids": 658161,
+    "numberedComets": 610,
+    "unnumberedComets": 3459,
+    "asteroids": 1554071,
+    "comets": 4069,
+    "total": 1558140,
+    "integrable": 1556349,
+    "unavailableForSimulation": 1791
+  },
+  "binary": {
+    "path": "/data/sbdb-orbits.bin",
+    "recordStrideBytes": 48,
+    "byteLength": 74790720,
+    "checksumSha256": "f1789e7a5477f8a69319d465b6293dc165200fe1c1e00dc2074f5046f35599fc"
+  }
+}

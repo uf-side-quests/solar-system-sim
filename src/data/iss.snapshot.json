@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "CelesTrak current General Perturbations data",
+  "sourceUrl": "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=JSON-PRETTY",
+  "retrievedAt": "2026-08-03T16:06:38Z",
+  "referenceFrame": "TEME",
+  "timeScale": "UTC",
+  "propagator": "SGP4",
+  "validityWindowSeconds": 604800,
+  "object": {
+    "OBJECT_NAME": "ISS (ZARYA)",
+    "OBJECT_ID": "1998-067A",
+    "EPOCH": "2026-08-02T12:09:08.796384",
+    "MEAN_MOTION": 15.49313226,
+    "ECCENTRICITY": 0.00071721,
+    "INCLINATION": 51.6315,
+    "RA_OF_ASC_NODE": 70.8679,
+    "ARG_OF_PERICENTER": 4.7554,
+    "MEAN_ANOMALY": 355.3502,
+    "EPHEMERIS_TYPE": 0,
+    "CLASSIFICATION_TYPE": "U",
+    "NORAD_CAT_ID": 25544,
+    "ELEMENT_SET_NO": 999,
+    "REV_AT_EPOCH": 57893,
+    "BSTAR": 0.00012182638,
+    "MEAN_MOTION_DOT": 0.00006342,
+    "MEAN_MOTION_DDOT": 0
+  },
+  "physicalDimensions": {
+    "authority": "NASA International Space Station Facts and Figures",
+    "sourceUrl": "https://www.nasa.gov/international-space-station/space-station-facts-and-figures/",
+    "overallEndToEndM": 109,
+    "solarArrayLengthM": 73,
+    "pressurizedModuleLengthM": 67,
+    "trussLengthM": 94,
+    "massKg": 419725
+  },
+  "frameConversion": {
+    "targetFrame": "J2000 mean equator aligned with ICRF",
+    "method": "TEME to true-equator-of-date using GAST minus GMST, then Astronomy Engine EQD to EQJ rotation",
+    "velocityTreatment": "Position and velocity vectors receive the same instantaneous rotation"
+  }
+}

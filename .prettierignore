@@ -1,0 +1,5 @@
+dist/
+node_modules/
+src/physics/wasm/generated/
+vendor/
+pnpm-lock.yaml

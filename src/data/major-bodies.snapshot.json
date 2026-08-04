@@ -1,0 +1,381 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "NASA/JPL Horizons API",
+  "endpoint": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "retrievedAt": "2026-08-02T02:17:51.304Z",
+  "epoch": {
+    "value": 2461041.5,
+    "format": "Julian day",
+    "timeScale": "TDB"
+  },
+  "stateVector": {
+    "origin": "Solar System Barycenter",
+    "frame": "ICRF",
+    "positionUnits": "m",
+    "velocityUnits": "m/s",
+    "corrections": "geometric; no aberration corrections"
+  },
+  "physicalParameterSources": [
+    "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+    "https://ssd.jpl.nasa.gov/sats/phys_par/"
+  ],
+  "bodies": [
+    {
+      "id": "sun",
+      "name": "Sun",
+      "authorityId": "NASA/JPL-Horizons:10",
+      "type": "star",
+      "massKg": 1.98847e30,
+      "meanRadiusM": 695700000,
+      "color": "#ffb52e",
+      "positionM": [-458863967.4035421, -767304103.760174, -311195587.2581376],
+      "velocityMps": [
+        12.42505794360611, 0.3760600763841905, -0.09339934521605676
+      ]
+    },
+    {
+      "id": "mercury",
+      "name": "Mercury",
+      "authorityId": "NASA/JPL-Horizons:199",
+      "type": "planet",
+      "massKg": 3.30103e23,
+      "meanRadiusM": 2439400,
+      "color": "#aaa39b",
+      "positionM": [-32652520874.16521, -56116990283.97373, -26542575685.07895],
+      "velocityMps": [33311.54717745245, -16770.25919755248, -12410.14805980544]
+    },
+    {
+      "id": "venus",
+      "name": "Venus",
+      "authorityId": "NASA/JPL-Horizons:299",
+      "type": "planet",
+      "massKg": 4.86731e24,
+      "meanRadiusM": 6051800,
+      "color": "#d8ad6a",
+      "positionM": [12836983328.87579, -98936397394.2134, -45325679539.85732],
+      "velocityMps": [34535.1814114598, 4583.191517447297, -122.0738584301415]
+    },
+    {
+      "id": "earth",
+      "name": "Earth",
+      "authorityId": "NASA/JPL-Horizons:399",
+      "type": "planet",
+      "massKg": 5.97217e24,
+      "meanRadiusM": 6371008.399999999,
+      "color": "#3f78d6",
+      "positionM": [-26531002415.56548, 132064399546.2592, 57268703374.95859],
+      "velocityMps": [
+        -29776.50610770464, -4950.768712267514, -2146.229769311948
+      ]
+    },
+    {
+      "id": "mars",
+      "name": "Mars",
+      "authorityId": "NASA/JPL-Horizons:499",
+      "type": "planet",
+      "massKg": 6.41691e23,
+      "meanRadiusM": 3389500,
+      "color": "#bd5b3d",
+      "positionM": [50491130494.87789, -188911422599.7874, -87982631510.7002],
+      "velocityMps": [24459.57741742463, 7385.785743807313, 2728.029472587943]
+    },
+    {
+      "id": "jupiter",
+      "name": "Jupiter",
+      "authorityId": "NASA/JPL-Horizons:599",
+      "type": "planet",
+      "massKg": 1.898125e27,
+      "meanRadiusM": 69911000,
+      "color": "#caa17d",
+      "positionM": [-253878209336.31552, 674701399512.9832, 295381719360.6943],
+      "velocityMps": [
+        -12507.616337146, -3456.9314716499102, -1177.3276138731462
+      ]
+    },
+    {
+      "id": "saturn",
+      "name": "Saturn",
+      "authorityId": "NASA/JPL-Horizons:699",
+      "type": "planet",
+      "massKg": 5.68317e26,
+      "meanRadiusM": 58232000,
+      "color": "#d8c58d",
+      "positionM": [1421819203232.436, 57395452281.47187, -37533227726.50653],
+      "velocityMps": [-789.8651748040556, 8893.13727916294, 3707.9235676067383]
+    },
+    {
+      "id": "uranus",
+      "name": "Uranus",
+      "authorityId": "NASA/JPL-Horizons:799",
+      "type": "planet",
+      "massKg": 8.68099e25,
+      "meanRadiusM": 25362000,
+      "color": "#89d6df",
+      "positionM": [1477614612946.379, 2309001609747.8853, 990380425424.3254],
+      "velocityMps": [-5920.365479337566, 2841.034760502334, 1328.277881270783]
+    },
+    {
+      "id": "neptune",
+      "name": "Neptune",
+      "authorityId": "NASA/JPL-Horizons:899",
+      "type": "planet",
+      "massKg": 1.024092e26,
+      "meanRadiusM": 24622000,
+      "color": "#4169b1",
+      "positionM": [4468347034088.953, 112057868860.81331, -65380294527.97508],
+      "velocityMps": [-129.4604296252467, 5058.695581723702, 2073.253369082255]
+    },
+    {
+      "id": "moon",
+      "name": "Moon",
+      "authorityId": "NASA/JPL-Horizons:301",
+      "type": "moon",
+      "massKg": 7.342e22,
+      "meanRadiusM": 1737400,
+      "color": "#c8c8c5",
+      "positionM": [-26386676688.07356, 132353983703.80411, 57428862297.960266],
+      "velocityMps": [
+        -30780.820245376857, -4566.85410214987, -1973.6948723635471
+      ]
+    },
+    {
+      "id": "phobos",
+      "name": "Phobos",
+      "authorityId": "NASA/JPL-Horizons:401",
+      "type": "moon",
+      "massKg": 10659000000000000,
+      "meanRadiusM": 11080,
+      "color": "#93877a",
+      "positionM": [50488502271.605415, -188919778389.63388, -87985560039.5275],
+      "velocityMps": [26288.56994615103, 7207.437528664296, 1574.549672457231]
+    },
+    {
+      "id": "deimos",
+      "name": "Deimos",
+      "authorityId": "NASA/JPL-Horizons:402",
+      "type": "moon",
+      "massKg": 1476200000000000,
+      "meanRadiusM": 6200,
+      "color": "#a69a8c",
+      "positionM": [50501994183.80966, -188891252645.41238, -87977609554.11526],
+      "velocityMps": [23393.8288821762, 7776.8063921220855, 3461.375186356672]
+    },
+    {
+      "id": "io",
+      "name": "Io",
+      "authorityId": "NASA/JPL-Horizons:501",
+      "type": "moon",
+      "massKg": 8.931938e22,
+      "meanRadiusM": 1821600,
+      "color": "#e4cf69",
+      "positionM": [-253507026372.8397, 674517499562.2468, 295299842712.2371],
+      "velocityMps": [-4195.5923262225615, 10204.800163686, 5466.749450047265]
+    },
+    {
+      "id": "europa",
+      "name": "Europa",
+      "authorityId": "NASA/JPL-Horizons:502",
+      "type": "moon",
+      "massKg": 4.799844e22,
+      "meanRadiusM": 1560800,
+      "color": "#c9b28c",
+      "positionM": [-253795659191.4141, 674094713967.0302, 295097881690.8526],
+      "velocityMps": [
+        1038.529561032002, -1972.259269475783, -163.24851121393039
+      ]
+    },
+    {
+      "id": "ganymede",
+      "name": "Ganymede",
+      "authorityId": "NASA/JPL-Horizons:503",
+      "type": "moon",
+      "massKg": 1.4819e23,
+      "meanRadiusM": 2631200,
+      "color": "#8d8377",
+      "positionM": [-252866332977.6355, 674385312460.3292, 295246339929.2232],
+      "velocityMps": [-8995.410584856474, 5823.678369489225, 3330.853697160209]
+    },
+    {
+      "id": "callisto",
+      "name": "Callisto",
+      "authorityId": "NASA/JPL-Horizons:504",
+      "type": "moon",
+      "massKg": 1.0759e23,
+      "meanRadiusM": 2410300,
+      "color": "#685f58",
+      "positionM": [-253867818359.5448, 676402016664.7651, 296183280360.1778],
+      "velocityMps": [-20720.75855784654, -3315.04914688507, -1232.767831510055]
+    },
+    {
+      "id": "mimas",
+      "name": "Mimas",
+      "authorityId": "NASA/JPL-Horizons:601",
+      "type": "moon",
+      "massKg": 37493000000000000000,
+      "meanRadiusM": 198200,
+      "color": "#bdbbb5",
+      "positionM": [1421675392795.9868, 57511490456.15027, -37532033829.77515],
+      "velocityMps": [
+        -9939.347937920405, -2024.260260193063, 5637.1101554423185
+      ]
+    },
+    {
+      "id": "enceladus",
+      "name": "Enceladus",
+      "authorityId": "NASA/JPL-Horizons:602",
+      "type": "moon",
+      "massKg": 108022000000000000000,
+      "meanRadiusM": 252100,
+      "color": "#e5e6e4",
+      "positionM": [1421583337395.3472, 57373030208.37346, -37511259839.71669],
+      "velocityMps": [537.147242706965, -3649.0263527151583, 4517.942228669653]
+    },
+    {
+      "id": "tethys",
+      "name": "Tethys",
+      "authorityId": "NASA/JPL-Horizons:603",
+      "type": "moon",
+      "massKg": 617449000000000000000,
+      "meanRadiusM": 531100,
+      "color": "#c7c5bf",
+      "positionM": [1421655384494.417, 57640340039.39936, -37536405707.83609],
+      "velocityMps": [-10190.557157041949, 2616.931463168437, 4763.474556825861]
+    },
+    {
+      "id": "dione",
+      "name": "Dione",
+      "authorityId": "NASA/JPL-Horizons:604",
+      "type": "moon",
+      "massKg": 1.09545e21,
+      "meanRadiusM": 561400,
+      "color": "#b8b6b0",
+      "positionM": [1421573084920.049, 57111318797.851944, -37491273240.80038],
+      "velocityMps": [6756.818783406485, 2324.508644288608, 3540.458149481392]
+    },
+    {
+      "id": "rhea",
+      "name": "Rhea",
+      "authorityId": "NASA/JPL-Horizons:605",
+      "type": "moon",
+      "massKg": 2.30652e21,
+      "meanRadiusM": 763800,
+      "color": "#aaa8a3",
+      "positionM": [1421551617824.9978, 56944798676.307884, -37476168754.29753],
+      "velocityMps": [6489.34237623806, 4546.501848793062, 3445.6514505103287]
+    },
+    {
+      "id": "titan",
+      "name": "Titan",
+      "authorityId": "NASA/JPL-Horizons:606",
+      "type": "moon",
+      "massKg": 1.3452e23,
+      "meanRadiusM": 2574700,
+      "color": "#c99b53",
+      "positionM": [1422931054589.305, 56985729036.332306, -37604285815.42984],
+      "velocityMps": [1132.73068219022, 14268.50941146107, 3176.619349938171]
+    },
+    {
+      "id": "iapetus",
+      "name": "Iapetus",
+      "authorityId": "NASA/JPL-Horizons:608",
+      "type": "moon",
+      "massKg": 1.80564e21,
+      "meanRadiusM": 734500,
+      "color": "#918a7e",
+      "positionM": [1420250193079.0452, 60493220543.97533, -36648341222.46297],
+      "velocityMps": [
+        -3676.397455664948, 7449.0280929728915, 4015.8447241247854
+      ]
+    },
+    {
+      "id": "ariel",
+      "name": "Ariel",
+      "authorityId": "NASA/JPL-Horizons:701",
+      "type": "moon",
+      "massKg": 1.25e21,
+      "meanRadiusM": 578900,
+      "color": "#c4c7c5",
+      "positionM": [1477788153257.0232, 2308946607000.8413, 990437893885.7834],
+      "velocityMps": [
+        -3945.7907515651727, 3802.5888861203557, -3724.736225942098
+      ]
+    },
+    {
+      "id": "umbriel",
+      "name": "Umbriel",
+      "authorityId": "NASA/JPL-Horizons:702",
+      "type": "moon",
+      "massKg": 1.275e21,
+      "meanRadiusM": 584700,
+      "color": "#777774",
+      "positionM": [1477562132647.195, 2308942947016.325, 990633442010.8209],
+      "velocityMps": [-1436.768113959857, 1653.718940238282, 1990.381887097114]
+    },
+    {
+      "id": "titania",
+      "name": "Titania",
+      "authorityId": "NASA/JPL-Horizons:703",
+      "type": "moon",
+      "massKg": 3.527e21,
+      "meanRadiusM": 788900,
+      "color": "#a4a19c",
+      "positionM": [1477976920972.436, 2308986945021.588, 990139036132.1821],
+      "velocityMps": [-7798.899970855212, 4062.692845091629, -1552.755162685858]
+    },
+    {
+      "id": "oberon",
+      "name": "Oberon",
+      "authorityId": "NASA/JPL-Horizons:704",
+      "type": "moon",
+      "massKg": 3.014e21,
+      "meanRadiusM": 761400,
+      "color": "#8f8a84",
+      "positionM": [1477904282825.861, 2308808559687.5337, 990847639799.093],
+      "velocityMps": [-3266.026138672093, 2714.815643822019, -374.6024260927316]
+    },
+    {
+      "id": "miranda",
+      "name": "Miranda",
+      "authorityId": "NASA/JPL-Horizons:705",
+      "type": "moon",
+      "massKg": 64000000000000000000,
+      "meanRadiusM": 235800,
+      "color": "#aaa7a2",
+      "positionM": [1477727819298.787, 2308956326933.0786, 990425231194.7373],
+      "velocityMps": [-3231.670200576102, 3527.12218565581, -4746.002380400461]
+    },
+    {
+      "id": "triton",
+      "name": "Triton",
+      "authorityId": "NASA/JPL-Horizons:801",
+      "type": "moon",
+      "massKg": 2.139e22,
+      "meanRadiusM": 1353400,
+      "color": "#c5aaa0",
+      "positionM": [4468062447445.804, 111946767977.7685, -65200003262.990364],
+      "velocityMps": [1114.2020067472029, 7472.588496596908, 5522.917746127482]
+    },
+    {
+      "id": "pluto",
+      "name": "Pluto",
+      "authorityId": "NASA/JPL-Horizons:999",
+      "type": "dwarf-planet",
+      "massKg": 1.303e22,
+      "meanRadiusM": 1188300,
+      "color": "#bca58f",
+      "positionM": [2875995747967.938, -3928583411898.222, -2092518216488.585],
+      "velocityMps": [4724.608857272093, 2233.61544864304, -711.8325238118415]
+    },
+    {
+      "id": "charon",
+      "name": "Charon",
+      "authorityId": "NASA/JPL-Horizons:901",
+      "type": "moon",
+      "massKg": 1.586e21,
+      "meanRadiusM": 606000,
+      "color": "#878480",
+      "positionM": [2876005910740.721, -3928576193954.698, -2092533335434.215],
+      "velocityMps": [4608.42642204292, 2104.313299177345, -851.704017134308]
+    }
+  ]
+}
