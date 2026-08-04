@@ -2149,6 +2149,7 @@ export function SolarSystemScene({
     };
 
     let animationFrame = 0;
+    let startupTimer = 0;
     const render = (): void => {
       const requestedFrame = frameRef.current;
       if (clearTrailsTokenRef.current !== lastClearTrailsToken) {
@@ -3490,13 +3491,18 @@ export function SolarSystemScene({
       animationFrame = requestAnimationFrame(render);
     };
     // React Strict Mode mounts effects once for verification and immediately
-    // tears them down. Deferring the first frame lets that disposable mount be
-    // cancelled before it allocates a second 1.56-million-body WebGPU device.
-    animationFrame = requestAnimationFrame(render);
+    // tears them down. Starting from a cancellable macrotask guarantees that
+    // disposable mount cannot allocate a second 1.56-million-body GPU layer.
+    startupTimer = window.setTimeout(() => {
+      if (active) {
+        render();
+      }
+    }, 0);
 
     return () => {
       active = false;
       snapshotAbortController.abort();
+      window.clearTimeout(startupTimer);
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       controls.dispose();
