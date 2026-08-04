@@ -1484,7 +1484,11 @@ export function SolarSystemScene({
         const created = await SmallBodyGpuLayer.create(
           gpuCanvas,
           snapshot,
-          onGpuError,
+          (message) => {
+            if (active) {
+              onGpuError(message);
+            }
+          },
         );
         const validatedRenderPixels =
           await created.layer.validateRenderedFrame(camera);
@@ -3485,7 +3489,10 @@ export function SolarSystemScene({
       }
       animationFrame = requestAnimationFrame(render);
     };
-    render();
+    // React Strict Mode mounts effects once for verification and immediately
+    // tears them down. Deferring the first frame lets that disposable mount be
+    // cancelled before it allocates a second 1.56-million-body WebGPU device.
+    animationFrame = requestAnimationFrame(render);
 
     return () => {
       active = false;
