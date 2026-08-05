@@ -405,6 +405,7 @@ export function App() {
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
   const manualDeltaSecondsRef = useRef(0);
+  const directSeekTimeSecondsRef = useRef<number | undefined>(undefined);
   const focusBodyIdRef = useRef(focusBodyId);
   const focusHistoryRef = useRef<string[]>([]);
   const displayButtonRef = useRef<HTMLButtonElement>(null);
@@ -485,6 +486,27 @@ export function App() {
           });
         }
         while (isActive()) {
+          const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
+          if (directSeekTimeSeconds !== undefined) {
+            directSeekTimeSecondsRef.current = undefined;
+            const rawNextState = await client.api.integrateTo(
+              directSeekTimeSeconds,
+            );
+            solverTime = rawNextState.timeSeconds;
+            const nextState = withKnownSatellites(rawNextState);
+            previousState = nextState;
+            resetMeasuredRate(nextState.timeSeconds);
+            if (isActive()) {
+              setFrame({
+                start: nextState,
+                end: nextState,
+                transitionDurationMs: 0,
+              });
+              setSeeking(false);
+              setPlaybackBuffered(false);
+            }
+            continue;
+          }
           const manualRemaining = manualDeltaSecondsRef.current;
           const selectedRate = TIME_RATES[timeRateIndexRef.current];
           if (selectedRate === undefined) {
@@ -725,9 +747,10 @@ export function App() {
       if (bodyId === ISS_BODY_ID) {
         const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
         if (!isIssEphemerisWithinValidity(currentTime)) {
+          playingRef.current = false;
           setPlaying(false);
-          manualDeltaSecondsRef.current =
-            ISS_EPOCH_SIMULATION_SECONDS - currentTime;
+          manualDeltaSecondsRef.current = 0;
+          directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
           setSeeking(true);
         }
       }
