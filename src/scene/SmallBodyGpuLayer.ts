@@ -179,11 +179,67 @@ fn accurateExp(value: f32) -> f32 {
 }
 
 fn accurateSinh(value: f32) -> f32 {
+  if (abs(value) <= 1.0) {
+    let squared = value * value;
+    return value * (1.0 + squared * (
+      0.16666666666666666 + squared * (
+        0.008333333333333333 + squared * (
+          0.0001984126984126984 + squared * (
+            0.0000027557319223985893 + squared * 0.00000002505210838544172
+          )
+        )
+      )
+    ));
+  }
   return 0.5 * (accurateExp(value) - accurateExp(-value));
 }
 
 fn accurateCosh(value: f32) -> f32 {
+  if (abs(value) <= 1.0) {
+    let squared = value * value;
+    return 1.0 + squared * (
+      0.5 + squared * (
+        0.041666666666666664 + squared * (
+          0.001388888888888889 + squared * (
+            0.0000248015873015873 + squared * 0.0000002755731922398589
+          )
+        )
+      )
+    );
+  }
   return 0.5 * (accurateExp(value) + accurateExp(-value));
+}
+
+fn accurateSinhMinusInput(value: f32) -> f32 {
+  if (abs(value) <= 1.0) {
+    let squared = value * value;
+    return value * squared * (
+      0.16666666666666666 + squared * (
+        0.008333333333333333 + squared * (
+          0.0001984126984126984 + squared * (
+            0.0000027557319223985893 + squared * 0.00000002505210838544172
+          )
+        )
+      )
+    );
+  }
+  return accurateSinh(value) - value;
+}
+
+fn accurateCoshMinusOne(value: f32) -> f32 {
+  if (abs(value) <= 1.0) {
+    let squared = value * value;
+    return squared * (
+      0.5 + squared * (
+        0.041666666666666664 + squared * (
+          0.001388888888888889 + squared * (
+            0.0000248015873015873 + squared * 0.0000002755731922398589
+          )
+        )
+      )
+    );
+  }
+  return accurateCosh(value) - 1.0;
 }
 
 fn solveElliptic(meanAnomaly: f32, eccentricity: f32) -> f32 {
@@ -212,11 +268,13 @@ fn solveHyperbolic(meanAnomaly: f32, eccentricity: f32) -> f32 {
     );
   }
   for (var iteration = 0u; iteration < 12u; iteration += 1u) {
-    let residual = eccentricity * accurateSinh(hyperbolicAnomaly) - hyperbolicAnomaly - meanAnomaly;
-    if (abs(residual) <= 0.0000001) {
+    let residual = (eccentricity - 1.0) * hyperbolicAnomaly +
+      eccentricity * accurateSinhMinusInput(hyperbolicAnomaly) - meanAnomaly;
+    if (abs(residual) <= 0.000000001) {
       break;
     }
-    let derivative = eccentricity * accurateCosh(hyperbolicAnomaly) - 1.0;
+    let derivative = (eccentricity - 1.0) +
+      eccentricity * accurateCoshMinusOne(hyperbolicAnomaly);
     hyperbolicAnomaly -= residual / derivative;
   }
   return hyperbolicAnomaly;
@@ -274,7 +332,7 @@ fn propagate(@builtin(global_invocation_id) invocation: vec3<u32>) {
   } else {
     let hyperbolicAnomaly = solveHyperbolic(meanAnomaly, orbit.eccentricity);
     orbitalPosition = vec2<f32>(
-      orbit.perihelionAu + orbit.semiMajorAxisAu * (accurateCosh(hyperbolicAnomaly) - 1.0),
+      orbit.perihelionAu + orbit.semiMajorAxisAu * accurateCoshMinusOne(hyperbolicAnomaly),
       -orbit.semiMajorAxisAu * sqrt(orbit.eccentricity * orbit.eccentricity - 1.0) * accurateSinh(hyperbolicAnomaly),
     );
   }

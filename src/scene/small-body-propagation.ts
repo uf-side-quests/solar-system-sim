@@ -65,11 +65,13 @@ function solveHyperbolic(meanAnomaly: number, eccentricity: number): number {
         Math.cbrt((6 * Math.abs(meanAnomaly)) / eccentricity)
       : Math.asinh(meanAnomaly / eccentricity);
   for (let iteration = 0; iteration < 24; iteration += 1) {
+    const sinhMinusAnomaly = Math.sinh(hyperbolicAnomaly) - hyperbolicAnomaly;
+    const coshMinusOne = Math.cosh(hyperbolicAnomaly) - 1;
     hyperbolicAnomaly -=
-      (eccentricity * Math.sinh(hyperbolicAnomaly) -
-        hyperbolicAnomaly -
+      ((eccentricity - 1) * hyperbolicAnomaly +
+        eccentricity * sinhMinusAnomaly -
         meanAnomaly) /
-      (eccentricity * Math.cosh(hyperbolicAnomaly) - 1);
+      (eccentricity - 1 + eccentricity * coshMinusOne);
   }
   return hyperbolicAnomaly;
 }
@@ -107,7 +109,7 @@ export function propagateSmallBodyPositionAu(
     const hyperbolicAnomaly = solveHyperbolic(meanAnomaly, orbit.eccentricity);
     orbitalX =
       orbit.perihelionAu +
-      orbit.semiMajorAxisAu * (Math.cosh(hyperbolicAnomaly) - 1);
+      orbit.semiMajorAxisAu * 2 * Math.sinh(hyperbolicAnomaly / 2) ** 2;
     orbitalY =
       -orbit.semiMajorAxisAu *
       Math.sqrt(orbit.eccentricity * orbit.eccentricity - 1) *
