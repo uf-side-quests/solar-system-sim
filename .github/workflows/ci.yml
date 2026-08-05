@@ -35,7 +35,10 @@ jobs:
 
   browser:
     name: Browser integration tests
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # The integration suite validates the real WebGPU rendering path. Linux
+    # software adapters destroy long-running devices under this workload, while
+    # GitHub's macOS runner provides the native GPU path used by the application.
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - name: Checkout repository
@@ -49,8 +52,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify system Chrome
+        run: '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version'
       - name: Run browser integration tests
         run: pnpm test:e2e
       - name: Upload browser failure evidence
