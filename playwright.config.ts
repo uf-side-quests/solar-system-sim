@@ -5,11 +5,12 @@ const chromiumArgs = [
   "--enable-unsafe-webgpu",
   ...(process.platform === "linux"
     ? [
-        "--use-angle=vulkan",
-        "--enable-features=Vulkan",
-        "--disable-vulkan-surface",
         "--use-webgpu-adapter=swiftshader",
+        "--enable-dawn-features=allow_unsafe_apis",
+        "--disable-dawn-features=use_dxc",
+        "--enable-webgpu-developer-features",
         "--use-gpu-in-tests",
+        "--enable-accelerated-2d-canvas",
       ]
     : []),
 ];
