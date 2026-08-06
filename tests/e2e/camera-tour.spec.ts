@@ -10,7 +10,7 @@ async function waitForCameraJourney(
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
     "settled",
-    { timeout: 10_000 },
+    { timeout: 16_000 },
   );
 }
 
@@ -42,12 +42,19 @@ test("keeps escape navigation visible and guides the user through scale", async 
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
   await expect(page.getByRole("button", { name: "Zoom out" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fit" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Re-centre" })).toBeVisible();
 
   const focus = page.getByRole("combobox", { name: "Focus" });
   await focus.fill("Earth");
   await focus.press("Enter");
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
   await expect(scene).toHaveAttribute(
     "data-camera-orientation",
     "parent-facing",
@@ -128,10 +135,21 @@ test("keeps escape navigation visible and guides the user through scale", async 
     )
     .toBeGreaterThan(fittedDistance);
 
-  await page.getByRole("button", { name: "Fit" }).click();
+  const resetTokenBeforeRecenter = Number(
+    await scene.getAttribute("data-reset-view-token"),
+  );
+  await page.getByRole("button", { name: "Re-centre" }).click();
+  await expect
+    .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
+    .toBeGreaterThan(resetTokenBeforeRecenter);
   await expect(scene).toHaveAttribute(
-    "data-camera-navigation-action",
-    "fit-selection",
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 20_000 },
+  );
+  await expect(scene).toHaveAttribute(
+    "data-camera-orientation",
+    "parent-facing",
   );
   await expect
     .poll(async () =>
@@ -164,15 +182,15 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-overview-anchor",
-    "earth",
+    "moving-route",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
-    "logarithmic-distance",
+    "depart-coast-arrive",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-duration-ms",
-    "7500",
+    "12000",
   );
   await expect
     .poll(async () =>
@@ -204,7 +222,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
     .toBeCloseTo(0.032, 6);
   await expect(
     tour.getByText(
-      "Procedural photosphere and restrained limb glow · no invented flare state",
+      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
       { exact: true },
     ),
   ).toBeVisible();

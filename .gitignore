@@ -3,4 +3,5 @@ dist/
 playwright-report/
 test-results/
 coverage/
+.herenow/
 .DS_Store

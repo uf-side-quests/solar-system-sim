@@ -4,7 +4,7 @@ import {
   ACESFilmicToneMapping,
   AdditiveBlending,
   AmbientLight,
-  BoxGeometry,
+  Box3,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
@@ -35,11 +35,15 @@ import {
   ShaderMaterial,
   Texture,
   TextureLoader,
+  type IUniform,
+  type Object3D,
   Vector3,
   Vector2,
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
 import type { BodyState, SimulationState } from "../physics/contracts";
@@ -60,11 +64,21 @@ import {
   ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
 } from "../physics/solar-system";
+import {
+  isVoyagerBodyId,
+  voyagerById,
+  voyagerSnapshot,
+} from "../physics/voyager-ephemeris";
+import {
+  isOperationalSpacecraftBodyId,
+  operationalSpacecraftSnapshot,
+} from "../physics/operational-spacecraft";
 import { focusDistanceAu } from "./camera-focus";
 import { GravityWellLayer } from "./GravityWellLayer";
 import type {
   GravityPotentialSource,
   GravityWellMode,
+  GravityWellScale,
 } from "./gravity-potential";
 import type { SimulationFrame } from "./interpolation";
 import {
@@ -84,6 +98,12 @@ import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import { surfaceObserverViewpoint } from "./observer-camera";
 import { icrfToScene, j2000EclipticToScene } from "./reference-frames";
 import {
+  surfaceHorizonPoint,
+  surfaceObserverFrame,
+  type SurfaceObserverConfiguration,
+  type SurfaceObserverFrame,
+} from "./surface-observer";
+import {
   isPhysicalBodyResolvable,
   nonOverlappingDisplayedRadiusAu,
 } from "./scale";
@@ -100,6 +120,11 @@ import {
 import type { ObjectVisibility } from "./visibility";
 import { isMajorBodyVisible } from "./visibility";
 import {
+  nearestPlanetWayfinders,
+  wayfinderPlanetCount,
+  type WayfinderMode,
+} from "./wayfinder";
+import {
   nasaEarthCloudAsset,
   nasaMaterialPresentationByBodyId,
   nasaMoonHeightAsset,
@@ -107,27 +132,55 @@ import {
   nasaTextureByBodyId,
 } from "./visual-assets";
 import type { ReferenceFrame, SemanticZoomLevel, ViewMode } from "./view-mode";
+import {
+  adaptExposure,
+  solarExposureForDistanceAu,
+  VISUAL_QUALITY_PROFILES,
+  type VisualQuality,
+} from "./visual-quality";
+import { spacecraftAssets } from "./spacecraft-assets";
 
 const ECLIPTIC_NORTH = j2000EclipticToScene({ x: 0, y: 0, z: 1 }).normalize();
 const ECLIPTIC_FORWARD = j2000EclipticToScene({ x: 0, y: 1, z: 0 }).normalize();
+const ECLIPTIC_RIGHT = ECLIPTIC_FORWARD.clone()
+  .cross(ECLIPTIC_NORTH)
+  .normalize();
 const PERSPECTIVE_CAMERA_DIRECTION = ECLIPTIC_FORWARD.clone()
   .add(ECLIPTIC_NORTH.clone().multiplyScalar(0.48))
   .normalize();
 const SOLAR_SYSTEM_CAMERA_POSITION =
   PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(90);
+const VOYAGER_MODEL_HGA_BORESIGHT = new Vector3(0, 1, 0);
 
-function interpolateCameraTransitionLeg(
+function voyagerEarthPointingQuaternion(
+  probePosition: Vector3,
+  earthPosition: Vector3,
+): Quaternion {
+  const boresight = earthPosition.clone().sub(probePosition);
+  if (boresight.lengthSq() <= Number.EPSILON) {
+    throw new Error("Voyager and Earth positions cannot coincide");
+  }
+  boresight.normalize();
+  let crossAxis = ECLIPTIC_NORTH.clone().cross(boresight);
+  if (crossAxis.lengthSq() <= 1e-12) {
+    crossAxis = ECLIPTIC_FORWARD.clone().cross(boresight);
+  }
+  crossAxis.normalize();
+  const rollAxis = crossAxis.clone().cross(boresight).normalize();
+  return new Quaternion().setFromRotationMatrix(
+    new Matrix4().makeBasis(crossAxis, boresight, rollAxis),
+  );
+}
+
+function interpolateCameraPositionAroundAnchor(
   outputPosition: Vector3,
-  outputTarget: Vector3,
   startPosition: Vector3,
-  startTarget: Vector3,
   endPosition: Vector3,
-  endTarget: Vector3,
+  anchor: Vector3,
   progress: number,
 ): void {
-  outputTarget.lerpVectors(startTarget, endTarget, progress);
-  const startOffset = startPosition.clone().sub(startTarget);
-  const endOffset = endPosition.clone().sub(endTarget);
+  const startOffset = startPosition.clone().sub(anchor);
+  const endOffset = endPosition.clone().sub(anchor);
   const startDistance = startOffset.length();
   const endDistance = endOffset.length();
   const distance = interpolateLogarithmicDistance(
@@ -149,7 +202,7 @@ function interpolateCameraTransitionLeg(
     .copy(startDirection)
     .applyQuaternion(interpolatedRotation)
     .multiplyScalar(distance)
-    .add(outputTarget);
+    .add(anchor);
 }
 const MAX_MOON_TRAIL_POINTS = 8_192;
 const MAX_PLANET_TRAIL_POINTS = 8_192;
@@ -167,9 +220,17 @@ const LABEL_MINIMUM_RADIUS_PIXELS = 0.5;
 const LABEL_CHARACTER_WIDTH_PX = 5;
 const LABEL_HORIZONTAL_CHROME_PX = 14;
 const LABEL_HALF_HEIGHT_PX = 9;
-const ISS_FOCUS_DISTANCE_AU = 500 / ASTRONOMICAL_UNIT_M;
+const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
-const DEFAULT_CAMERA_FAR_AU = 200_000;
+const DEFAULT_CAMERA_FAR_AU = 1_000_000;
+const ALPHA_CENTAURI_DISTANCE_AU = 272_000;
+const VOYAGER_1_HELIOPAUSE_AU = 122;
+const VOYAGER_2_HELIOPAUSE_AU = 119;
+const OORT_CLOUD_INNER_MIN_AU = 2_000;
+const OORT_CLOUD_INNER_MAX_AU = 5_000;
+const OORT_CLOUD_OUTER_MIN_AU = 10_000;
+const OORT_CLOUD_OUTER_MAX_AU = 100_000;
+const PREVIOUS_SOLAR_SYSTEM_VIEW_AU = 220;
 const SMALL_BODY_GPU_UPDATE_INTERVAL_MS = 200;
 const SUN_GUIDE_UPDATE_INTERVAL_MS = 100;
 const STAR_SPHERE_RADIUS_AU = 1_500;
@@ -183,6 +244,21 @@ const SOLAR_SYSTEM_EPOCH_JULIAN_YEAR =
 const majorBodyById = new Map(
   majorBodySnapshot.bodies.map((body) => [body.id, body]),
 );
+
+function spacecraftBoundingRadiusM(bodyId: string): number | undefined {
+  const asset = spacecraftAssets.find(
+    (candidate) => candidate.bodyId === bodyId,
+  );
+  return asset === undefined ? undefined : asset.maximumDimensionM / 2;
+}
+
+function spacecraftFocusDistanceAu(bodyId: string): number {
+  const radiusM = spacecraftBoundingRadiusM(bodyId);
+  if (radiusM === undefined) {
+    throw new Error(`Physical dimensions are unavailable for ${bodyId}`);
+  }
+  return (radiusM * SPACECRAFT_FOCUS_CLEARANCE) / ASTRONOMICAL_UNIT_M;
+}
 
 type TimedTrailPoint = Readonly<{
   position: Vector3;
@@ -211,6 +287,48 @@ function scenePosition(positionM: readonly [number, number, number]): Vector3 {
     y: positionM[1] / ASTRONOMICAL_UNIT_M,
     z: positionM[2] / ASTRONOMICAL_UNIT_M,
   });
+}
+
+function setRequiredNumberUniform(
+  material: ShaderMaterial,
+  name: string,
+  value: number,
+): void {
+  const uniform: unknown = material.uniforms[name];
+  if (
+    typeof uniform !== "object" ||
+    uniform === null ||
+    !("value" in uniform) ||
+    typeof uniform.value !== "number"
+  ) {
+    throw new Error(
+      `Shader material is missing required numeric uniform ${name}`,
+    );
+  }
+  uniform.value = value;
+}
+
+function requiredVectorUniform(
+  material: ShaderMaterial,
+  name: string,
+): IUniform<Vector3> {
+  const uniform: unknown = material.uniforms[name];
+  if (
+    typeof uniform !== "object" ||
+    uniform === null ||
+    !("value" in uniform)
+  ) {
+    throw new Error(
+      `Shader material is missing required Vector3 uniform ${name}`,
+    );
+  }
+  const value: unknown = uniform.value;
+  if (!(value instanceof Vector3)) {
+    throw new Error(
+      `Shader material is missing required Vector3 uniform ${name}`,
+    );
+  }
+  return { value };
 }
 
 function createSolarCoronaTexture(): CanvasTexture {
@@ -262,6 +380,12 @@ function gravityFieldExtentAu(
   if (focusBodyId === ISS_BODY_ID) {
     return 0.000_12;
   }
+  if (
+    isVoyagerBodyId(focusBodyId) ||
+    isOperationalSpacecraftBodyId(focusBodyId)
+  ) {
+    return 0.000_001;
+  }
   const definition = majorBodyById.get(focusBodyId);
   if (definition !== undefined) {
     return Math.max(
@@ -287,7 +411,11 @@ function formatPotentialMagnitude(valueJPerKg: number): string {
 function parentBodyId(bodyId: string): string | undefined {
   return bodyId === ISS_BODY_ID
     ? ISS_PARENT_BODY_ID
-    : (knownSatelliteById.get(bodyId)?.parentId ?? PARENT_BODY_ID[bodyId]);
+    : bodyId === "hubble"
+      ? "earth"
+      : bodyId === "jwst" || isVoyagerBodyId(bodyId)
+        ? "sun"
+        : (knownSatelliteById.get(bodyId)?.parentId ?? PARENT_BODY_ID[bodyId]);
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -306,6 +434,7 @@ type SolarSystemSceneProps = Readonly<{
   displayedStateRef: RefObject<SimulationState | undefined>;
   bodyVisibility: number;
   focusBodyId: string | null;
+  selectedBodyId: string | null;
   showMoonTrail: boolean;
   showPlanetTrails: boolean;
   showMinorBodyTrails: boolean;
@@ -315,12 +444,14 @@ type SolarSystemSceneProps = Readonly<{
   clearTrailsToken: number;
   showEclipticPlane: boolean;
   showLabels: boolean;
+  spacecraftLabelBodyIds: readonly string[] | undefined;
   resetViewToken: number;
   cameraZoom: number;
   cameraDistanceOverrideAu: number | undefined;
   cameraTargetBodyId: string | undefined;
   cameraTransitionSequence: number;
   cameraTransitionDurationMs: number;
+  cameraTransitionAutoFrame: boolean;
   cameraTransitionOverviewAnchorBodyId: string | undefined;
   cameraTransitionOverviewDistanceAu: number;
   cameraNavigationCommand: CameraNavigationCommand;
@@ -329,12 +460,21 @@ type SolarSystemSceneProps = Readonly<{
   viewMode: Exclude<ViewMode, "schematic">;
   showTacticalOverlay: boolean;
   showOrbitGuides: boolean;
+  wayfinderMode: WayfinderMode;
   orbitGuideScope: "system" | "all";
   gravityWellMode: GravityWellMode;
+  gravityWellScale: GravityWellScale;
   objectVisibility: ObjectVisibility;
+  surfaceObserver: SurfaceObserverConfiguration | null;
+  surfaceObserverLookResetToken: number;
+  visualQuality: VisualQuality;
+  deepSpacePresentation:
+    "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale" | undefined;
+  onSelectBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
   onSemanticZoomChange(level: SemanticZoomLevel): void;
+  onViewZoomChange(zoom: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
   onGpuError(message: string): void;
 }>;
@@ -344,6 +484,7 @@ export function SolarSystemScene({
   displayedStateRef,
   bodyVisibility,
   focusBodyId,
+  selectedBodyId,
   showMoonTrail,
   showPlanetTrails,
   showMinorBodyTrails,
@@ -353,12 +494,14 @@ export function SolarSystemScene({
   clearTrailsToken,
   showEclipticPlane,
   showLabels,
+  spacecraftLabelBodyIds,
   resetViewToken,
   cameraZoom,
   cameraDistanceOverrideAu,
   cameraTargetBodyId,
   cameraTransitionSequence,
   cameraTransitionDurationMs,
+  cameraTransitionAutoFrame,
   cameraTransitionOverviewAnchorBodyId,
   cameraTransitionOverviewDistanceAu,
   cameraNavigationCommand,
@@ -367,12 +510,20 @@ export function SolarSystemScene({
   viewMode,
   showTacticalOverlay,
   showOrbitGuides,
+  wayfinderMode,
   orbitGuideScope,
   gravityWellMode,
+  gravityWellScale,
   objectVisibility,
+  surfaceObserver,
+  surfaceObserverLookResetToken,
+  visualQuality,
+  deepSpacePresentation,
+  onSelectBody,
   onFocusBody,
   onOrientationChange,
   onSemanticZoomChange,
+  onViewZoomChange,
   onGpuStatus,
   onGpuError,
 }: SolarSystemSceneProps) {
@@ -380,6 +531,7 @@ export function SolarSystemScene({
   const frameRef = useRef(frame);
   const bodyVisibilityRef = useRef(bodyVisibility);
   const focusBodyIdRef = useRef(focusBodyId);
+  const selectedBodyIdRef = useRef(selectedBodyId);
   const showMoonTrailRef = useRef(showMoonTrail);
   const showPlanetTrailsRef = useRef(showPlanetTrails);
   const showMinorBodyTrailsRef = useRef(showMinorBodyTrails);
@@ -389,12 +541,14 @@ export function SolarSystemScene({
   const clearTrailsTokenRef = useRef(clearTrailsToken);
   const showEclipticPlaneRef = useRef(showEclipticPlane);
   const showLabelsRef = useRef(showLabels);
+  const spacecraftLabelBodyIdsRef = useRef(spacecraftLabelBodyIds);
   const resetViewTokenRef = useRef(resetViewToken);
   const cameraZoomRef = useRef(cameraZoom);
   const cameraDistanceOverrideAuRef = useRef(cameraDistanceOverrideAu);
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
+  const cameraTransitionAutoFrameRef = useRef(cameraTransitionAutoFrame);
   const cameraTransitionOverviewAnchorBodyIdRef = useRef(
     cameraTransitionOverviewAnchorBodyId,
   );
@@ -407,12 +561,22 @@ export function SolarSystemScene({
   const viewModeRef = useRef(viewMode);
   const showTacticalOverlayRef = useRef(showTacticalOverlay);
   const showOrbitGuidesRef = useRef(showOrbitGuides);
+  const wayfinderModeRef = useRef(wayfinderMode);
   const orbitGuideScopeRef = useRef(orbitGuideScope);
   const gravityWellModeRef = useRef(gravityWellMode);
+  const gravityWellScaleRef = useRef(gravityWellScale);
   const objectVisibilityRef = useRef(objectVisibility);
+  const surfaceObserverRef = useRef(surfaceObserver);
+  const surfaceObserverLookResetTokenRef = useRef(
+    surfaceObserverLookResetToken,
+  );
+  const visualQualityRef = useRef(visualQuality);
+  const deepSpacePresentationRef = useRef(deepSpacePresentation);
+  const onViewZoomChangeRef = useRef(onViewZoomChange);
   frameRef.current = frame;
   bodyVisibilityRef.current = bodyVisibility;
   focusBodyIdRef.current = focusBodyId;
+  selectedBodyIdRef.current = selectedBodyId;
   showMoonTrailRef.current = showMoonTrail;
   showPlanetTrailsRef.current = showPlanetTrails;
   showMinorBodyTrailsRef.current = showMinorBodyTrails;
@@ -422,12 +586,14 @@ export function SolarSystemScene({
   clearTrailsTokenRef.current = clearTrailsToken;
   showEclipticPlaneRef.current = showEclipticPlane;
   showLabelsRef.current = showLabels;
+  spacecraftLabelBodyIdsRef.current = spacecraftLabelBodyIds;
   resetViewTokenRef.current = resetViewToken;
   cameraZoomRef.current = cameraZoom;
   cameraDistanceOverrideAuRef.current = cameraDistanceOverrideAu;
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
+  cameraTransitionAutoFrameRef.current = cameraTransitionAutoFrame;
   cameraTransitionOverviewAnchorBodyIdRef.current =
     cameraTransitionOverviewAnchorBodyId;
   cameraTransitionOverviewDistanceAuRef.current =
@@ -438,9 +604,16 @@ export function SolarSystemScene({
   viewModeRef.current = viewMode;
   showTacticalOverlayRef.current = showTacticalOverlay;
   showOrbitGuidesRef.current = showOrbitGuides;
+  wayfinderModeRef.current = wayfinderMode;
   orbitGuideScopeRef.current = orbitGuideScope;
   gravityWellModeRef.current = gravityWellMode;
+  gravityWellScaleRef.current = gravityWellScale;
   objectVisibilityRef.current = objectVisibility;
+  surfaceObserverRef.current = surfaceObserver;
+  surfaceObserverLookResetTokenRef.current = surfaceObserverLookResetToken;
+  visualQualityRef.current = visualQuality;
+  deepSpacePresentationRef.current = deepSpacePresentation;
+  onViewZoomChangeRef.current = onViewZoomChange;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -457,13 +630,23 @@ export function SolarSystemScene({
       DEFAULT_CAMERA_FAR_AU,
     );
     camera.position.copy(SOLAR_SYSTEM_CAMERA_POSITION);
-    const renderer = new WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      logarithmicDepthBuffer: true,
+    });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure =
+      VISUAL_QUALITY_PROFILES[visualQualityRef.current].baseExposure;
     renderer.domElement.className = "major-body-layer";
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio,
+        VISUAL_QUALITY_PROFILES[visualQualityRef.current].maximumPixelRatio,
+      ),
+    );
     container.append(renderer.domElement);
     const gpuCanvas = document.createElement("canvas");
     gpuCanvas.className = "small-body-layer";
@@ -473,6 +656,11 @@ export function SolarSystemScene({
     const labelLayer = document.createElement("div");
     labelLayer.className = "body-label-layer";
     container.append(labelLayer);
+    const cameraJourney = document.createElement("div");
+    cameraJourney.className = "camera-journey";
+    cameraJourney.setAttribute("aria-live", "polite");
+    cameraJourney.hidden = true;
+    container.append(cameraJourney);
     const markerLayer = document.createElement("div");
     markerLayer.className = "body-marker-layer";
     markerLayer.setAttribute("aria-hidden", "true");
@@ -492,6 +680,12 @@ export function SolarSystemScene({
     focusedKnownMoonLabel.addEventListener("click", () => {
       const bodyId = focusedKnownMoonLabel.dataset["bodyId"];
       if (bodyId !== undefined) {
+        onSelectBody(bodyId);
+      }
+    });
+    focusedKnownMoonLabel.addEventListener("dblclick", () => {
+      const bodyId = focusedKnownMoonLabel.dataset["bodyId"];
+      if (bodyId !== undefined) {
         onFocusBody(bodyId);
       }
     });
@@ -502,13 +696,57 @@ export function SolarSystemScene({
     issLabel.textContent = "International Space Station";
     issLabel.dataset["bodyId"] = ISS_BODY_ID;
     issLabel.setAttribute("aria-label", "Focus International Space Station");
-    issLabel.addEventListener("click", () => onFocusBody(ISS_BODY_ID));
+    issLabel.title = "Click to select; double-click to focus";
+    issLabel.addEventListener("click", () => onSelectBody(ISS_BODY_ID));
+    issLabel.addEventListener("dblclick", () => onFocusBody(ISS_BODY_ID));
     issLabel.hidden = true;
     labelLayer.append(issLabel);
     const issMarker = document.createElement("span");
     issMarker.className = "orrery-marker";
     issMarker.hidden = true;
     markerLayer.append(issMarker);
+    const voyagerLabels = new Map<string, HTMLButtonElement>();
+    const voyagerMarkers = new Map<string, HTMLSpanElement>();
+    for (const probe of voyagerSnapshot.probes) {
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "body-label";
+      label.textContent = probe.name;
+      label.dataset["bodyId"] = probe.id;
+      label.setAttribute("aria-label", `Focus ${probe.name}`);
+      label.title = "Click to select; double-click to focus";
+      label.addEventListener("click", () => onSelectBody(probe.id));
+      label.addEventListener("dblclick", () => onFocusBody(probe.id));
+      label.hidden = true;
+      labelLayer.append(label);
+      voyagerLabels.set(probe.id, label);
+      const marker = document.createElement("span");
+      marker.className = "orrery-marker";
+      marker.hidden = true;
+      markerLayer.append(marker);
+      voyagerMarkers.set(probe.id, marker);
+    }
+    const operationalSpacecraftLabels = new Map<string, HTMLButtonElement>();
+    const operationalSpacecraftMarkers = new Map<string, HTMLSpanElement>();
+    for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "body-label";
+      label.textContent = spacecraft.name;
+      label.dataset["bodyId"] = spacecraft.id;
+      label.setAttribute("aria-label", `Focus ${spacecraft.name}`);
+      label.title = "Click to select; double-click to focus";
+      label.addEventListener("click", () => onSelectBody(spacecraft.id));
+      label.addEventListener("dblclick", () => onFocusBody(spacecraft.id));
+      label.hidden = true;
+      labelLayer.append(label);
+      operationalSpacecraftLabels.set(spacecraft.id, label);
+      const marker = document.createElement("span");
+      marker.className = "orrery-marker";
+      marker.hidden = true;
+      markerLayer.append(marker);
+      operationalSpacecraftMarkers.set(spacecraft.id, marker);
+    }
     const tacticalOverlay = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "svg",
@@ -599,42 +837,100 @@ export function SolarSystemScene({
     sunGuideArrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
     sunGuideArrow.append(sunGuideArrowPath);
     sunGuideDefinitions.append(sunGuideArrow);
+    const planetGuideArrow = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "marker",
+    );
+    planetGuideArrow.id = "planet-guide-arrow";
+    planetGuideArrow.setAttribute("viewBox", "0 0 10 10");
+    planetGuideArrow.setAttribute("refX", "8");
+    planetGuideArrow.setAttribute("refY", "5");
+    planetGuideArrow.setAttribute("markerWidth", "5");
+    planetGuideArrow.setAttribute("markerHeight", "5");
+    planetGuideArrow.setAttribute("orient", "auto");
+    const planetGuideArrowPath = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "path",
+    );
+    planetGuideArrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+    planetGuideArrow.append(planetGuideArrowPath);
+    sunGuideDefinitions.append(planetGuideArrow);
     sunGuideOverlay.append(sunGuideDefinitions);
     const sunGuideLine = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "line",
     );
-    sunGuideLine.classList.add("sun-guide-line");
+    sunGuideLine.classList.add("wayfinder-line", "sun-guide-line");
     sunGuideLine.setAttribute("marker-end", "url(#sun-guide-arrow)");
     sunGuideOverlay.append(sunGuideLine);
     const sunGuideEndpoint = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "circle",
     );
-    sunGuideEndpoint.classList.add("sun-guide-endpoint");
+    sunGuideEndpoint.classList.add("wayfinder-endpoint", "sun-guide-endpoint");
     sunGuideEndpoint.setAttribute("r", "3");
     sunGuideOverlay.append(sunGuideEndpoint);
     container.append(sunGuideOverlay);
     const sunGuideLabel = document.createElement("button");
     sunGuideLabel.type = "button";
-    sunGuideLabel.className = "sun-guide-label";
+    sunGuideLabel.className = "wayfinder-label sun-guide-label";
     sunGuideLabel.setAttribute("aria-label", "Focus Sun");
-    sunGuideLabel.addEventListener("click", () => onFocusBody("sun"));
+    sunGuideLabel.title = "Click to select; double-click to focus";
+    sunGuideLabel.addEventListener("click", () => onSelectBody("sun"));
+    sunGuideLabel.addEventListener("dblclick", () => onFocusBody("sun"));
     sunGuideLabel.hidden = true;
     container.append(sunGuideLabel);
+    const planetWayfinderVisuals = Array.from({ length: 2 }, (_, index) => {
+      const line = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "line",
+      );
+      line.classList.add("wayfinder-line", "planet-guide-line");
+      line.setAttribute("marker-end", "url(#planet-guide-arrow)");
+      line.dataset["wayfinderRank"] = String(index + 1);
+      sunGuideOverlay.append(line);
+      const endpoint = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle",
+      );
+      endpoint.classList.add("wayfinder-endpoint", "planet-guide-endpoint");
+      endpoint.setAttribute("r", "3");
+      endpoint.dataset["wayfinderRank"] = String(index + 1);
+      sunGuideOverlay.append(endpoint);
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "wayfinder-label planet-guide-label";
+      label.dataset["wayfinderRank"] = String(index + 1);
+      const labelBodyId = (): string => {
+        const targetBodyId = label.dataset["targetBodyId"];
+        if (targetBodyId === undefined || targetBodyId === "") {
+          throw new Error("Planet wayfinder target is unavailable");
+        }
+        return targetBodyId;
+      };
+      label.addEventListener("click", () => onSelectBody(labelBodyId()));
+      label.addEventListener("dblclick", () => onFocusBody(labelBodyId()));
+      label.hidden = true;
+      container.append(label);
+      return { line, endpoint, label };
+    });
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
+    let interruptCameraTransition: () => void = () => undefined;
     const handleControlStart = (): void => {
+      interruptCameraTransition();
       onOrientationChange("custom");
       container.dataset["cameraOrientation"] = "custom";
     };
     controls.addEventListener("start", handleControlStart);
-    scene.add(new AmbientLight(0x9bb7dd, 0.12));
-    const sunlight = new PointLight(0xffffff, 4.5, 0, 0);
+    const ambientLight = new AmbientLight(0x7894b4, 0.045);
+    scene.add(ambientLight);
+    const sunlight = new PointLight(0xfff8ec, 7, 0, 2);
     sunlight.name = "Sunlight direction source";
     scene.add(sunlight);
+    container.dataset["solarIlluminationModel"] = "inverse-square";
 
     const starGeometry = new BufferGeometry();
     const starCount = hipparcosStarSnapshot.stars.length;
@@ -719,14 +1015,191 @@ export function SolarSystemScene({
     };
     updateStarPositions(0);
 
-    const unitSphere = new SphereGeometry(1, 64, 48);
+    const unitSphere = new SphereGeometry(1, 256, 192);
     const bodyMeshes = new Map<string, Mesh>();
+    const atmosphereMeshes = new Map<string, Mesh>();
+    const atmosphereMaterials = new Map<string, ShaderMaterial>();
     const surfaceMaterials = new Map<string, MeshStandardMaterial>();
+    const ringVisuals = new Map<
+      string,
+      Readonly<{ mesh: Mesh; material: ShaderMaterial }>
+    >();
     const bodyLabels = new Map<string, HTMLButtonElement>();
     const materials: Material[] = [starMaterial];
     const geometries: BufferGeometry[] = [unitSphere, starGeometry];
     const textures: Texture[] = [];
+
+    const alphaCentauri = hipparcosStarSnapshot.stars.find(
+      (star) => star.hipId === 71_683,
+    );
+    if (alphaCentauri === undefined) {
+      throw new Error("Alpha Centauri is missing from the Hipparcos snapshot");
+    }
+    const alphaDirectionIcrs = starDirectionIcrs(alphaCentauri, 2000);
+    const alphaCentauriOffset = new Vector3(
+      alphaDirectionIcrs[0],
+      alphaDirectionIcrs[2],
+      -alphaDirectionIcrs[1],
+    ).multiplyScalar(ALPHA_CENTAURI_DISTANCE_AU);
+    const deepSpaceGroup = new Group();
+    deepSpaceGroup.name = "Solar outer regions and Alpha Centauri scale";
+    scene.add(deepSpaceGroup);
+    const makeBoundarySphere = (
+      radiusAu: number,
+      color: number,
+      opacity: number,
+    ): Mesh => {
+      const geometry = new SphereGeometry(radiusAu, 64, 40);
+      const tint = new Color(color);
+      const material = new ShaderMaterial({
+        uniforms: {
+          boundaryColor: { value: tint },
+          boundaryOpacity: { value: opacity },
+        },
+        vertexShader: `
+          varying vec3 vNormalView;
+          varying vec3 vViewDirection;
+          void main() {
+            vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+            vNormalView = normalize(normalMatrix * normal);
+            vViewDirection = normalize(-viewPosition.xyz);
+            gl_Position = projectionMatrix * viewPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 boundaryColor;
+          uniform float boundaryOpacity;
+          varying vec3 vNormalView;
+          varying vec3 vViewDirection;
+          void main() {
+            float rim = pow(1.0 - abs(dot(vNormalView, vViewDirection)), 3.2);
+            float alpha = boundaryOpacity * (0.08 + rim * 0.92);
+            gl_FragColor = vec4(boundaryColor, alpha);
+          }
+        `,
+        side: DoubleSide,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        toneMapped: false,
+      });
+      const sphere = new Mesh(geometry, material);
+      deepSpaceGroup.add(sphere);
+      geometries.push(geometry);
+      materials.push(material);
+      return sphere;
+    };
+    const terminationShock = makeBoundarySphere(90, 0x64b5df, 0.16);
+    terminationShock.name = "Approximate termination shock";
+    const heliopause = makeBoundarySphere(120, 0x7cd6ff, 0.32);
+    heliopause.name = "Approximate heliopause";
+    const innerOortBoundary = makeBoundarySphere(
+      OORT_CLOUD_INNER_MIN_AU,
+      0x8fa8d7,
+      0.12,
+    );
+    const outerOortBoundary = makeBoundarySphere(
+      OORT_CLOUD_OUTER_MAX_AU,
+      0xaebde8,
+      0.2,
+    );
+    const oortPositions = new Float32Array(8_000 * 3);
+    const deterministicUnit = (seed: number): number => {
+      const value = Math.sin(seed * 12.9898 + 78.233) * 43_758.5453;
+      return value - Math.floor(value);
+    };
+    for (let index = 0; index < 8_000; index += 1) {
+      const unit = deterministicUnit(index * 3 + 1);
+      const radius =
+        OORT_CLOUD_INNER_MIN_AU +
+        Math.cbrt(unit) * (OORT_CLOUD_OUTER_MAX_AU - OORT_CLOUD_INNER_MIN_AU);
+      const z = 1 - 2 * deterministicUnit(index * 3 + 2);
+      const angle = deterministicUnit(index * 3 + 3) * Math.PI * 2;
+      const radial = Math.sqrt(1 - z * z);
+      oortPositions[index * 3] = radius * radial * Math.cos(angle);
+      oortPositions[index * 3 + 1] = radius * z;
+      oortPositions[index * 3 + 2] = radius * radial * Math.sin(angle);
+    }
+    const oortGeometry = new BufferGeometry();
+    oortGeometry.setAttribute(
+      "position",
+      new BufferAttribute(oortPositions, 3),
+    );
+    const oortMaterial = new PointsMaterial({
+      color: 0xaec6ee,
+      size: 0.85,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0.26,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const oortCloud = new Points(oortGeometry, oortMaterial);
+    oortCloud.name = "Illustrative Oort Cloud population";
+    deepSpaceGroup.add(oortCloud);
+    geometries.push(oortGeometry);
+    materials.push(oortMaterial);
+    const alphaGeometry = new BufferGeometry();
+    alphaGeometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array(alphaCentauriOffset.toArray()), 3),
+    );
+    const alphaMaterial = new PointsMaterial({
+      color: 0xffe2aa,
+      size: 9,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const alphaMarker = new Points(alphaGeometry, alphaMaterial);
+    alphaMarker.name = "Alpha Centauri Hipparcos locator";
+    deepSpaceGroup.add(alphaMarker);
+    geometries.push(alphaGeometry);
+    materials.push(alphaMaterial);
+    const surfaceHorizonGeometry = new BufferGeometry();
+    const surfaceHorizonPositions = new Float32Array(96 * 3);
+    const surfaceHorizonPositionAttribute = new BufferAttribute(
+      surfaceHorizonPositions,
+      3,
+    );
+    surfaceHorizonPositionAttribute.setUsage(DynamicDrawUsage);
+    surfaceHorizonGeometry.setAttribute(
+      "position",
+      surfaceHorizonPositionAttribute,
+    );
+    const surfaceHorizonMaterial = new LineBasicMaterial({
+      color: 0x9bd7ff,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const surfaceHorizon = new LineLoop(
+      surfaceHorizonGeometry,
+      surfaceHorizonMaterial,
+    );
+    surfaceHorizon.name = "Geometric surface horizon guide";
+    surfaceHorizon.visible = false;
+    scene.add(surfaceHorizon);
+    geometries.push(surfaceHorizonGeometry);
+    materials.push(surfaceHorizonMaterial);
+    const compassLabels = new Map<number, HTMLSpanElement>();
+    for (const [azimuthDeg, labelText] of [
+      [0, "N"],
+      [90, "E"],
+      [180, "S"],
+      [270, "W"],
+    ] as const) {
+      const label = document.createElement("span");
+      label.className = "surface-compass-label";
+      label.textContent = labelText;
+      label.hidden = true;
+      labelLayer.append(label);
+      compassLabels.set(azimuthDeg, label);
+    }
     const textureLoader = new TextureLoader();
+    const loadedTextures = new WeakSet<Texture>();
     const textureRequestedBodyIds = new Set<string>();
     const loadedSurfaceAssetBodyIds = new Set<string>();
     const loadTexture = (
@@ -735,17 +1208,101 @@ export function SolarSystemScene({
       onLoad?: () => void,
       onError?: () => void,
     ): Texture => {
-      const texture = textureLoader.load(url, onLoad, undefined, onError);
+      const texture = textureLoader.load(
+        url,
+        (loadedTexture) => {
+          loadedTextures.add(loadedTexture);
+          onLoad?.();
+        },
+        undefined,
+        onError,
+      );
       if (isColor) {
         texture.colorSpace = SRGBColorSpace;
       }
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.anisotropy = Math.min(
+        renderer.capabilities.getMaxAnisotropy(),
+        VISUAL_QUALITY_PROFILES[visualQualityRef.current]
+          .textureAnisotropyLimit,
+      );
       textures.push(texture);
       return texture;
     };
 
     const solarCoronaTexture = createSolarCoronaTexture();
     textures.push(solarCoronaTexture);
+    let solarCoronaMaterial: SpriteMaterial | undefined;
+    let earthCloudMaterial: MeshStandardMaterial | undefined;
+
+    const atmospherePresentations: Readonly<
+      Record<
+        string,
+        Readonly<{
+          rayleighColor: number;
+          mieColor: number;
+          rayleighStrength: number;
+          mieStrength: number;
+          mieG: number;
+        }>
+      >
+    > = {
+      earth: {
+        rayleighColor: 0x4e9cff,
+        mieColor: 0xffd5ad,
+        rayleighStrength: 0.42,
+        mieStrength: 0.1,
+        mieG: 0.74,
+      },
+      venus: {
+        rayleighColor: 0xf1d8ab,
+        mieColor: 0xffb56f,
+        rayleighStrength: 0.32,
+        mieStrength: 0.28,
+        mieG: 0.8,
+      },
+      mars: {
+        rayleighColor: 0xc98262,
+        mieColor: 0xf0ad72,
+        rayleighStrength: 0.12,
+        mieStrength: 0.16,
+        mieG: 0.72,
+      },
+      jupiter: {
+        rayleighColor: 0xd9c4a8,
+        mieColor: 0xffe3bd,
+        rayleighStrength: 0.09,
+        mieStrength: 0.08,
+        mieG: 0.68,
+      },
+      saturn: {
+        rayleighColor: 0xe1cca4,
+        mieColor: 0xffe5b6,
+        rayleighStrength: 0.1,
+        mieStrength: 0.09,
+        mieG: 0.7,
+      },
+      uranus: {
+        rayleighColor: 0x91dfe7,
+        mieColor: 0xd8fbff,
+        rayleighStrength: 0.13,
+        mieStrength: 0.05,
+        mieG: 0.65,
+      },
+      neptune: {
+        rayleighColor: 0x4b78e8,
+        mieColor: 0xb5ceff,
+        rayleighStrength: 0.15,
+        mieStrength: 0.05,
+        mieG: 0.66,
+      },
+      titan: {
+        rayleighColor: 0xc78643,
+        mieColor: 0xf3a24c,
+        rayleighStrength: 0.1,
+        mieStrength: 0.34,
+        mieG: 0.82,
+      },
+    };
 
     for (const body of majorBodySnapshot.bodies) {
       const asset = nasaTextureByBodyId.get(body.id);
@@ -803,13 +1360,13 @@ export function SolarSystemScene({
               float granulation = fbm(vUv * vec2(240.0, 120.0));
               float largerCells = fbm(vUv * vec2(54.0, 27.0) + vec2(8.7, 3.1));
               float limb = max(dot(vNormal, normalize(-vViewPosition)), 0.0);
-              vec3 umber = vec3(0.82, 0.34, 0.055);
-              vec3 warmWhite = vec3(1.0, 0.88, 0.61);
-              vec3 photosphere = vec3(1.0, 0.72, 0.27);
+              vec3 granuleEdge = vec3(0.92, 0.46, 0.08);
+              vec3 warmWhite = vec3(1.0, 0.94, 0.78);
+              vec3 photosphere = vec3(1.0, 0.78, 0.38);
               float cellContrast = smoothstep(0.28, 0.76, granulation);
-              vec3 color = mix(umber, photosphere, 0.54 + cellContrast * 0.34);
-              color = mix(color, warmWhite, smoothstep(0.48, 0.84, largerCells) * 0.2);
-              color *= 0.42 + pow(limb, 0.42) * 0.62;
+              vec3 color = mix(granuleEdge, photosphere, 0.68 + cellContrast * 0.25);
+              color = mix(color, warmWhite, smoothstep(0.45, 0.82, largerCells) * 0.38);
+              color *= 0.56 + pow(limb, 0.5) * 0.48;
               gl_FragColor = vec4(color, 1.0);
             }
           `,
@@ -855,7 +1412,7 @@ export function SolarSystemScene({
             varying vec3 vViewPosition;
             void main() {
               float rim = pow(1.0 - max(dot(vNormal, normalize(-vViewPosition)), 0.0), 5.0);
-              gl_FragColor = vec4(glowColor, rim * 0.17);
+              gl_FragColor = vec4(glowColor, rim * 0.075);
             }
           `,
           transparent: true,
@@ -871,19 +1428,21 @@ export function SolarSystemScene({
 
         const coronaMaterial = new SpriteMaterial({
           map: solarCoronaTexture,
-          color: 0xffd39a,
+          color: 0xfff0d4,
           transparent: true,
-          opacity: 0.32,
+          opacity:
+            VISUAL_QUALITY_PROFILES[visualQualityRef.current].coronaOpacity,
           blending: AdditiveBlending,
           depthWrite: false,
           depthTest: true,
           toneMapped: false,
         });
+        solarCoronaMaterial = coronaMaterial;
         materials.push(coronaMaterial);
         const corona = new Sprite(coronaMaterial);
         corona.name = "Sun procedural corona presentation";
         corona.userData["bodyId"] = body.id;
-        corona.scale.set(2.7, 2.7, 1);
+        corona.scale.set(2.12, 2.12, 1);
         corona.renderOrder = -1;
         mesh.add(corona);
 
@@ -899,7 +1458,9 @@ export function SolarSystemScene({
       label.textContent = body.name;
       label.dataset["bodyId"] = body.id;
       label.setAttribute("aria-label", `Focus ${body.name}`);
-      label.addEventListener("click", () => onFocusBody(body.id));
+      label.title = "Click to select; double-click to focus";
+      label.addEventListener("click", () => onSelectBody(body.id));
+      label.addEventListener("dblclick", () => onFocusBody(body.id));
       label.dataset["surfaceAssetState"] =
         body.type === "star"
           ? "procedural"
@@ -911,41 +1472,88 @@ export function SolarSystemScene({
       labelLayer.append(label);
       bodyLabels.set(body.id, label);
 
-      const atmosphereColors: Readonly<Record<string, number>> = {
-        earth: 0x5ba9ff,
-        venus: 0xf4d7a1,
-        mars: 0xd59772,
-        jupiter: 0xe4c7a0,
-        saturn: 0xe9d29c,
-        uranus: 0x9eeaff,
-        neptune: 0x5b83ff,
-        titan: 0xe6a24d,
-      };
-      const atmosphereColor = atmosphereColors[body.id];
-      if (atmosphereColor !== undefined) {
+      const atmospherePresentation = atmospherePresentations[body.id];
+      if (atmospherePresentation !== undefined) {
         const atmosphereMaterial = new ShaderMaterial({
           uniforms: {
-            glowColor: { value: new Color(atmosphereColor) },
-            glowOpacity: { value: body.id === "earth" ? 0.58 : 0.34 },
+            rayleighColor: {
+              value: new Color(atmospherePresentation.rayleighColor),
+            },
+            mieColor: { value: new Color(atmospherePresentation.mieColor) },
+            rayleighStrength: {
+              value: atmospherePresentation.rayleighStrength,
+            },
+            mieStrength: { value: atmospherePresentation.mieStrength },
+            mieG: { value: atmospherePresentation.mieG },
+            qualityStrength: {
+              value:
+                VISUAL_QUALITY_PROFILES[visualQualityRef.current]
+                  .atmosphereStrength,
+            },
+            solarFlux: { value: 1 },
+            sunPositionWorld: { value: sunlight.position },
           },
           vertexShader: `
-            varying vec3 vNormal;
+            varying vec3 vWorldNormal;
+            varying vec3 vWorldPosition;
+            varying vec3 vViewNormal;
             varying vec3 vViewPosition;
             void main() {
               vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-              vNormal = normalize(normalMatrix * normal);
+              vWorldNormal = normalize(mat3(modelMatrix) * normal);
+              vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+              vViewNormal = normalize(normalMatrix * normal);
               vViewPosition = viewPosition.xyz;
               gl_Position = projectionMatrix * viewPosition;
             }
           `,
           fragmentShader: `
-            uniform vec3 glowColor;
-            uniform float glowOpacity;
-            varying vec3 vNormal;
+            const float PI = 3.141592653589793;
+            uniform vec3 rayleighColor;
+            uniform vec3 mieColor;
+            uniform float rayleighStrength;
+            uniform float mieStrength;
+            uniform float mieG;
+            uniform float qualityStrength;
+            uniform float solarFlux;
+            uniform vec3 sunPositionWorld;
+            varying vec3 vWorldNormal;
+            varying vec3 vWorldPosition;
+            varying vec3 vViewNormal;
             varying vec3 vViewPosition;
             void main() {
-              float rim = pow(1.0 - max(dot(vNormal, normalize(-vViewPosition)), 0.0), 2.4);
-              gl_FragColor = vec4(glowColor, rim * glowOpacity);
+              vec3 normal = normalize(vWorldNormal);
+              vec3 lightDirection = normalize(sunPositionWorld - vWorldPosition);
+              vec3 viewDirection = normalize(-vViewPosition);
+              float viewCosine = max(
+                dot(normalize(vViewNormal), viewDirection),
+                0.0
+              );
+              float tangentPath = pow(1.0 - viewCosine, 0.58);
+              float sunCosine = dot(normal, lightDirection);
+              float daylight = smoothstep(-0.24, 0.18, sunCosine);
+              float scatteringAngleCosine = dot(viewDirection, lightDirection);
+              float rayleighPhase =
+                3.0 * (1.0 + scatteringAngleCosine * scatteringAngleCosine) /
+                (16.0 * PI);
+              float mieDenominator = max(
+                1.0 + mieG * mieG - 2.0 * mieG * scatteringAngleCosine,
+                0.001
+              );
+              float miePhase =
+                (1.0 - mieG * mieG) /
+                (4.0 * PI * pow(mieDenominator, 1.5));
+              vec3 scattering =
+                rayleighColor * rayleighStrength * rayleighPhase +
+                mieColor * mieStrength * min(miePhase, 2.4);
+              float opticalDepth =
+                tangentPath * daylight * qualityStrength * solarFlux;
+              float alpha = clamp(
+                opticalDepth * (rayleighStrength + mieStrength) * 2.1,
+                0.0,
+                0.62
+              );
+              gl_FragColor = vec4(scattering * opticalDepth * 3.4, alpha);
             }
           `,
           transparent: true,
@@ -955,8 +1563,14 @@ export function SolarSystemScene({
         materials.push(atmosphereMaterial);
         const atmosphere = new Mesh(unitSphere, atmosphereMaterial);
         atmosphere.name = `${body.name} atmosphere visualization`;
-        atmosphere.scale.setScalar(1.04);
+        atmosphere.scale.setScalar(
+          body.id === "earth" ? 1.025 : body.type === "moon" ? 1.02 : 1.012,
+        );
         mesh.add(atmosphere);
+        atmosphereMeshes.set(body.id, atmosphere);
+        atmosphereMaterials.set(body.id, atmosphereMaterial);
+        container.dataset["atmosphereModel"] =
+          "sunlit-single-scattering-approximation";
       }
 
       if (body.id === "saturn" || body.id === "uranus") {
@@ -1005,43 +1619,88 @@ export function SolarSystemScene({
             useObservedRingProfile: {
               value: observedRingTexture === undefined ? 0 : 1,
             },
+            sunDirectionLocal: { value: new Vector3(0, 0, 1) },
+            solarFlux: { value: 1 },
           },
           vertexShader: `
             varying float vRadius;
+            varying vec3 vLocalPosition;
             void main() {
               vRadius = length(position.xy);
+              vLocalPosition = position;
               gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
           `,
           fragmentShader: `
+            const float SCENE_LIGHT_SCALE = 12.0;
+            const float SOURCE_PROFILE_EXPOSURE = 6.0;
             uniform vec3 ringColor;
             uniform float innerRadius;
             uniform float outerRadius;
             uniform float baseOpacity;
             uniform sampler2D observedRingProfile;
             uniform float useObservedRingProfile;
+            uniform vec3 sunDirectionLocal;
+            uniform float solarFlux;
             varying float vRadius;
+            varying vec3 vLocalPosition;
             void main() {
               float normalizedRadius = (vRadius - innerRadius) / (outerRadius - innerRadius);
               float edge = smoothstep(0.0, 0.025, normalizedRadius) * (1.0 - smoothstep(0.975, 1.0, normalizedRadius));
+              vec3 ringNormal = vec3(0.0, 0.0, gl_FrontFacing ? 1.0 : -1.0);
+              float incidence = abs(dot(ringNormal, normalize(sunDirectionLocal)));
+              float directLight = 0.12 + 0.88 * sqrt(incidence);
+              vec3 rayOrigin = vec3(vLocalPosition.xy, 0.0);
+              vec3 rayDirection = normalize(sunDirectionLocal);
+              float rayProjection = dot(rayOrigin, rayDirection);
+              float discriminant =
+                rayProjection * rayProjection - (dot(rayOrigin, rayOrigin) - 1.0);
+              float planetShadow = 1.0;
+              if (discriminant > 0.0) {
+                float nearestHit = -rayProjection - sqrt(discriminant);
+                if (nearestHit > 0.0) {
+                  planetShadow = 0.12;
+                }
+              }
+              // A ring pixel represents an unresolved column of icy particles,
+              // not a solid sheet. Keep the direct beam and planet shadow,
+              // then add bounded light scattered between particles. This avoids
+              // falsely black rings at low solar elevation while preserving the
+              // observed radial brightness profile and the planet's shadow.
+              float particleScattering = 0.17 + 0.10 * (1.0 - incidence);
+              float illumination =
+                (directLight * planetShadow + particleScattering) * solarFlux;
               if (useObservedRingProfile > 0.5) {
                 vec3 observed = texture2D(
                   observedRingProfile,
                   vec2(clamp(normalizedRadius, 0.0, 1.0), 0.5)
                 ).rgb;
                 float luminance = dot(observed, vec3(0.2126, 0.7152, 0.0722));
-                float opacity = smoothstep(0.012, 0.11, luminance);
-                gl_FragColor = vec4(observed * 1.08, opacity * 0.88 * edge);
+                float opticalDensity = smoothstep(0.006, 0.16, luminance);
+                vec3 observedChromaticity =
+                  observed / max(luminance, 0.012);
+                vec3 iceColor =
+                  ringColor * mix(vec3(1.0), observedChromaticity, 0.22);
+                float profileBrightness =
+                  0.32 + 0.68 * sqrt(opticalDensity);
+                gl_FragColor = vec4(
+                  iceColor * profileBrightness * illumination *
+                    SCENE_LIGHT_SCALE * SOURCE_PROFILE_EXPOSURE,
+                  opticalDensity * 0.9 * edge
+                );
               } else {
                 float bands = 0.62 + 0.28 * sin(normalizedRadius * 84.0) + 0.10 * sin(normalizedRadius * 233.0);
-                gl_FragColor = vec4(ringColor * (0.72 + bands * 0.28), baseOpacity * bands * edge);
+                gl_FragColor = vec4(
+                  ringColor * (0.72 + bands * 0.28) * illumination,
+                  baseOpacity * bands * edge
+                );
               }
             }
           `,
           side: DoubleSide,
           transparent: true,
           depthWrite: false,
-          toneMapped: false,
+          toneMapped: true,
         });
         materials.push(ringMaterial);
         const rings = new Mesh(ringGeometry, ringMaterial);
@@ -1051,102 +1710,411 @@ export function SolarSystemScene({
             : `${body.name} ring-plane visualization`;
         rings.rotation.x = Math.PI / 2;
         mesh.add(rings);
+        ringVisuals.set(body.id, { mesh: rings, material: ringMaterial });
+        if (body.id === "saturn") {
+          container.dataset["saturnRingLighting"] =
+            "solar-incidence-planet-shadow-and-unresolved-particle-scattering";
+        }
       }
     }
 
-    const issGroup = new Group();
-    issGroup.name = "NASA-dimensioned International Space Station model";
-    issGroup.visible = false;
-    scene.add(issGroup);
-    const issStructureMaterial = new MeshStandardMaterial({
-      color: 0xf0f3f5,
-      emissive: 0x2d343b,
-      emissiveIntensity: 0.7,
-      roughness: 0.58,
-      metalness: 0.42,
-    });
-    const issSolarMaterial = new MeshStandardMaterial({
-      color: 0x345f9f,
-      emissive: 0x10264a,
-      emissiveIntensity: 0.85,
-      roughness: 0.68,
-      metalness: 0.16,
-      side: DoubleSide,
-    });
-    materials.push(issStructureMaterial, issSolarMaterial);
-    const issSelectableMeshes: Mesh[] = [];
-    const addIssBox = (
-      name: string,
-      dimensionsM: readonly [number, number, number],
-      positionM: readonly [number, number, number],
-      material: MeshStandardMaterial,
-    ): void => {
-      const geometry = new BoxGeometry(
-        dimensionsM[0] / ASTRONOMICAL_UNIT_M,
-        dimensionsM[1] / ASTRONOMICAL_UNIT_M,
-        dimensionsM[2] / ASTRONOMICAL_UNIT_M,
-      );
-      geometries.push(geometry);
-      const mesh = new Mesh(geometry, material);
-      mesh.name = name;
-      mesh.position.set(
-        positionM[0] / ASTRONOMICAL_UNIT_M,
-        positionM[1] / ASTRONOMICAL_UNIT_M,
-        positionM[2] / ASTRONOMICAL_UNIT_M,
-      );
-      mesh.userData["bodyId"] = ISS_BODY_ID;
-      issSelectableMeshes.push(mesh);
-      issGroup.add(mesh);
-    };
-    addIssBox(
-      "ISS main truss",
-      [issSnapshot.physicalDimensions.trussLengthM, 1.3, 1.3],
-      [0, 0, 0],
-      issStructureMaterial,
-    );
-    addIssBox(
-      "ISS pressurized modules",
-      [5, 5, issSnapshot.physicalDimensions.pressurizedModuleLengthM],
-      [0, -2, 0],
-      issStructureMaterial,
-    );
-    for (const xM of [-49.5, -16.5, 16.5, 49.5]) {
-      for (const zM of [-19.25, 19.25]) {
-        addIssBox(
-          "ISS solar array wing",
-          [10, 0.2, 34.5],
-          [xM, 0, zM],
-          issSolarMaterial,
+    const spacecraftGroups = new Map<string, Group>();
+    const spacecraftSelectableMeshes: Mesh[] = [];
+    const spacecraftModelStatus = document.createElement("span");
+    spacecraftModelStatus.className = "scene-error";
+    spacecraftModelStatus.setAttribute("role", "alert");
+    spacecraftModelStatus.hidden = true;
+    container.append(spacecraftModelStatus);
+    const gltfLoader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath("/draco/");
+    dracoLoader.setWorkerLimit(2);
+    gltfLoader.setDRACOLoader(dracoLoader);
+    let modelLoadingActive = true;
+    const modelLoadPromises = spacecraftAssets.map(async (asset) => {
+      const group = new Group();
+      group.name = `${asset.bodyId} official NASA 3D model`;
+      group.visible = false;
+      spacecraftGroups.set(asset.bodyId, group);
+      scene.add(group);
+      try {
+        const gltf = await gltfLoader.loadAsync(asset.modelUrl);
+        const model = gltf.scene;
+        if (!modelLoadingActive) {
+          model.traverse((object) => {
+            if (object.type === "Mesh") {
+              const mesh = object as Mesh;
+              mesh.geometry.dispose();
+              const loadedMaterials = Array.isArray(mesh.material)
+                ? mesh.material
+                : [mesh.material];
+              for (const material of loadedMaterials) material.dispose();
+            }
+          });
+          return;
+        }
+        model.updateMatrixWorld(true);
+        const sourceBounds = new Box3().setFromObject(model);
+        const sourceSize = new Vector3();
+        const sourceCenter = new Vector3();
+        sourceBounds.getSize(sourceSize);
+        sourceBounds.getCenter(sourceCenter);
+        const sourceMaximumDimension = Math.max(
+          sourceSize.x,
+          sourceSize.y,
+          sourceSize.z,
         );
+        if (
+          !Number.isFinite(sourceMaximumDimension) ||
+          sourceMaximumDimension <= 0
+        ) {
+          throw new Error(
+            `${asset.bodyId} model has invalid source dimensions`,
+          );
+        }
+        const physicalScale =
+          asset.maximumDimensionM /
+          ASTRONOMICAL_UNIT_M /
+          sourceMaximumDimension;
+        model.scale.setScalar(physicalScale);
+        model.position.copy(sourceCenter).multiplyScalar(-physicalScale);
+        model.traverse((object) => {
+          object.userData["bodyId"] = asset.bodyId;
+          if (object.type === "Mesh") {
+            const mesh = object as Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            spacecraftSelectableMeshes.push(mesh);
+            geometries.push(mesh.geometry);
+            const loadedMaterials = Array.isArray(mesh.material)
+              ? mesh.material
+              : [mesh.material];
+            for (const material of loadedMaterials) {
+              materials.push(material);
+              for (const propertyName of Object.keys(material)) {
+                const value: unknown = Reflect.get(material, propertyName);
+                if (value instanceof Texture) {
+                  textures.push(value as Texture);
+                }
+              }
+            }
+          }
+        });
+        group.add(model);
+        container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
+          "true";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        spacecraftModelStatus.hidden = false;
+        spacecraftModelStatus.textContent = `Official spacecraft model failed to load: ${message}`;
+        container.dataset["spacecraftModelError"] = message;
+        throw error;
       }
+    });
+    void Promise.all(modelLoadPromises)
+      .then(() => {
+        container.dataset["spacecraftModelsLoaded"] = String(
+          spacecraftAssets.length,
+        );
+      })
+      .catch(() => undefined);
+    const issGroup = spacecraftGroups.get(ISS_BODY_ID);
+    if (issGroup === undefined) {
+      throw new Error("ISS official model group is unavailable");
     }
-    addIssBox(
-      "ISS central radiator",
-      [24, 0.18, 6],
-      [0, 3, 0],
-      issStructureMaterial,
+    const voyagerGroups = new Map(
+      voyagerSnapshot.probes.map((probe) => {
+        const group = spacecraftGroups.get(probe.id);
+        if (group === undefined) {
+          throw new Error(`${probe.name} official model group is unavailable`);
+        }
+        return [probe.id, group] as const;
+      }),
     );
+
+    const bodyHoverTooltip = document.createElement("div");
+    bodyHoverTooltip.className = "body-hover-tooltip";
+    bodyHoverTooltip.setAttribute("role", "tooltip");
+    bodyHoverTooltip.hidden = true;
+    container.append(bodyHoverTooltip);
+
+    const deepSpaceLabels = [
+      { id: "heliopause", text: "Heliopause · about 120 AU" },
+      { id: "oort-cloud", text: "Oort Cloud · estimated 2,000-100,000 AU" },
+      { id: "alpha-centauri", text: "Alpha Centauri · 4.3 light-years" },
+    ].map(({ id, text: labelText }) => {
+      const label = document.createElement("span");
+      label.className = "deep-space-label";
+      label.dataset["regionId"] = id;
+      label.textContent = labelText;
+      label.hidden = true;
+      container.append(label);
+      return label;
+    });
+    const deepSunLabel = document.createElement("span");
+    deepSunLabel.className = "deep-space-label deep-space-sun-label";
+    deepSunLabel.textContent = "Sun · Solar System origin";
+    deepSunLabel.hidden = true;
+    container.append(deepSunLabel);
+    const navigationMap = document.createElement("div");
+    navigationMap.className = "reality-navigation-map";
+    navigationMap.setAttribute("aria-label", "Solar System navigation map");
+    const navigationMapTitle = document.createElement("strong");
+    navigationMapTitle.textContent = "NAVIGATION";
+    const navigationMapCanvas = document.createElement("canvas");
+    navigationMapCanvas.width = 320;
+    navigationMapCanvas.height = 240;
+    navigationMapCanvas.setAttribute("role", "img");
+    navigationMapCanvas.setAttribute(
+      "aria-label",
+      "Top-down map showing the Sun, planets, current location and view direction",
+    );
+    const navigationMapScale = document.createElement("small");
+    navigationMap.append(
+      navigationMapTitle,
+      navigationMapCanvas,
+      navigationMapScale,
+    );
+    container.append(navigationMap);
+    const navigationContext = navigationMapCanvas.getContext("2d");
+    if (navigationContext === null) {
+      throw new Error("Reality navigation map 2D context is unavailable");
+    }
 
     const raycaster = new Raycaster();
     const pointer = new Vector2();
-    const handleDoubleClick = (event: MouseEvent): void => {
+    let surfacePointerId: number | undefined;
+    let selectionPointerId: number | undefined;
+    let selectionPointerStartX = 0;
+    let selectionPointerStartY = 0;
+    let selectionPointerMoved = false;
+    let surfacePointerX = 0;
+    let surfacePointerY = 0;
+    let surfaceFreeLook = false;
+    let surfaceLookAzimuthDeg = 0;
+    let surfaceLookAltitudeDeg = 0;
+    let latestSurfaceObservation: SurfaceObserverFrame | undefined;
+    let lastSurfaceConfigurationKey = "";
+    let lastSurfaceLookResetToken = surfaceObserverLookResetTokenRef.current;
+
+    const bodyIdFromIntersection = (
+      intersection: ReturnType<Raycaster["intersectObjects"]>[number],
+    ): string | undefined => {
+      let object: Object3D | null = intersection.object;
+      while (object !== null) {
+        const bodyId: unknown = object.userData["bodyId"];
+        if (typeof bodyId === "string") {
+          return bodyId;
+        }
+        object = object.parent;
+      }
+      return undefined;
+    };
+
+    const bodyTooltipText = (bodyId: string): string => {
+      const body = majorBodyById.get(bodyId);
+      if (body !== undefined) {
+        const parentName = majorBodyById.get(
+          PARENT_BODY_ID[bodyId] ?? "",
+        )?.name;
+        const typeLabel = body.type.replace("-", " ");
+        return parentName === undefined
+          ? `${body.name} · ${typeLabel}`
+          : `${body.name} · ${typeLabel} of ${parentName}`;
+      }
+      const knownMoon = knownSatelliteById.get(bodyId);
+      if (knownMoon !== undefined) {
+        const parentName = majorBodyById.get(knownMoon.parentId)?.name;
+        return `${knownMoon.name} · moon${parentName === undefined ? "" : ` of ${parentName}`}`;
+      }
+      if (bodyId === ISS_BODY_ID) {
+        return "International Space Station · spacecraft orbiting Earth";
+      }
+      const voyager = isVoyagerBodyId(bodyId)
+        ? voyagerById.get(bodyId)
+        : undefined;
+      if (voyager !== undefined) {
+        return `${voyager.name} · interstellar spacecraft`;
+      }
+      const operational = operationalSpacecraftSnapshot.spacecraft.find(
+        (spacecraft) => spacecraft.id === bodyId,
+      );
+      if (operational !== undefined) {
+        return `${operational.name} · spacecraft`;
+      }
+      throw new Error(`Hover target ${bodyId} has no display definition`);
+    };
+
+    const updatePointer = (event: MouseEvent | PointerEvent): void => {
       const bounds = renderer.domElement.getBoundingClientRect();
       pointer.set(
         ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
         -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
       );
+    };
+
+    const bodyIdAtPointer = (
+      event: MouseEvent | PointerEvent,
+    ): string | undefined => {
+      updatePointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const selected = raycaster
+      const intersection = raycaster
         .intersectObjects(
-          [...bodyMeshes.values(), ...issSelectableMeshes],
+          [...bodyMeshes.values(), ...spacecraftSelectableMeshes],
           true,
         )
-        .find((intersection) => intersection.object.visible);
-      const bodyId: unknown = selected?.object.userData["bodyId"];
-      if (typeof bodyId === "string") {
+        .find((candidate) => candidate.object.visible);
+      return intersection === undefined
+        ? undefined
+        : bodyIdFromIntersection(intersection);
+    };
+
+    const hideBodyHoverTooltip = (): void => {
+      bodyHoverTooltip.hidden = true;
+      delete bodyHoverTooltip.dataset["bodyId"];
+    };
+
+    const updateBodyHoverTooltip = (event: PointerEvent): void => {
+      if (surfacePointerId !== undefined) {
+        hideBodyHoverTooltip();
+        return;
+      }
+      const bodyId = bodyIdAtPointer(event);
+      if (bodyId === undefined) {
+        hideBodyHoverTooltip();
+        return;
+      }
+      bodyHoverTooltip.textContent = bodyTooltipText(bodyId);
+      bodyHoverTooltip.dataset["bodyId"] = bodyId;
+      bodyHoverTooltip.hidden = false;
+      const bounds = renderer.domElement.getBoundingClientRect();
+      const left = Math.min(
+        container.clientWidth - bodyHoverTooltip.offsetWidth - 10,
+        Math.max(10, event.clientX - bounds.left + 14),
+      );
+      const top = Math.min(
+        container.clientHeight - bodyHoverTooltip.offsetHeight - 10,
+        Math.max(10, event.clientY - bounds.top + 14),
+      );
+      bodyHoverTooltip.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
+    };
+
+    const handleSurfacePointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0) {
+        return;
+      }
+      if (surfaceObserverRef.current === null) {
+        selectionPointerId = event.pointerId;
+        selectionPointerStartX = event.clientX;
+        selectionPointerStartY = event.clientY;
+        selectionPointerMoved = false;
+        return;
+      }
+      surfacePointerId = event.pointerId;
+      surfacePointerX = event.clientX;
+      surfacePointerY = event.clientY;
+      renderer.domElement.setPointerCapture(event.pointerId);
+      renderer.domElement.dataset["surfaceLookDragging"] = "true";
+      hideBodyHoverTooltip();
+      event.preventDefault();
+    };
+
+    const handleSurfacePointerMove = (event: PointerEvent): void => {
+      if (selectionPointerId === event.pointerId) {
+        selectionPointerMoved =
+          selectionPointerMoved ||
+          Math.hypot(
+            event.clientX - selectionPointerStartX,
+            event.clientY - selectionPointerStartY,
+          ) > 5;
+        if (selectionPointerMoved) {
+          hideBodyHoverTooltip();
+          return;
+        }
+      }
+      if (surfacePointerId !== event.pointerId) {
+        updateBodyHoverTooltip(event);
+        return;
+      }
+      const observation = latestSurfaceObservation;
+      if (observation === undefined) {
+        throw new Error("Surface free-look has no current observer frame");
+      }
+      if (!surfaceFreeLook) {
+        surfaceLookAzimuthDeg = observation.targetAzimuthDeg;
+        surfaceLookAltitudeDeg = observation.targetAltitudeDeg;
+        surfaceFreeLook = true;
+      }
+      const deltaX = event.clientX - surfacePointerX;
+      const deltaY = event.clientY - surfacePointerY;
+      surfacePointerX = event.clientX;
+      surfacePointerY = event.clientY;
+      surfaceLookAzimuthDeg =
+        (surfaceLookAzimuthDeg - deltaX * 0.16 + 360) % 360;
+      surfaceLookAltitudeDeg = Math.max(
+        -89.5,
+        Math.min(89.5, surfaceLookAltitudeDeg - deltaY * 0.16),
+      );
+      container.dataset["surfaceFreeLook"] = "true";
+      event.preventDefault();
+    };
+
+    const handleSurfacePointerUp = (event: PointerEvent): void => {
+      if (selectionPointerId === event.pointerId) {
+        if (!selectionPointerMoved) {
+          const bodyId = bodyIdAtPointer(event);
+          if (bodyId !== undefined) {
+            onSelectBody(bodyId);
+          }
+        }
+        selectionPointerId = undefined;
+        selectionPointerMoved = false;
+        return;
+      }
+      if (surfacePointerId !== event.pointerId) {
+        return;
+      }
+      renderer.domElement.releasePointerCapture(event.pointerId);
+      surfacePointerId = undefined;
+      delete renderer.domElement.dataset["surfaceLookDragging"];
+    };
+
+    const handlePointerCancel = (event: PointerEvent): void => {
+      if (selectionPointerId === event.pointerId) {
+        selectionPointerId = undefined;
+        selectionPointerMoved = false;
+      }
+      if (surfacePointerId === event.pointerId) {
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+        surfacePointerId = undefined;
+        delete renderer.domElement.dataset["surfaceLookDragging"];
+      }
+    };
+
+    const handleDoubleClick = (event: MouseEvent): void => {
+      if (surfaceObserverRef.current !== null) {
+        surfaceFreeLook = false;
+        container.dataset["surfaceFreeLook"] = "false";
+        return;
+      }
+      const bodyId = bodyIdAtPointer(event);
+      if (bodyId !== undefined) {
         onFocusBody(bodyId);
       }
     };
+    renderer.domElement.addEventListener(
+      "pointerdown",
+      handleSurfacePointerDown,
+    );
+    renderer.domElement.addEventListener(
+      "pointermove",
+      handleSurfacePointerMove,
+    );
+    renderer.domElement.addEventListener("pointerup", handleSurfacePointerUp);
+    renderer.domElement.addEventListener("pointercancel", handlePointerCancel);
+    renderer.domElement.addEventListener("pointerleave", hideBodyHoverTooltip);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
     const knownMoonPointMaterial = new PointsMaterial({
@@ -1237,7 +2205,7 @@ export function SolarSystemScene({
       );
       if (bodyId === "moon" && nasaMoonHeightAsset !== undefined) {
         surfaceMaterial.bumpMap = loadTexture(nasaMoonHeightAsset.file, false);
-        surfaceMaterial.bumpScale = 0.035;
+        surfaceMaterial.bumpScale = 0.018;
       }
       if (bodyId === "earth" && nasaEarthCloudAsset !== undefined) {
         const cloudMaterial = new MeshStandardMaterial({
@@ -1248,12 +2216,16 @@ export function SolarSystemScene({
           roughness: 1,
           metalness: 0,
           depthWrite: false,
+          alphaTest: 0.018,
         });
+        earthCloudMaterial = cloudMaterial;
         materials.push(cloudMaterial);
         const clouds = new Mesh(unitSphere, cloudMaterial);
         clouds.name = "NASA Blue Marble static Earth cloud composite";
         clouds.scale.setScalar(1.018);
         bodyMeshes.get("earth")?.add(clouds);
+        container.dataset["earthCloudPresentation"] =
+          "static-authority-composite-not-live-weather";
       }
       surfaceMaterial.needsUpdate = true;
     };
@@ -1437,10 +2409,23 @@ export function SolarSystemScene({
           startPosition: Vector3;
           startTarget: Vector3;
           startUp: Vector3;
-          overviewPosition: Vector3;
-          overviewTarget: Vector3;
+          overviewStartPosition: Vector3;
+          overviewStartTarget: Vector3;
+          departureAnchor: Vector3;
+          overviewEndPosition: Vector3;
+          overviewEndTarget: Vector3;
+          destinationAnchor: Vector3;
+          destinationOverviewAnchorBodyId: string | undefined;
+          overviewEndDistanceAu: number;
+          isObserverDestination: boolean;
           endPosition: Vector3;
           endTarget: Vector3;
+          endOffset: Vector3;
+          destinationFocusBodyId: string | null;
+          destinationTargetBodyId: string | undefined;
+          departureName: string;
+          destinationName: string;
+          journeyDistanceAu: number;
           endUp: Vector3;
           endNear: number;
           endFar: number;
@@ -1449,12 +2434,19 @@ export function SolarSystemScene({
         }
       | undefined;
     let lastCameraZoom = Number.NaN;
+    let viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
+    let lastReportedViewZoom = Number.NaN;
     let activeFrameEndTime: number | undefined;
     let lastSemanticZoomLevel: SemanticZoomLevel | undefined;
     let lastSmallBodyGpuUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSunGuideUpdateAt = Number.NEGATIVE_INFINITY;
+    let lastNavigationMapUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSmallBodiesVisible: boolean | undefined;
     let lastSceneMutationKey = "";
+    let lastVisualQuality: VisualQuality | undefined;
+    let currentExposure = renderer.toneMappingExposure;
+    let lastRenderedAtMs = performance.now();
+    let frameIntervalEmaMs = 1000 / 60;
 
     const resize = (width: number, height: number): void => {
       if (width <= 0 || height <= 0) {
@@ -1473,6 +2465,49 @@ export function SolarSystemScene({
     });
     resizeObserver.observe(container);
     resize(container.clientWidth, container.clientHeight);
+
+    const applyVisualQuality = (quality: VisualQuality): void => {
+      const profile = VISUAL_QUALITY_PROFILES[quality];
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, profile.maximumPixelRatio),
+      );
+      for (const texture of textures) {
+        texture.anisotropy = Math.min(
+          renderer.capabilities.getMaxAnisotropy(),
+          profile.textureAnisotropyLimit,
+        );
+        if (loadedTextures.has(texture)) {
+          texture.needsUpdate = true;
+        }
+      }
+      for (const material of atmosphereMaterials.values()) {
+        setRequiredNumberUniform(
+          material,
+          "qualityStrength",
+          profile.atmosphereStrength,
+        );
+      }
+      if (solarCoronaMaterial !== undefined) {
+        solarCoronaMaterial.opacity = profile.coronaOpacity;
+      }
+      if (earthCloudMaterial !== undefined) {
+        earthCloudMaterial.opacity =
+          quality === "battery" ? 0.5 : quality === "balanced" ? 0.62 : 0.72;
+      }
+      resize(container.clientWidth, container.clientHeight);
+      container.dataset["visualQuality"] = quality;
+      container.dataset["renderPixelRatio"] = renderer
+        .getPixelRatio()
+        .toFixed(2);
+      container.dataset["textureAnisotropy"] = String(
+        Math.min(
+          renderer.capabilities.getMaxAnisotropy(),
+          profile.textureAnisotropyLimit,
+        ),
+      );
+      lastVisualQuality = quality;
+    };
+    applyVisualQuality(visualQualityRef.current);
 
     const snapshotAbortController = new AbortController();
     let gpuLayer: SmallBodyGpuLayer | undefined;
@@ -1697,6 +2732,39 @@ export function SolarSystemScene({
       return viewpoint.position;
     };
 
+    const parentFacingCameraDirection = (
+      bodyId: string,
+      bodyPosition: Vector3,
+      parentPosition: Vector3 | undefined,
+      elapsedSeconds: number,
+    ): Vector3 => {
+      if (parentPosition === undefined) {
+        return PERSPECTIVE_CAMERA_DIRECTION.clone();
+      }
+      const parentDirection = parentPosition
+        .clone()
+        .sub(bodyPosition)
+        .normalize();
+      if (bodyId !== "saturn" && bodyId !== "uranus") {
+        return parentDirection
+          .add(ECLIPTIC_NORTH.clone().multiplyScalar(0.2))
+          .normalize();
+      }
+      const spinPole = new Vector3(0, 1, 0).applyQuaternion(
+        bodyOrientationQuaternion(bodyId, elapsedSeconds),
+      );
+      const polePerpendicularToParent = spinPole.addScaledVector(
+        parentDirection,
+        -spinPole.dot(parentDirection),
+      );
+      if (polePerpendicularToParent.lengthSq() < 1e-12) {
+        return parentDirection;
+      }
+      return parentDirection
+        .add(polePerpendicularToParent.normalize().multiplyScalar(0.38))
+        .normalize();
+    };
+
     const resetCamera = (
       requestedFocusBodyId: string | null,
       current: SimulationState | undefined,
@@ -1707,6 +2775,7 @@ export function SolarSystemScene({
         camera.updateProjectionMatrix();
         camera.position.copy(SOLAR_SYSTEM_CAMERA_POSITION);
         controls.target.set(0, 0, 0);
+        viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
         controls.minDistance = 0;
         controls.maxDistance = Number.POSITIVE_INFINITY;
         delete container.dataset["focusDistanceAu"];
@@ -1720,11 +2789,18 @@ export function SolarSystemScene({
       );
       const knownFocusDefinition = knownSatelliteById.get(requestedFocusBodyId);
       const isIssFocus = requestedFocusBodyId === ISS_BODY_ID;
+      const isVoyagerFocus = isVoyagerBodyId(requestedFocusBodyId);
+      const isOperationalSpacecraftFocus =
+        isOperationalSpacecraftBodyId(requestedFocusBodyId);
+      const isSpacecraftFocus =
+        isIssFocus || isVoyagerFocus || isOperationalSpacecraftFocus;
       const focusState = bodyStateById(current, requestedFocusBodyId);
       if (
         (focusDefinition === undefined &&
           knownFocusDefinition === undefined &&
-          !isIssFocus) ||
+          !isIssFocus &&
+          !isVoyagerFocus &&
+          !isOperationalSpacecraftFocus) ||
         focusState === undefined
       ) {
         throw new Error(`Focus body ${requestedFocusBodyId} is unavailable`);
@@ -1740,10 +2816,10 @@ export function SolarSystemScene({
           `Camera target body ${requestedTargetBodyId} is unavailable`,
         );
       }
-      camera.near = isIssFocus
-        ? 0.5 / ASTRONOMICAL_UNIT_M
+      camera.near = isSpacecraftFocus
+        ? 0.05 / ASTRONOMICAL_UNIT_M
         : DEFAULT_CAMERA_NEAR_AU;
-      camera.far = isIssFocus ? 0.1 : DEFAULT_CAMERA_FAR_AU;
+      camera.far = isSpacecraftFocus ? 500 : DEFAULT_CAMERA_FAR_AU;
       camera.updateProjectionMatrix();
       if (targetState !== undefined && requestedTargetBodyId !== undefined) {
         const targetPosition = scenePosition(targetState.positionM);
@@ -1763,6 +2839,7 @@ export function SolarSystemScene({
         controls.target.copy(targetPosition);
         controls.minDistance = camera.near * 2;
         controls.maxDistance = Math.max(1, observerDistance * 100);
+        viewZoomReferenceDistanceAu = observerDistance;
         camera.lookAt(targetPosition);
         container.dataset["cameraObserverBody"] = requestedFocusBodyId;
         container.dataset["cameraTargetBody"] = requestedTargetBodyId;
@@ -1776,8 +2853,8 @@ export function SolarSystemScene({
         cameraDistanceOverrideAuRef.current ??
         (requestedFocusBodyId === "sun"
           ? SOLAR_SYSTEM_CAMERA_POSITION.length()
-          : isIssFocus
-            ? ISS_FOCUS_DISTANCE_AU
+          : isSpacecraftFocus
+            ? spacecraftFocusDistanceAu(requestedFocusBodyId)
             : focusDefinition === undefined
               ? 0.003
               : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
@@ -1788,30 +2865,53 @@ export function SolarSystemScene({
       const cameraDirection =
         requestedFocusBodyId === "sun" || sunState === undefined
           ? PERSPECTIVE_CAMERA_DIRECTION.clone()
-          : scenePosition(sunState.positionM)
-              .sub(focusPosition)
-              .normalize()
-              .add(
-                j2000EclipticToScene({ x: 0, y: 0, z: 1 })
-                  .normalize()
-                  .multiplyScalar(0.2),
-              )
-              .normalize();
+          : parentFacingCameraDirection(
+              requestedFocusBodyId,
+              focusPosition,
+              scenePosition(sunState.positionM),
+              current.timeSeconds,
+            );
       camera.position
         .copy(focusPosition)
         .add(cameraDirection.multiplyScalar(focusDistance));
-      controls.target.copy(focusPosition);
+      if (
+        requestedFocusBodyId === "sun" &&
+        deepSpacePresentationRef.current === "interstellar-scale"
+      ) {
+        const midpoint = focusPosition
+          .clone()
+          .add(alphaCentauriOffset.clone().multiplyScalar(0.5));
+        const viewingDirection = alphaCentauriOffset
+          .clone()
+          .normalize()
+          .cross(ECLIPTIC_NORTH)
+          .normalize()
+          .add(ECLIPTIC_NORTH.clone().multiplyScalar(0.22))
+          .normalize();
+        camera.position
+          .copy(midpoint)
+          .add(viewingDirection.multiplyScalar(focusDistance));
+        controls.target.copy(midpoint);
+      } else {
+        controls.target.copy(focusPosition);
+      }
       controls.minDistance = Math.max(
-        isIssFocus
-          ? 20 / ASTRONOMICAL_UNIT_M
+        isSpacecraftFocus
+          ? (spacecraftBoundingRadiusM(requestedFocusBodyId) ?? 1) /
+              ASTRONOMICAL_UNIT_M /
+              8
           : focusDefinition === undefined
             ? camera.near * 2
             : focusDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M / 2,
         camera.near * 2,
       );
-      controls.maxDistance = Math.max(1, focusDistance * 100);
+      controls.maxDistance =
+        requestedFocusBodyId === "sun"
+          ? 900_000
+          : Math.max(1, focusDistance * 100);
+      viewZoomReferenceDistanceAu = camera.position.distanceTo(controls.target);
       container.dataset["focusDistanceAu"] = focusDistance.toFixed(
-        isIssFocus ? 12 : 8,
+        isSpacecraftFocus ? 12 : 8,
       );
     };
 
@@ -1850,6 +2950,16 @@ export function SolarSystemScene({
         container.dataset["cameraTargetBody"] = requestedTargetBodyId;
         return;
       }
+      if (
+        requestedFocusBodyId === "sun" &&
+        deepSpacePresentationRef.current === "interstellar-scale"
+      ) {
+        camera.up.copy(ECLIPTIC_NORTH);
+        camera.lookAt(controls.target);
+        controls.update();
+        container.dataset["cameraOrientation"] = "interstellar-scale";
+        return;
+      }
       const currentDistance = camera.position.distanceTo(controls.target);
       const distance =
         Number.isFinite(currentDistance) && currentDistance > camera.near * 2
@@ -1881,14 +2991,14 @@ export function SolarSystemScene({
         direction = ECLIPTIC_FORWARD.clone();
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (preset === "parent-facing" && focusState !== undefined) {
-        direction =
+        direction = parentFacingCameraDirection(
+          requestedFocusBodyId ?? "sun",
+          target,
           parentState === undefined
-            ? PERSPECTIVE_CAMERA_DIRECTION.clone()
-            : scenePosition(parentState.positionM)
-                .sub(target)
-                .normalize()
-                .add(ECLIPTIC_NORTH.clone().multiplyScalar(0.2))
-                .normalize();
+            ? undefined
+            : scenePosition(parentState.positionM),
+          current?.timeSeconds ?? 0,
+        );
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (
         preset === "velocity" &&
@@ -1945,11 +3055,37 @@ export function SolarSystemScene({
       controls.maxDistance = transition.endMaximumDistance;
       controls.enabled = true;
       camera.lookAt(transition.endTarget);
+      viewZoomReferenceDistanceAu = camera.position.distanceTo(controls.target);
+      lastReportedViewZoom = camera.zoom;
+      container.dataset["viewMagnification"] = camera.zoom.toFixed(4);
+      onViewZoomChangeRef.current(camera.zoom);
+      const settledPreset = orientationPresetRef.current;
+      container.dataset["cameraTracking"] =
+        transition.destinationTargetBodyId !== undefined
+          ? "observer-and-target"
+          : settledPreset === "parent-facing" ||
+              settledPreset === "velocity" ||
+              settledPreset === "orbital-plane"
+            ? "continuous"
+            : "position-only";
       activeCameraTransition = undefined;
+      cameraJourney.hidden = true;
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSequence"] = String(
         transition.sequence,
       );
+    };
+
+    interruptCameraTransition = (): void => {
+      if (activeCameraTransition === undefined) {
+        return;
+      }
+      const sequence = activeCameraTransition.sequence;
+      activeCameraTransition = undefined;
+      controls.enabled = true;
+      cameraJourney.hidden = true;
+      container.dataset["cameraTransitionPhase"] = "settled";
+      container.dataset["cameraTransitionInterrupted"] = String(sequence);
     };
 
     const beginCameraTransition = (
@@ -1982,21 +3118,81 @@ export function SolarSystemScene({
         requestedFocusBodyId,
         current,
       );
-      const overviewAnchorBodyId =
-        cameraTransitionOverviewAnchorBodyIdRef.current ?? "sun";
-      const overviewAnchorState = bodyStateById(current, overviewAnchorBodyId);
-      if (overviewAnchorState === undefined) {
-        throw new Error(
-          `Camera transition anchor ${overviewAnchorBodyId} is unavailable`,
-        );
-      }
       const overviewDistanceAu = cameraTransitionOverviewDistanceAuRef.current;
       if (!Number.isFinite(overviewDistanceAu) || overviewDistanceAu <= 0) {
         throw new Error(
           "Camera transition overview distance must be positive and finite",
         );
       }
-      const overviewTarget = scenePosition(overviewAnchorState.positionM);
+      const endPosition = camera.position.clone();
+      const endTarget = controls.target.clone();
+      const departureBodyId = lastFocusBodyId;
+      const departureState =
+        departureBodyId === null || departureBodyId === undefined
+          ? undefined
+          : bodyStateById(current, departureBodyId);
+      const departureAnchor =
+        departureState === undefined
+          ? startTarget.clone()
+          : scenePosition(departureState.positionM);
+      const destinationOverviewAnchorBodyId =
+        cameraTransitionOverviewAnchorBodyIdRef.current;
+      const destinationOverviewAnchorState =
+        destinationOverviewAnchorBodyId === undefined
+          ? undefined
+          : bodyStateById(current, destinationOverviewAnchorBodyId);
+      if (
+        destinationOverviewAnchorBodyId !== undefined &&
+        destinationOverviewAnchorState === undefined
+      ) {
+        throw new Error(
+          `Camera overview anchor ${destinationOverviewAnchorBodyId} is unavailable`,
+        );
+      }
+      const destinationAnchor =
+        destinationOverviewAnchorState === undefined
+          ? endTarget.clone()
+          : scenePosition(destinationOverviewAnchorState.positionM);
+      const journeyDistanceAu = departureAnchor.equals(destinationAnchor)
+        ? 0
+        : departureAnchor.distanceTo(destinationAnchor);
+      const framingDistanceAu = Math.max(
+        overviewDistanceAu,
+        cameraTransitionAutoFrameRef.current ? journeyDistanceAu * 1.4 : 0,
+      );
+      const isObserverDestination = cameraTargetBodyIdRef.current !== undefined;
+      const observerSeparationAu = destinationAnchor.distanceTo(endTarget);
+      const overviewEndDistanceAu = isObserverDestination
+        ? Math.min(framingDistanceAu, observerSeparationAu * 0.35)
+        : framingDistanceAu;
+      if (
+        !Number.isFinite(overviewEndDistanceAu) ||
+        overviewEndDistanceAu <= 0
+      ) {
+        throw new Error(
+          "Camera transition destination overview distance must be positive and finite",
+        );
+      }
+      const overviewStartTarget = startTarget.clone();
+      const overviewEndTarget = isObserverDestination
+        ? endTarget.clone()
+        : destinationAnchor.clone();
+      const destinationOverviewDirection = isObserverDestination
+        ? endPosition.clone().sub(destinationAnchor).normalize()
+        : PERSPECTIVE_CAMERA_DIRECTION.clone();
+      const bodyName = (bodyId: string | null | undefined): string => {
+        if (bodyId === null || bodyId === undefined || bodyId === "") {
+          return "the Solar System";
+        }
+        return (
+          majorBodyById.get(bodyId)?.name ??
+          knownSatelliteById.get(bodyId)?.name ??
+          (isVoyagerBodyId(bodyId)
+            ? voyagerById.get(bodyId)?.name
+            : undefined) ??
+          (bodyId === ISS_BODY_ID ? "the ISS" : bodyId)
+        );
+      };
       activeCameraTransition = {
         sequence,
         startedAtMs: performance.now(),
@@ -2004,16 +3200,33 @@ export function SolarSystemScene({
         startPosition,
         startTarget,
         startUp,
-        overviewPosition: overviewTarget
+        overviewStartPosition: departureAnchor
           .clone()
           .add(
             PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(
-              overviewDistanceAu,
+              framingDistanceAu,
             ),
           ),
-        overviewTarget,
-        endPosition: camera.position.clone(),
-        endTarget: controls.target.clone(),
+        overviewStartTarget,
+        departureAnchor,
+        overviewEndPosition: destinationAnchor
+          .clone()
+          .add(
+            destinationOverviewDirection.multiplyScalar(overviewEndDistanceAu),
+          ),
+        overviewEndTarget,
+        destinationAnchor,
+        destinationOverviewAnchorBodyId,
+        overviewEndDistanceAu,
+        isObserverDestination,
+        endPosition,
+        endTarget,
+        endOffset: endPosition.clone().sub(endTarget),
+        destinationFocusBodyId: requestedFocusBodyId,
+        destinationTargetBodyId: cameraTargetBodyIdRef.current,
+        departureName: bodyName(departureBodyId),
+        destinationName: bodyName(requestedFocusBodyId),
+        journeyDistanceAu,
         endUp: camera.up.clone(),
         endNear: camera.near,
         endFar: camera.far,
@@ -2029,41 +3242,106 @@ export function SolarSystemScene({
       camera.updateProjectionMatrix();
       controls.minDistance = 0;
       controls.maxDistance = Number.POSITIVE_INFINITY;
-      controls.enabled = false;
+      controls.enabled = true;
       container.dataset["cameraTransitionPhase"] = "outbound";
       container.dataset["cameraTransitionSequence"] = String(sequence);
-      container.dataset["cameraTransitionOverviewAnchor"] =
-        overviewAnchorBodyId;
+      container.dataset["cameraTransitionOverviewAnchor"] = "moving-route";
+      container.dataset["cameraTransitionDestinationAnchor"] =
+        destinationOverviewAnchorBodyId ?? "camera-target";
       container.dataset["cameraTransitionDurationMs"] = String(durationMs);
       container.dataset["cameraTransitionInterpolation"] =
-        "logarithmic-distance";
+        "depart-coast-arrive";
+      cameraJourney.hidden = false;
+      cameraJourney.textContent = `Departing ${activeCameraTransition.departureName}`;
       return true;
     };
 
-    const updateCameraTransition = (nowMs: number): void => {
+    const updateCameraTransition = (
+      nowMs: number,
+      current: SimulationState | undefined,
+    ): void => {
       const transition = activeCameraTransition;
       if (transition === undefined) {
         return;
       }
-      const sample = sampleCameraTransition(
-        nowMs - transition.startedAtMs,
-        transition.durationMs,
-      );
+      const elapsedMs = Math.max(0, nowMs - transition.startedAtMs);
+      const sample = sampleCameraTransition(elapsedMs, transition.durationMs);
+      container.dataset["cameraTransitionElapsedMs"] = elapsedMs.toFixed(1);
+      if (current !== undefined && transition.destinationFocusBodyId !== null) {
+        const focusState = bodyStateById(
+          current,
+          transition.destinationFocusBodyId,
+        );
+        const targetState =
+          transition.destinationTargetBodyId === undefined
+            ? undefined
+            : bodyStateById(current, transition.destinationTargetBodyId);
+        const overviewAnchorState =
+          transition.destinationOverviewAnchorBodyId === undefined
+            ? undefined
+            : bodyStateById(
+                current,
+                transition.destinationOverviewAnchorBodyId,
+              );
+        if (focusState !== undefined) {
+          transition.endTarget.copy(
+            targetState === undefined
+              ? scenePosition(focusState.positionM)
+              : scenePosition(targetState.positionM),
+          );
+          transition.destinationAnchor.copy(
+            overviewAnchorState === undefined
+              ? transition.endTarget
+              : scenePosition(overviewAnchorState.positionM),
+          );
+          if (
+            targetState !== undefined &&
+            transition.destinationTargetBodyId !== undefined
+          ) {
+            transition.endPosition.copy(
+              observerViewpoint(
+                transition.destinationFocusBodyId,
+                focusState,
+                transition.endTarget,
+              ),
+            );
+          } else {
+            transition.endPosition
+              .copy(transition.endTarget)
+              .add(transition.endOffset);
+          }
+          transition.overviewEndTarget.copy(
+            transition.isObserverDestination
+              ? transition.endTarget
+              : transition.destinationAnchor,
+          );
+          transition.overviewEndPosition
+            .copy(transition.destinationAnchor)
+            .add(
+              (transition.isObserverDestination
+                ? transition.endPosition
+                    .clone()
+                    .sub(transition.destinationAnchor)
+                    .normalize()
+                : PERSPECTIVE_CAMERA_DIRECTION.clone()
+              ).multiplyScalar(transition.overviewEndDistanceAu),
+            );
+        }
+      }
       container.dataset["cameraTransitionPhase"] = sample.phase;
       if (sample.phase === "settled") {
         completeCameraTransition();
         return;
       }
       if (sample.phase === "outbound") {
-        interpolateCameraTransitionLeg(
+        interpolateCameraPositionAroundAnchor(
           camera.position,
-          controls.target,
           transition.startPosition,
-          transition.startTarget,
-          transition.overviewPosition,
-          transition.overviewTarget,
+          transition.overviewStartPosition,
+          transition.departureAnchor,
           sample.segmentProgress,
         );
+        controls.target.copy(transition.startTarget);
         camera.up
           .lerpVectors(
             transition.startUp,
@@ -2072,29 +3350,44 @@ export function SolarSystemScene({
           )
           .normalize();
       } else if (sample.phase === "overview") {
-        camera.position.copy(transition.overviewPosition);
-        controls.target.copy(transition.overviewTarget);
+        camera.position.lerpVectors(
+          transition.overviewStartPosition,
+          transition.overviewEndPosition,
+          sample.segmentProgress,
+        );
+        controls.target.lerpVectors(
+          transition.overviewStartTarget,
+          transition.overviewEndTarget,
+          sample.segmentProgress,
+        );
         camera.up.copy(ECLIPTIC_NORTH);
         container.dataset["cameraTransitionOverviewVisited"] = String(
           transition.sequence,
         );
         container.dataset["cameraTransitionOverviewDistanceAu"] =
-          transition.overviewPosition
-            .distanceTo(transition.overviewTarget)
+          transition.overviewStartPosition
+            .distanceTo(transition.overviewStartTarget)
             .toFixed(6);
+        cameraJourney.textContent = `Crossing ${formatTacticalDistance(
+          transition.journeyDistanceAu,
+        )} toward ${transition.destinationName}`;
       } else {
-        interpolateCameraTransitionLeg(
+        interpolateCameraPositionAroundAnchor(
           camera.position,
-          controls.target,
-          transition.overviewPosition,
-          transition.overviewTarget,
+          transition.overviewEndPosition,
           transition.endPosition,
+          transition.destinationAnchor,
+          sample.segmentProgress,
+        );
+        controls.target.lerpVectors(
+          transition.overviewEndTarget,
           transition.endTarget,
           sample.segmentProgress,
         );
         camera.up
           .lerpVectors(ECLIPTIC_NORTH, transition.endUp, sample.segmentProgress)
           .normalize();
+        cameraJourney.textContent = `Arriving at ${transition.destinationName}`;
       }
       camera.lookAt(controls.target);
     };
@@ -2151,6 +3444,17 @@ export function SolarSystemScene({
     let animationFrame = 0;
     let startupTimer = 0;
     const render = (): void => {
+      const frameRenderStartedAtMs = performance.now();
+      const frameIntervalMs = Math.max(
+        0.001,
+        frameRenderStartedAtMs - lastRenderedAtMs,
+      );
+      lastRenderedAtMs = frameRenderStartedAtMs;
+      frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
+      const activeVisualQuality = visualQualityRef.current;
+      if (activeVisualQuality !== lastVisualQuality) {
+        applyVisualQuality(activeVisualQuality);
+      }
       const requestedFrame = frameRef.current;
       if (clearTrailsTokenRef.current !== lastClearTrailsToken) {
         lastClearTrailsToken = clearTrailsTokenRef.current;
@@ -2224,6 +3528,43 @@ export function SolarSystemScene({
           current.timeSeconds.toFixed(3);
       }
 
+      const exposureReferenceBodyId =
+        surfaceObserverRef.current?.bodyId ?? focusBodyIdRef.current;
+      let exposureDistanceFromSunAu: number | undefined;
+      if (
+        current !== undefined &&
+        exposureReferenceBodyId !== null &&
+        exposureReferenceBodyId !== "sun"
+      ) {
+        const exposureBodyState = bodyStateById(
+          current,
+          exposureReferenceBodyId,
+        );
+        const exposureSunState = bodyStateById(current, "sun");
+        if (exposureBodyState !== undefined && exposureSunState !== undefined) {
+          exposureDistanceFromSunAu = scenePosition(
+            exposureBodyState.positionM,
+          ).distanceTo(scenePosition(exposureSunState.positionM));
+        }
+      }
+      const activeVisualProfile = VISUAL_QUALITY_PROFILES[activeVisualQuality];
+      const targetExposure = solarExposureForDistanceAu(
+        activeVisualQuality,
+        exposureDistanceFromSunAu,
+      );
+      currentExposure = adaptExposure(
+        currentExposure,
+        targetExposure,
+        Math.min(frameIntervalMs, 250) / 1_000,
+        activeVisualProfile.exposureHalfLifeSeconds,
+      );
+      renderer.toneMappingExposure = currentExposure;
+      ambientLight.intensity = 0.045 / currentExposure;
+      container.dataset["cameraExposure"] = currentExposure.toFixed(5);
+      container.dataset["cameraExposureTarget"] = targetExposure.toFixed(5);
+      container.dataset["exposureReferenceDistanceAu"] =
+        exposureDistanceFromSunAu?.toFixed(6) ?? "system-overview";
+
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
         if (mesh !== undefined) {
@@ -2240,7 +3581,7 @@ export function SolarSystemScene({
         viewModeRef.current === "orrery" ? "orrery" : "disabled";
       gpuLayer?.setCategoryVisibility(asteroidsVisible, cometsVisible);
       gpuLayer?.setTrailSettings(
-        showMinorBodyTrailsRef.current,
+        showMinorBodyTrailsRef.current && activeCameraTransition === undefined,
         trailDurationSecondsRef.current,
         trailFadeRef.current,
         clearTrailsTokenRef.current,
@@ -2262,6 +3603,7 @@ export function SolarSystemScene({
               orbitGuideScopeRef.current,
               showEclipticPlaneRef.current,
               gravityWellModeRef.current,
+              gravityWellScaleRef.current,
               referenceFrameRef.current,
               trailDurationSecondsRef.current,
               trailFadeRef.current,
@@ -2306,6 +3648,7 @@ export function SolarSystemScene({
         const gravityCenter = scenePosition(gravityCenterState.positionM);
         const gravityDiagnostics = gravityWellLayer.update({
           mode: gravityMode,
+          scale: gravityWellScaleRef.current,
           centerAu: [gravityCenter.x, gravityCenter.y, gravityCenter.z],
           extentAu: gravityFieldExtentAu(
             gravityFocusId,
@@ -2314,6 +3657,7 @@ export function SolarSystemScene({
           sources: gravitySources,
         });
         container.dataset["gravityWellMode"] = gravityMode;
+        container.dataset["gravityWellScale"] = gravityWellScaleRef.current;
         container.dataset["gravityWellVisible"] = String(
           gravityDiagnostics !== undefined,
         );
@@ -2399,7 +3743,11 @@ export function SolarSystemScene({
             }
             let nearestBodyDistanceAu = Number.POSITIVE_INFINITY;
             for (const [otherBodyId, otherPosition] of sceneBodyPositions) {
-              if (otherBodyId !== body.id && otherBodyId !== ISS_BODY_ID) {
+              const otherBodyIsSpacecraft =
+                otherBodyId === ISS_BODY_ID ||
+                isVoyagerBodyId(otherBodyId) ||
+                isOperationalSpacecraftBodyId(otherBodyId);
+              if (otherBodyId !== body.id && !otherBodyIsSpacecraft) {
                 const otherMajorBody = majorBodyById.get(otherBodyId);
                 const isHiddenOverviewMoon =
                   (currentFocusBodyId === null ||
@@ -2484,6 +3832,62 @@ export function SolarSystemScene({
         container.dataset["issEpochSimulationSeconds"] =
           ISS_EPOCH_SIMULATION_SECONDS.toFixed(3);
 
+        const sunPositionForSpacecraft = sceneBodyPositions.get("sun");
+        if (sunPositionForSpacecraft === undefined) {
+          throw new Error(
+            "Sun scene position is unavailable for Voyager attitude",
+          );
+        }
+        const earthPositionForVoyagers = sceneBodyPositions.get("earth");
+        if (earthPositionForVoyagers === undefined) {
+          throw new Error(
+            "Earth scene position is unavailable for Voyager attitude",
+          );
+        }
+        for (const probe of voyagerSnapshot.probes) {
+          const probePosition = sceneBodyPositions.get(probe.id);
+          const group = voyagerGroups.get(probe.id);
+          if (probePosition === undefined || group === undefined) {
+            throw new Error(
+              `Integrated Voyager state ${probe.id} is unavailable`,
+            );
+          }
+          group.position.copy(probePosition);
+          group.quaternion.copy(
+            voyagerEarthPointingQuaternion(
+              probePosition,
+              earthPositionForVoyagers,
+            ),
+          );
+          const earthDirection = earthPositionForVoyagers
+            .clone()
+            .sub(probePosition)
+            .normalize();
+          const renderedBoresight = VOYAGER_MODEL_HGA_BORESIGHT.clone()
+            .applyQuaternion(group.quaternion)
+            .normalize();
+          const datasetPrefix =
+            probe.id === "voyager-1" ? "voyager1" : "voyager2";
+          container.dataset[`${datasetPrefix}AntennaEarthAlignment`] =
+            renderedBoresight.dot(earthDirection).toFixed(9);
+        }
+        container.dataset["voyagerAntennaTarget"] = "earth";
+        for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
+          const spacecraftPosition = sceneBodyPositions.get(spacecraft.id);
+          const group = spacecraftGroups.get(spacecraft.id);
+          if (group === undefined) {
+            throw new Error(
+              `${spacecraft.name} official model group is unavailable`,
+            );
+          }
+          if (spacecraftPosition === undefined) {
+            group.visible = false;
+            continue;
+          }
+          group.position.copy(spacecraftPosition);
+          group.lookAt(sunPositionForSpacecraft);
+        }
+
         let visibleOrbitGuideCount = 0;
         for (const [bodyId, guide] of orbitGuides) {
           const definition = majorBodyById.get(bodyId);
@@ -2515,8 +3919,44 @@ export function SolarSystemScene({
         const earthState = bodyStateById(current, "earth");
         const sunState = bodyStateById(current, "sun");
         if (earthState !== undefined && sunState !== undefined) {
-          sunlight.position.copy(scenePosition(sunState.positionM));
-          eclipticGrid.position.copy(scenePosition(sunState.positionM));
+          const sunScenePosition = scenePosition(sunState.positionM);
+          sunlight.position.copy(sunScenePosition);
+          eclipticGrid.position.copy(sunScenePosition);
+          for (const [bodyId, atmosphereMaterial] of atmosphereMaterials) {
+            const bodyState = bodyStateById(current, bodyId);
+            if (bodyState === undefined) {
+              throw new Error(`Atmosphere state ${bodyId} is unavailable`);
+            }
+            const distanceFromSunAu = scenePosition(
+              bodyState.positionM,
+            ).distanceTo(sunScenePosition);
+            setRequiredNumberUniform(
+              atmosphereMaterial,
+              "solarFlux",
+              1 / Math.max(distanceFromSunAu * distanceFromSunAu, 0.0016),
+            );
+          }
+          for (const [bodyId, ringVisual] of ringVisuals) {
+            const bodyState = bodyStateById(current, bodyId);
+            if (bodyState === undefined) {
+              throw new Error(`Ring-system state ${bodyId} is unavailable`);
+            }
+            const bodyPosition = scenePosition(bodyState.positionM);
+            const distanceFromSunAu = bodyPosition.distanceTo(sunScenePosition);
+            ringVisual.mesh.updateWorldMatrix(true, false);
+            const localSun = ringVisual.mesh.worldToLocal(
+              sunScenePosition.clone(),
+            );
+            const localCenter = ringVisual.mesh.worldToLocal(bodyPosition);
+            requiredVectorUniform(ringVisual.material, "sunDirectionLocal")
+              .value.copy(localSun.sub(localCenter))
+              .normalize();
+            setRequiredNumberUniform(
+              ringVisual.material,
+              "solarFlux",
+              1 / Math.max(distanceFromSunAu * distanceFromSunAu, 0.0016),
+            );
+          }
           const moonOrigin = referenceOrigin(
             current,
             "moon",
@@ -2678,11 +4118,18 @@ export function SolarSystemScene({
                   current,
                 );
               } else {
-                const trackingDelta = focusPosition
+                const trackingTarget =
+                  requestedFocusBodyId === "sun" &&
+                  deepSpacePresentationRef.current === "interstellar-scale"
+                    ? focusPosition
+                        .clone()
+                        .add(alphaCentauriOffset.clone().multiplyScalar(0.5))
+                    : focusPosition;
+                const trackingDelta = trackingTarget
                   .clone()
                   .sub(controls.target);
                 camera.position.add(trackingDelta);
-                controls.target.copy(focusPosition);
+                controls.target.copy(trackingTarget);
               }
               container.dataset["cameraTracking"] =
                 requestedTargetBodyId !== undefined
@@ -2711,6 +4158,7 @@ export function SolarSystemScene({
         lastFocusBodyId = requestedFocusBodyId;
         container.dataset["focusBody"] = requestedFocusBodyId ?? "solar-system";
       }
+      container.dataset["selectedBody"] = selectedBodyIdRef.current ?? "none";
 
       const requestedCameraCommand = cameraNavigationCommandRef.current;
       if (
@@ -2730,10 +4178,10 @@ export function SolarSystemScene({
       if (cameraZoomRef.current !== lastCameraZoom) {
         if (
           !Number.isFinite(cameraZoomRef.current) ||
-          cameraZoomRef.current < 0.5 ||
-          cameraZoomRef.current > 8
+          cameraZoomRef.current < 1 / 64 ||
+          cameraZoomRef.current > 128
         ) {
-          throw new Error("Camera zoom must be between 0.5x and 8x");
+          throw new Error("Camera zoom must be between 0.015625x and 128x");
         }
         lastCameraZoom = cameraZoomRef.current;
         camera.zoom = lastCameraZoom;
@@ -2755,19 +4203,384 @@ export function SolarSystemScene({
         }
       }
 
-      const renderNowMs = performance.now();
-      updateCameraTransition(renderNowMs);
-      controls.update();
+      const renderNowMs = frameRenderStartedAtMs;
+      const surfaceConfiguration = surfaceObserverRef.current;
+      if (surfaceConfiguration === null || current === undefined) {
+        controls.enabled = true;
+        latestSurfaceObservation = undefined;
+        surfaceFreeLook = false;
+        lastSurfaceConfigurationKey = "";
+        updateCameraTransition(renderNowMs, current);
+        controls.update();
+        surfaceHorizon.visible = false;
+        for (const label of compassLabels.values()) {
+          label.hidden = true;
+        }
+        for (const atmosphere of atmosphereMeshes.values()) {
+          atmosphere.visible = true;
+        }
+        delete container.dataset["surfaceObserverBody"];
+        delete container.dataset["surfaceObserverTarget"];
+        delete container.dataset["surfaceObserverLatitudeDeg"];
+        delete container.dataset["surfaceObserverLongitudeDeg"];
+        delete container.dataset["surfaceHorizonVisible"];
+        delete container.dataset["surfaceFreeLook"];
+        delete container.dataset["surfaceLookAzimuthDeg"];
+        delete container.dataset["surfaceLookAltitudeDeg"];
+      } else {
+        interruptCameraTransition();
+        controls.enabled = false;
+        const observation = surfaceObserverFrame(current, surfaceConfiguration);
+        latestSurfaceObservation = observation;
+        const surfaceConfigurationKey = [
+          surfaceConfiguration.bodyId,
+          surfaceConfiguration.targetBodyId,
+          surfaceConfiguration.latitudeDeg.toFixed(8),
+          surfaceConfiguration.longitudeDeg.toFixed(8),
+        ].join(":");
+        if (
+          surfaceConfigurationKey !== lastSurfaceConfigurationKey ||
+          surfaceObserverLookResetTokenRef.current !== lastSurfaceLookResetToken
+        ) {
+          lastSurfaceConfigurationKey = surfaceConfigurationKey;
+          lastSurfaceLookResetToken = surfaceObserverLookResetTokenRef.current;
+          surfaceFreeLook = false;
+        }
+        camera.near = 0.05 / ASTRONOMICAL_UNIT_M;
+        camera.far = DEFAULT_CAMERA_FAR_AU;
+        camera.position.copy(observation.observerPositionAu);
+        const lookDirection = surfaceFreeLook
+          ? observation.north
+              .clone()
+              .multiplyScalar(
+                Math.cos((surfaceLookAzimuthDeg * Math.PI) / 180) *
+                  Math.cos((surfaceLookAltitudeDeg * Math.PI) / 180),
+              )
+              .add(
+                observation.east
+                  .clone()
+                  .multiplyScalar(
+                    Math.sin((surfaceLookAzimuthDeg * Math.PI) / 180) *
+                      Math.cos((surfaceLookAltitudeDeg * Math.PI) / 180),
+                  ),
+              )
+              .add(
+                observation.zenith
+                  .clone()
+                  .multiplyScalar(
+                    Math.sin((surfaceLookAltitudeDeg * Math.PI) / 180),
+                  ),
+              )
+              .normalize()
+          : observation.targetDirection;
+        camera.up.copy(
+          Math.abs(lookDirection.dot(observation.zenith)) > 0.999
+            ? observation.north
+            : observation.zenith,
+        );
+        controls.target.copy(camera.position).add(lookDirection);
+        camera.lookAt(controls.target);
+        camera.updateProjectionMatrix();
+        const observerDefinition = majorBodyById.get(
+          surfaceConfiguration.bodyId,
+        );
+        if (observerDefinition === undefined) {
+          throw new Error(
+            `Surface observer definition ${surfaceConfiguration.bodyId} is unavailable`,
+          );
+        }
+        for (let index = 0; index < 96; index += 1) {
+          const point = surfaceHorizonPoint(
+            observation,
+            observerDefinition.meanRadiusM,
+            (index / 96) * 360,
+          ).sub(observation.surfacePositionAu);
+          surfaceHorizonPositions[index * 3] = point.x;
+          surfaceHorizonPositions[index * 3 + 1] = point.y;
+          surfaceHorizonPositions[index * 3 + 2] = point.z;
+        }
+        surfaceHorizon.position.copy(observation.surfacePositionAu);
+        surfaceHorizonPositionAttribute.needsUpdate = true;
+        surfaceHorizonGeometry.computeBoundingSphere();
+        surfaceHorizon.visible = true;
+        for (const [azimuthDeg, label] of compassLabels) {
+          const projected = surfaceHorizonPoint(
+            observation,
+            observerDefinition.meanRadiusM,
+            azimuthDeg,
+          ).project(camera);
+          const visible =
+            projected.z >= -1 &&
+            projected.z <= 1 &&
+            Math.abs(projected.x) <= 1 &&
+            Math.abs(projected.y) <= 1;
+          label.hidden = !visible;
+          if (visible) {
+            label.style.transform = `translate(${String(
+              ((projected.x + 1) * container.clientWidth) / 2,
+            )}px, ${String(
+              ((-projected.y + 1) * container.clientHeight) / 2,
+            )}px)`;
+          }
+        }
+        for (const [bodyId, atmosphere] of atmosphereMeshes) {
+          atmosphere.visible = bodyId !== surfaceConfiguration.bodyId;
+        }
+        container.dataset["cameraTracking"] = "surface-observer";
+        container.dataset["cameraOrientation"] = "local-horizontal";
+        container.dataset["cameraObserverBody"] = surfaceConfiguration.bodyId;
+        container.dataset["cameraTargetBody"] =
+          surfaceConfiguration.targetBodyId;
+        container.dataset["cameraObserverAltitudeKm"] = "0.002";
+        container.dataset["surfaceObserverBody"] = surfaceConfiguration.bodyId;
+        container.dataset["surfaceObserverTarget"] =
+          surfaceConfiguration.targetBodyId;
+        container.dataset["surfaceObserverLatitudeDeg"] =
+          surfaceConfiguration.latitudeDeg.toFixed(6);
+        container.dataset["surfaceObserverLongitudeDeg"] =
+          surfaceConfiguration.longitudeDeg.toFixed(6);
+        container.dataset["surfaceFreeLook"] = String(surfaceFreeLook);
+        container.dataset["surfaceLookAzimuthDeg"] = (
+          surfaceFreeLook ? surfaceLookAzimuthDeg : observation.targetAzimuthDeg
+        ).toFixed(4);
+        container.dataset["surfaceLookAltitudeDeg"] = (
+          surfaceFreeLook
+            ? surfaceLookAltitudeDeg
+            : observation.targetAltitudeDeg
+        ).toFixed(4);
+        container.dataset["surfaceObserverPosition"] = [
+          camera.position.x,
+          camera.position.y,
+          camera.position.z,
+        ]
+          .map((value) => value.toFixed(12))
+          .join(",");
+        container.dataset["surfaceTargetAltitudeDeg"] =
+          observation.targetAltitudeDeg.toFixed(6);
+        container.dataset["surfaceTargetAzimuthDeg"] =
+          observation.targetAzimuthDeg.toFixed(6);
+        container.dataset["surfaceTargetAngularDiameterDeg"] =
+          observation.targetAngularDiameterDeg.toFixed(9);
+        container.dataset["surfaceLocalSolarTimeHours"] =
+          observation.localSolarTimeHours.toFixed(9);
+        container.dataset["surfaceHorizonModel"] =
+          "mean-radius-geometric-no-refraction";
+        container.dataset["surfaceHorizonVisible"] = "true";
+      }
       container.dataset["cameraDistanceAu"] = camera.position
         .distanceTo(controls.target)
         .toFixed(12);
+      const currentViewDistanceAu = camera.position.distanceTo(controls.target);
+      const effectiveViewZoom =
+        currentViewDistanceAu > 0
+          ? camera.zoom * (viewZoomReferenceDistanceAu / currentViewDistanceAu)
+          : camera.zoom;
+      const reportedViewZoom =
+        Math.round(effectiveViewZoom * 1_000_000) / 1_000_000;
+      if (
+        Number.isFinite(reportedViewZoom) &&
+        (Number.isNaN(lastReportedViewZoom) ||
+          Math.abs(Math.log2(reportedViewZoom / lastReportedViewZoom)) > 0.002)
+      ) {
+        lastReportedViewZoom = reportedViewZoom;
+        container.dataset["viewMagnification"] = reportedViewZoom.toFixed(4);
+        onViewZoomChangeRef.current(reportedViewZoom);
+      }
       stars.position.copy(camera.position);
       camera.updateMatrixWorld();
+      const liveSunPosition =
+        bodyMeshes.get("sun")?.position.clone() ?? new Vector3();
+      deepSpaceGroup.position.copy(liveSunPosition);
+      const distanceFromSunAu = camera.position.distanceTo(liveSunPosition);
+      const activeDeepPresentation = deepSpacePresentationRef.current;
+      const showHeliosphere =
+        distanceFromSunAu >= 150 || activeDeepPresentation !== undefined;
+      const showOortCloud =
+        distanceFromSunAu >= 500 ||
+        activeDeepPresentation === "oort-cloud-scale" ||
+        activeDeepPresentation === "interstellar-scale";
+      const showAlphaCentauri =
+        distanceFromSunAu >= 40_000 ||
+        activeDeepPresentation === "interstellar-scale";
+      terminationShock.visible = showHeliosphere;
+      heliopause.visible = showHeliosphere;
+      innerOortBoundary.visible = showOortCloud;
+      outerOortBoundary.visible = showOortCloud;
+      oortCloud.visible = showOortCloud;
+      alphaMarker.visible = showAlphaCentauri;
+      container.dataset["deepSpaceLayer"] = "same-three-scene";
+      container.dataset["heliosphereVisible"] = String(showHeliosphere);
+      container.dataset["oortCloudVisible"] = String(showOortCloud);
+      container.dataset["alphaCentauriVisible"] = String(showAlphaCentauri);
+      const sunToCameraDirection = camera.position
+        .clone()
+        .sub(liveSunPosition)
+        .normalize();
+      const boundaryLabelPosition = (radiusAu: number): Vector3 =>
+        liveSunPosition
+          .clone()
+          .add(sunToCameraDirection.clone().multiplyScalar(radiusAu * 0.82))
+          .add(
+            camera.up
+              .clone()
+              .normalize()
+              .multiplyScalar(radiusAu * 0.45),
+          );
+      const deepLabelPositions = [
+        boundaryLabelPosition(120),
+        boundaryLabelPosition(OORT_CLOUD_OUTER_MAX_AU),
+        liveSunPosition.clone().add(alphaCentauriOffset),
+      ];
+      for (const [index, label] of deepSpaceLabels.entries()) {
+        const visible = [
+          showHeliosphere && !showOortCloud,
+          showOortCloud,
+          showAlphaCentauri,
+        ][index];
+        const authoredPresentation = [
+          "heliosphere-scale",
+          "oort-cloud-scale",
+          "interstellar-scale",
+        ][index];
+        const position = deepLabelPositions[index];
+        if (!visible || position === undefined) {
+          label.hidden = true;
+          continue;
+        }
+        const projected = position.clone().project(camera);
+        const inView =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const keepVisibleForAuthoredScene =
+          activeDeepPresentation === authoredPresentation;
+        label.hidden = !inView && !keepVisibleForAuthoredScene;
+        if (inView) {
+          label.style.transform = `translate(${String(
+            ((projected.x + 1) * container.clientWidth) / 2,
+          )}px, ${String(
+            ((-projected.y + 1) * container.clientHeight) / 2,
+          )}px)`;
+        } else if (keepVisibleForAuthoredScene) {
+          label.style.transform = `translate(${String(
+            container.clientWidth * 0.66,
+          )}px, ${String(container.clientHeight * 0.2)}px)`;
+        }
+      }
+      const projectedDeepSun = liveSunPosition.clone().project(camera);
+      const deepSunInView =
+        showHeliosphere &&
+        projectedDeepSun.z >= -1 &&
+        projectedDeepSun.z <= 1 &&
+        Math.abs(projectedDeepSun.x) <= 1 &&
+        Math.abs(projectedDeepSun.y) <= 1;
+      deepSunLabel.hidden = !deepSunInView;
+      if (deepSunInView) {
+        deepSunLabel.style.transform = `translate(${String(
+          ((projectedDeepSun.x + 1) * container.clientWidth) / 2,
+        )}px, ${String(
+          ((-projectedDeepSun.y + 1) * container.clientHeight) / 2,
+        )}px)`;
+      }
+
+      navigationMap.hidden = viewModeRef.current !== "reality";
+      if (
+        !navigationMap.hidden &&
+        frameRenderStartedAtMs - lastNavigationMapUpdateAt >= 100
+      ) {
+        lastNavigationMapUpdateAt = frameRenderStartedAtMs;
+        const width = navigationMapCanvas.width;
+        const height = navigationMapCanvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const observerBodyId =
+          surfaceObserverRef.current?.bodyId ?? focusBodyIdRef.current;
+        const observerPosition =
+          observerBodyId === null
+            ? camera.position
+            : (bodyMeshes.get(observerBodyId)?.position ?? camera.position);
+        const observerDistanceAu = observerPosition.distanceTo(liveSunPosition);
+        const mapScaleAu = Math.max(
+          2,
+          observerDistanceAu * 1.35,
+          distanceFromSunAu * 1.1,
+        );
+        const pixelsPerAu = (Math.min(width, height) * 0.42) / mapScaleAu;
+        const mapPoint = (position: Vector3): readonly [number, number] => {
+          const relative = position.clone().sub(liveSunPosition);
+          return [
+            centerX + relative.dot(ECLIPTIC_RIGHT) * pixelsPerAu,
+            centerY - relative.dot(ECLIPTIC_FORWARD) * pixelsPerAu,
+          ];
+        };
+        navigationContext.clearRect(0, 0, width, height);
+        navigationContext.fillStyle = "rgba(3, 10, 19, 0.86)";
+        navigationContext.fillRect(0, 0, width, height);
+        navigationContext.strokeStyle = "rgba(132, 181, 222, 0.14)";
+        navigationContext.lineWidth = 1;
+        for (const fraction of [0.33, 0.66, 1]) {
+          navigationContext.beginPath();
+          navigationContext.arc(
+            centerX,
+            centerY,
+            mapScaleAu * fraction * pixelsPerAu,
+            0,
+            Math.PI * 2,
+          );
+          navigationContext.stroke();
+        }
+        navigationContext.fillStyle = "#ffd27a";
+        navigationContext.beginPath();
+        navigationContext.arc(centerX, centerY, 4, 0, Math.PI * 2);
+        navigationContext.fill();
+        for (const planetId of PLANET_TRAIL_BODY_IDS) {
+          const planetPosition = bodyMeshes.get(planetId)?.position;
+          if (planetPosition === undefined) continue;
+          const [x, y] = mapPoint(planetPosition);
+          if (x < 0 || y < 0 || x > width || y > height) continue;
+          navigationContext.fillStyle = "#83bde4";
+          navigationContext.beginPath();
+          navigationContext.arc(
+            x,
+            y,
+            planetId === observerBodyId ? 5 : 2.3,
+            0,
+            Math.PI * 2,
+          );
+          navigationContext.fill();
+        }
+        const [observerX, observerY] = mapPoint(observerPosition);
+        const cameraDirection = camera.getWorldDirection(new Vector3());
+        const directionX = cameraDirection.dot(ECLIPTIC_RIGHT);
+        const directionY = -cameraDirection.dot(ECLIPTIC_FORWARD);
+        const directionLength = Math.hypot(directionX, directionY) || 1;
+        navigationContext.strokeStyle = "#f1f7ff";
+        navigationContext.lineWidth = 3;
+        navigationContext.beginPath();
+        navigationContext.moveTo(observerX, observerY);
+        navigationContext.lineTo(
+          observerX + (directionX / directionLength) * 32,
+          observerY + (directionY / directionLength) * 32,
+        );
+        navigationContext.stroke();
+        navigationContext.fillStyle = "#ffffff";
+        navigationContext.beginPath();
+        navigationContext.arc(observerX, observerY, 3.5, 0, Math.PI * 2);
+        navigationContext.fill();
+        navigationMapScale.textContent = `Radius ${formatTacticalDistance(mapScaleAu)}`;
+        navigationMap.dataset["scaleAu"] = mapScaleAu.toFixed(4);
+        navigationMap.dataset["observerBody"] = observerBodyId ?? "camera";
+        navigationMap.dataset["viewBearingDeg"] = (
+          (Math.atan2(directionX, -directionY) * 180) / Math.PI +
+          360
+        ).toFixed(2);
+      }
       if (activeCameraTransition === undefined) {
         delete container.dataset["cameraTransitionAnchorScreenX"];
         delete container.dataset["cameraTransitionAnchorScreenY"];
       } else {
-        const projectedTransitionAnchor = activeCameraTransition.overviewTarget
+        const projectedTransitionAnchor = controls.target
           .clone()
           .project(camera);
         container.dataset["cameraTransitionAnchorScreenX"] = (
@@ -2779,7 +4592,9 @@ export function SolarSystemScene({
           2
         ).toFixed(3);
       }
-      const activeCameraTargetBodyId = cameraTargetBodyIdRef.current;
+      const activeCameraTargetBodyId =
+        surfaceObserverRef.current?.targetBodyId ??
+        cameraTargetBodyIdRef.current;
       const activeCameraTargetState =
         current === undefined || activeCameraTargetBodyId === undefined
           ? undefined
@@ -2817,20 +4632,74 @@ export function SolarSystemScene({
       ]
         .map((value) => value.toFixed(8))
         .join(",");
+      const illuminatedFocusBodyId = focusBodyIdRef.current;
+      const illuminatedFocusState =
+        current === undefined ||
+        illuminatedFocusBodyId === null ||
+        illuminatedFocusBodyId === "sun"
+          ? undefined
+          : bodyStateById(current, illuminatedFocusBodyId);
+      const illuminationSunState =
+        current === undefined ? undefined : bodyStateById(current, "sun");
+      if (
+        illuminatedFocusState === undefined ||
+        illuminationSunState === undefined
+      ) {
+        delete container.dataset["focusedSunCameraAlignment"];
+      } else {
+        const focusPosition = scenePosition(illuminatedFocusState.positionM);
+        const focusToSun = scenePosition(illuminationSunState.positionM)
+          .sub(focusPosition)
+          .normalize();
+        const focusToCamera = camera.position
+          .clone()
+          .sub(focusPosition)
+          .normalize();
+        container.dataset["focusedSunCameraAlignment"] = focusToSun
+          .dot(focusToCamera)
+          .toFixed(6);
+      }
 
       if (renderNowMs - lastSunGuideUpdateAt >= SUN_GUIDE_UPDATE_INTERVAL_MS) {
         lastSunGuideUpdateAt = renderNowMs;
-        const sunGuideFocusId = focusBodyIdRef.current;
-        const sunGuideFocusState =
-          current === undefined || sunGuideFocusId === null
-            ? undefined
-            : bodyStateById(current, sunGuideFocusId);
-        const sunGuideSunState =
-          current === undefined ? undefined : bodyStateById(current, "sun");
-        if (current === undefined || sunGuideSunState === undefined) {
+        const activeWayfinderMode = wayfinderModeRef.current;
+        container.dataset["wayfinderMode"] = activeWayfinderMode;
+        const wayfinderVisuals = [
+          {
+            line: sunGuideLine,
+            endpoint: sunGuideEndpoint,
+            label: sunGuideLabel,
+          },
+          ...planetWayfinderVisuals,
+        ];
+        const hideAllWayfinders = (): void => {
           sunGuideOverlay.style.display = "none";
-          sunGuideLabel.hidden = true;
+          for (const visual of wayfinderVisuals) {
+            visual.line.style.display = "none";
+            visual.endpoint.style.display = "none";
+            visual.label.hidden = true;
+            delete visual.label.dataset["targetBodyId"];
+          }
           container.dataset["sunGuideVisible"] = "false";
+          container.dataset["sunGuideLineVisible"] = "false";
+          container.dataset["wayfinderCount"] = "0";
+          container.dataset["wayfinderPlanetCount"] = "0";
+          container.dataset["wayfinderTargets"] = "";
+        };
+        const wayfinderFocusId = focusBodyIdRef.current;
+        const wayfinderFocusState =
+          current === undefined || wayfinderFocusId === null
+            ? undefined
+            : bodyStateById(current, wayfinderFocusId);
+        const wayfinderSunState =
+          current === undefined ? undefined : bodyStateById(current, "sun");
+        if (
+          current === undefined ||
+          wayfinderSunState === undefined ||
+          activeWayfinderMode === "off" ||
+          (wayfinderFocusId === "sun" && activeDeepPresentation !== undefined)
+        ) {
+          hideAllWayfinders();
         } else {
           const viewportWidth = container.clientWidth;
           const viewportHeight = container.clientHeight;
@@ -2839,11 +4708,16 @@ export function SolarSystemScene({
             viewportWidth / 3,
             viewportHeight / 3,
           );
-          const sunPosition = scenePosition(sunGuideSunState.positionM);
+          const sunPosition = scenePosition(wayfinderSunState.positionM);
           const focusPosition =
-            sunGuideFocusState === undefined
+            wayfinderFocusState === undefined
               ? undefined
-              : scenePosition(sunGuideFocusState.positionM);
+              : scenePosition(wayfinderFocusState.positionM);
+          const originBodyId =
+            wayfinderFocusState === undefined || wayfinderFocusId === null
+              ? "sun"
+              : wayfinderFocusId;
+          const originPosition = focusPosition ?? sunPosition;
           const focusScreen =
             focusPosition === undefined ||
             cameraTargetBodyIdRef.current !== undefined
@@ -2874,91 +4748,149 @@ export function SolarSystemScene({
               Math.max(viewportMargin, focusScreen.y),
             ),
           };
-          const sunProjected = sunPosition.clone().project(camera);
-          const rawSunScreen = {
-            x: ((sunProjected.x + 1) * viewportWidth) / 2,
-            y: ((-sunProjected.y + 1) * viewportHeight) / 2,
-          };
-          const sunCameraPosition = sunPosition
-            .clone()
-            .applyMatrix4(camera.matrixWorldInverse);
-          const sunInFront = sunCameraPosition.z < -camera.near;
-          const sunOnScreen =
-            sunInFront &&
-            sunProjected.z >= -1 &&
-            sunProjected.z <= 1 &&
-            pointInsideViewport(
-              rawSunScreen,
-              viewportWidth,
-              viewportHeight,
-              viewportMargin,
-            );
-          let location: "behind" | "off-screen" | "on-screen" = "on-screen";
-          let endpoint = rawSunScreen;
-          if (!sunOnScreen) {
-            location = sunInFront ? "off-screen" : "behind";
-            let direction = sunInFront
-              ? {
-                  x: rawSunScreen.x - guideOrigin.x,
-                  y: rawSunScreen.y - guideOrigin.y,
-                }
-              : { x: sunCameraPosition.x, y: -sunCameraPosition.y };
-            if (Math.hypot(direction.x, direction.y) < 1e-12) {
-              direction = { x: 0, y: -1 };
+          const planetTargets = nearestPlanetWayfinders(
+            current,
+            originBodyId,
+            wayfinderPlanetCount(activeWayfinderMode),
+          );
+          const wayfinderTargetIds = [
+            "sun",
+            ...planetTargets.map((target) => target.bodyId),
+          ];
+          let sunLocation: "behind" | "off-screen" | "on-screen" = "on-screen";
+          let sunDistanceAu = 0;
+          let sunLineVisible = false;
+          for (const [index, visual] of wayfinderVisuals.entries()) {
+            const targetBodyId = wayfinderTargetIds[index];
+            if (targetBodyId === undefined) {
+              visual.line.style.display = "none";
+              visual.endpoint.style.display = "none";
+              visual.label.hidden = true;
+              delete visual.label.dataset["targetBodyId"];
+              continue;
             }
-            endpoint = rayToViewportEdge(
-              guideOrigin,
-              direction,
-              viewportWidth,
-              viewportHeight,
-              viewportMargin,
+            const targetState = bodyStateById(current, targetBodyId);
+            const targetDefinition = majorBodyById.get(targetBodyId);
+            if (targetState === undefined || targetDefinition === undefined) {
+              throw new Error(
+                `Wayfinder target ${targetBodyId} is unavailable`,
+              );
+            }
+            const targetPosition = scenePosition(targetState.positionM);
+            const targetProjected = targetPosition.clone().project(camera);
+            const rawTargetScreen = {
+              x: ((targetProjected.x + 1) * viewportWidth) / 2,
+              y: ((-targetProjected.y + 1) * viewportHeight) / 2,
+            };
+            const targetCameraPosition = targetPosition
+              .clone()
+              .applyMatrix4(camera.matrixWorldInverse);
+            const targetInFront = targetCameraPosition.z < -camera.near;
+            const targetOnScreen =
+              targetInFront &&
+              targetProjected.z >= -1 &&
+              targetProjected.z <= 1 &&
+              pointInsideViewport(
+                rawTargetScreen,
+                viewportWidth,
+                viewportHeight,
+                viewportMargin,
+              );
+            let location: "behind" | "off-screen" | "on-screen" = "on-screen";
+            let endpoint = rawTargetScreen;
+            if (!targetOnScreen) {
+              location = targetInFront ? "off-screen" : "behind";
+              let direction = targetInFront
+                ? {
+                    x: rawTargetScreen.x - guideOrigin.x,
+                    y: rawTargetScreen.y - guideOrigin.y,
+                  }
+                : {
+                    x: targetCameraPosition.x,
+                    y: -targetCameraPosition.y,
+                  };
+              if (Math.hypot(direction.x, direction.y) < 1e-12) {
+                direction = { x: 0, y: -1 };
+              }
+              endpoint = rayToViewportEdge(
+                guideOrigin,
+                direction,
+                viewportWidth,
+                viewportHeight,
+                viewportMargin,
+              );
+            }
+            const hasLine = originBodyId !== targetBodyId;
+            visual.line.style.display = hasLine ? "" : "none";
+            if (hasLine) {
+              visual.line.setAttribute("x1", String(guideOrigin.x));
+              visual.line.setAttribute("y1", String(guideOrigin.y));
+              visual.line.setAttribute("x2", String(endpoint.x));
+              visual.line.setAttribute("y2", String(endpoint.y));
+            }
+            visual.endpoint.style.display = "";
+            visual.endpoint.setAttribute("cx", String(endpoint.x));
+            visual.endpoint.setAttribute("cy", String(endpoint.y));
+            const distanceAu = originPosition.distanceTo(targetPosition);
+            const distanceLabel = hasLine
+              ? ` · ${formatTacticalDistance(distanceAu)}`
+              : "";
+            const locationLabel = location === "behind" ? " behind view" : "";
+            visual.label.textContent = `${targetDefinition.name}${locationLabel}${distanceLabel}`;
+            visual.label.setAttribute(
+              "aria-label",
+              `Focus ${targetDefinition.name}`,
             );
+            visual.label.title = "Click to select; double-click to focus";
+            visual.label.dataset["targetBodyId"] = targetBodyId;
+            visual.label.dataset["distanceAu"] = distanceAu.toFixed(8);
+            visual.label.dataset["location"] = location;
+            const targetIsSelected = targetBodyId === selectedBodyIdRef.current;
+            visual.label.classList.toggle("is-selected", targetIsSelected);
+            visual.label.classList.toggle(
+              "is-focused",
+              targetBodyId === focusBodyIdRef.current,
+            );
+            visual.label.setAttribute("aria-pressed", String(targetIsSelected));
+            const labelWidthAllowance = Math.min(240, viewportWidth - 16);
+            const labelX = Math.min(
+              viewportWidth - labelWidthAllowance - 8,
+              Math.max(
+                8,
+                endpoint.x > viewportWidth / 2
+                  ? endpoint.x - labelWidthAllowance - 8
+                  : endpoint.x + 8,
+              ),
+            );
+            const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
+            const labelY = Math.min(
+              viewportHeight - 30,
+              Math.max(30, endpoint.y + laneOffset),
+            );
+            visual.label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
+            visual.label.hidden = false;
+            if (targetBodyId === "sun") {
+              sunLocation = location;
+              sunDistanceAu = distanceAu;
+              sunLineVisible = hasLine;
+            }
           }
-          const hasFocusToSunLine =
-            focusPosition !== undefined && sunGuideFocusId !== "sun";
-          sunGuideLine.style.display = hasFocusToSunLine ? "" : "none";
-          if (hasFocusToSunLine) {
-            sunGuideLine.setAttribute("x1", String(guideOrigin.x));
-            sunGuideLine.setAttribute("y1", String(guideOrigin.y));
-            sunGuideLine.setAttribute("x2", String(endpoint.x));
-            sunGuideLine.setAttribute("y2", String(endpoint.y));
-          }
-          sunGuideEndpoint.setAttribute("cx", String(endpoint.x));
-          sunGuideEndpoint.setAttribute("cy", String(endpoint.y));
-          const distanceAu =
-            focusPosition === undefined
-              ? undefined
-              : focusPosition.distanceTo(sunPosition);
-          const distanceLabel =
-            distanceAu === undefined || sunGuideFocusId === "sun"
-              ? ""
-              : ` · ${formatTacticalDistance(distanceAu)}`;
-          const locationLabel = location === "behind" ? " behind view" : "";
-          sunGuideLabel.textContent = `Sun${locationLabel}${distanceLabel}`;
-          const labelWidthAllowance = Math.min(240, viewportWidth - 16);
-          const labelX = Math.min(
-            viewportWidth - labelWidthAllowance - 8,
-            Math.max(
-              8,
-              endpoint.x > viewportWidth / 2
-                ? endpoint.x - labelWidthAllowance - 8
-                : endpoint.x + 8,
-            ),
-          );
-          const labelY = Math.min(
-            viewportHeight - 30,
-            Math.max(30, endpoint.y),
-          );
-          sunGuideLabel.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
           sunGuideOverlay.style.display = "";
-          sunGuideLabel.hidden = false;
           container.dataset["sunGuideVisible"] = "true";
-          container.dataset["sunGuideLocation"] = location;
-          container.dataset["sunGuideDistanceAu"] =
-            distanceAu === undefined ? "unavailable" : distanceAu.toFixed(8);
-          container.dataset["sunGuideLineVisible"] = String(hasFocusToSunLine);
-          container.dataset["sunGuideEndpointX"] = endpoint.x.toFixed(2);
-          container.dataset["sunGuideEndpointY"] = endpoint.y.toFixed(2);
+          container.dataset["sunGuideLocation"] = sunLocation;
+          container.dataset["sunGuideDistanceAu"] = sunDistanceAu.toFixed(8);
+          container.dataset["sunGuideLineVisible"] = String(sunLineVisible);
+          container.dataset["sunGuideEndpointX"] =
+            sunGuideEndpoint.getAttribute("cx") ?? "unavailable";
+          container.dataset["sunGuideEndpointY"] =
+            sunGuideEndpoint.getAttribute("cy") ?? "unavailable";
+          container.dataset["wayfinderCount"] = String(
+            wayfinderTargetIds.length,
+          );
+          container.dataset["wayfinderPlanetCount"] = String(
+            planetTargets.length,
+          );
+          container.dataset["wayfinderTargets"] = wayfinderTargetIds.join(",");
         }
       }
 
@@ -3103,8 +5035,11 @@ export function SolarSystemScene({
           ? undefined
           : knownSatelliteById.get(tacticalFocusId);
       const semanticFocusMesh =
-        tacticalFocusId === ISS_BODY_ID
-          ? issGroup
+        tacticalFocusId !== null &&
+        (tacticalFocusId === ISS_BODY_ID ||
+          isVoyagerBodyId(tacticalFocusId) ||
+          isOperationalSpacecraftBodyId(tacticalFocusId))
+          ? spacecraftGroups.get(tacticalFocusId)
           : tacticalFocusId === null
             ? undefined
             : bodyMeshes.get(tacticalFocusId);
@@ -3114,26 +5049,35 @@ export function SolarSystemScene({
           : camera.position.distanceTo(semanticFocusMesh.position) /
             camera.zoom;
       const semanticPhysicalRadiusAu =
-        tacticalFocusId === ISS_BODY_ID
-          ? ISS_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M
+        tacticalFocusId !== null &&
+        spacecraftBoundingRadiusM(tacticalFocusId) !== undefined
+          ? (spacecraftBoundingRadiusM(tacticalFocusId) ?? 0) /
+            ASTRONOMICAL_UNIT_M
           : semanticFocusDefinition === undefined
             ? 0
             : semanticFocusDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
-      const semanticZoomLevel =
-        tacticalFocusId === ISS_BODY_ID
-          ? semanticCameraDistance < semanticPhysicalRadiusAu * 80
-            ? "surface"
-            : "moon-system"
-          : semanticKnownSatellite !== undefined
-            ? "moon-system"
-            : semanticFocusDefinition === undefined ||
-                semanticFocusMesh === undefined
-              ? "solar-system"
-              : semanticCameraDistance < semanticPhysicalRadiusAu * 80
-                ? "surface"
-                : semanticFocusDefinition.type === "moon"
+      const semanticZoomLevel: SemanticZoomLevel =
+        distanceFromSunAu >= 200_000
+          ? "interstellar"
+          : distanceFromSunAu >= 1_000
+            ? "oort-cloud"
+            : distanceFromSunAu >= 150
+              ? "heliosphere"
+              : tacticalFocusId !== null &&
+                  spacecraftBoundingRadiusM(tacticalFocusId) !== undefined
+                ? semanticCameraDistance < semanticPhysicalRadiusAu * 80
+                  ? "surface"
+                  : "moon-system"
+                : semanticKnownSatellite !== undefined
                   ? "moon-system"
-                  : "planetary-system";
+                  : semanticFocusDefinition === undefined ||
+                      semanticFocusMesh === undefined
+                    ? "solar-system"
+                    : semanticCameraDistance < semanticPhysicalRadiusAu * 80
+                      ? "surface"
+                      : semanticFocusDefinition.type === "moon"
+                        ? "moon-system"
+                        : "planetary-system";
       container.dataset["semanticZoomLevel"] = semanticZoomLevel;
       if (semanticZoomLevel !== lastSemanticZoomLevel) {
         lastSemanticZoomLevel = semanticZoomLevel;
@@ -3176,12 +5120,24 @@ export function SolarSystemScene({
           projected.z <= 1 &&
           Math.abs(projected.x) <= 1 &&
           Math.abs(projected.y) <= 1;
+        label.dataset["screenX"] = (
+          ((projected.x + 1) * container.clientWidth) /
+          2
+        ).toFixed(3);
+        label.dataset["screenY"] = (
+          ((-projected.y + 1) * container.clientHeight) /
+          2
+        ).toFixed(3);
+        label.dataset["inCameraFrustum"] = String(isInCameraFrustum);
         const isOverviewPlanet =
           (focusBodyIdRef.current === null ||
             focusBodyIdRef.current === "sun") &&
           (body.type === "planet" || body.type === "dwarf-planet");
         const focusedBodyId = focusBodyIdRef.current;
-        const isCameraTarget = body.id === cameraTargetBodyIdRef.current;
+        const isCameraTarget =
+          body.id ===
+          (surfaceObserverRef.current?.targetBodyId ??
+            cameraTargetBodyIdRef.current);
         const focusedParentId =
           focusedBodyId === null ? undefined : parentBodyId(focusedBodyId);
         const bodyParentId = PARENT_BODY_ID[body.id];
@@ -3303,12 +5259,16 @@ export function SolarSystemScene({
         label.classList.toggle("is-bracket", viewModeRef.current === "orrery");
         label.classList.toggle(
           "is-selected",
+          body.id === selectedBodyIdRef.current,
+        );
+        label.classList.toggle(
+          "is-focused",
           body.id === focusBodyIdRef.current,
         );
         label.classList.toggle("is-camera-target", isCameraTarget);
         label.setAttribute(
           "aria-pressed",
-          String(body.id === focusBodyIdRef.current),
+          String(body.id === selectedBodyIdRef.current),
         );
         const leaderX = projectedLabelX - labelX;
         const leaderY = projectedLabelY - labelY;
@@ -3336,7 +5296,7 @@ export function SolarSystemScene({
             visibleOrreryMarkerCount += 1;
             marker.classList.toggle(
               "is-selected",
-              body.id === focusBodyIdRef.current,
+              body.id === selectedBodyIdRef.current,
             );
             marker.style.transform = `translate(${String(projectedLabelX)}px, ${String(projectedLabelY)}px)`;
           }
@@ -3383,11 +5343,19 @@ export function SolarSystemScene({
         issMarker.hidden = !markerVisible;
         issMarker.classList.toggle(
           "is-selected",
-          focusBodyIdRef.current === ISS_BODY_ID,
+          selectedBodyIdRef.current === ISS_BODY_ID,
         );
         issLabel.setAttribute(
           "aria-pressed",
-          String(focusBodyIdRef.current === ISS_BODY_ID),
+          String(selectedBodyIdRef.current === ISS_BODY_ID),
+        );
+        issLabel.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === ISS_BODY_ID,
+        );
+        issLabel.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === ISS_BODY_ID,
         );
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
@@ -3411,6 +5379,184 @@ export function SolarSystemScene({
         issLabel.hidden = true;
         issMarker.hidden = true;
       }
+      for (const probe of voyagerSnapshot.probes) {
+        const probeState =
+          current === undefined ? undefined : bodyStateById(current, probe.id);
+        const group = voyagerGroups.get(probe.id);
+        const label = voyagerLabels.get(probe.id);
+        const marker = voyagerMarkers.get(probe.id);
+        if (
+          group === undefined ||
+          label === undefined ||
+          marker === undefined
+        ) {
+          throw new Error(`Voyager scene objects ${probe.id} are unavailable`);
+        }
+        if (current === undefined) {
+          group.visible = false;
+          label.hidden = true;
+          marker.hidden = true;
+          continue;
+        }
+        if (probeState === undefined) {
+          throw new Error(
+            `Integrated state is missing ${probe.id}; received ${String(
+              current.bodies.length,
+            )} bodies ending with ${current.bodies
+              .slice(-4)
+              .map((body) => body.id)
+              .join(",")}`,
+          );
+        }
+        const position = scenePosition(probeState.positionM);
+        const projected = position.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(position),
+          1e-15,
+        );
+        const radiusAu = probe.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        group.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          surfaceObserverRef.current === null &&
+          (spacecraftLabelBodyIdsRef.current === undefined ||
+            spacecraftLabelBodyIdsRef.current.includes(probe.id));
+        label.hidden = !labelVisible;
+        label.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === probe.id,
+        );
+        label.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === probe.id),
+        );
+        label.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === probe.id,
+        );
+        const markerVisible =
+          viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
+        marker.hidden = !markerVisible;
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        if (markerVisible) {
+          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        const datasetPrefix =
+          probe.id === "voyager-1" ? "voyager1" : "voyager2";
+        container.dataset[`${datasetPrefix}DistanceAu`] = (
+          Math.hypot(...probeState.positionM) / ASTRONOMICAL_UNIT_M
+        ).toFixed(6);
+        container.dataset[`${datasetPrefix}RadiusPixels`] =
+          radiusPixels.toFixed(3);
+        container.dataset[`${datasetPrefix}GeometryVisible`] =
+          String(geometryVisible);
+      }
+      container.dataset["voyagerCount"] = String(voyagerSnapshot.probes.length);
+      container.dataset["voyagerModelScale"] = "physical";
+      container.dataset["voyagerPhysics"] = "REBOUND-massless-test-particle";
+      for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
+        const group = spacecraftGroups.get(spacecraft.id);
+        const label = operationalSpacecraftLabels.get(spacecraft.id);
+        const marker = operationalSpacecraftMarkers.get(spacecraft.id);
+        if (
+          group === undefined ||
+          label === undefined ||
+          marker === undefined
+        ) {
+          throw new Error(`${spacecraft.name} scene objects are unavailable`);
+        }
+        const spacecraftState =
+          current === undefined
+            ? undefined
+            : bodyStateById(current, spacecraft.id);
+        if (spacecraftState === undefined) {
+          group.visible = false;
+          label.hidden = true;
+          marker.hidden = true;
+          continue;
+        }
+        const position = scenePosition(spacecraftState.positionM);
+        const projected = position.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(position),
+          1e-15,
+        );
+        const radiusAu = spacecraft.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        group.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          surfaceObserverRef.current === null &&
+          (spacecraftLabelBodyIdsRef.current === undefined ||
+            spacecraftLabelBodyIdsRef.current.includes(spacecraft.id));
+        label.hidden = !labelVisible;
+        label.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === spacecraft.id,
+        );
+        label.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === spacecraft.id),
+        );
+        label.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === spacecraft.id,
+        );
+        const markerVisible =
+          viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
+        marker.hidden = !markerVisible;
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        if (markerVisible) {
+          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        container.dataset[`${spacecraft.id}RadiusPixels`] =
+          radiusPixels.toFixed(3);
+        container.dataset[`${spacecraft.id}GeometryVisible`] =
+          String(geometryVisible);
+      }
+      container.dataset["operationalSpacecraftPhysics"] =
+        "NASA-JPL-Horizons-cubic-Hermite";
       container.dataset["visibleBodyLabels"] = String(visibleLabelCount);
       container.dataset["orreryMarkerCount"] = String(visibleOrreryMarkerCount);
 
@@ -3444,12 +5590,26 @@ export function SolarSystemScene({
             "aria-label",
             `Focus ${focusedKnownSatellite.name}`,
           );
-          focusedKnownMoonLabel.setAttribute("aria-pressed", "true");
+          focusedKnownMoonLabel.title =
+            "Click to select; double-click to focus";
+          const focusedMoonIsSelected =
+            selectedBodyIdRef.current === focusedKnownSatellite.id;
+          focusedKnownMoonLabel.setAttribute(
+            "aria-pressed",
+            String(focusedMoonIsSelected),
+          );
+          focusedKnownMoonLabel.classList.toggle(
+            "is-selected",
+            focusedMoonIsSelected,
+          );
+          focusedKnownMoonLabel.classList.add("is-focused");
           focusedKnownMoonLabel.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
           visibleLabelCount += 1;
         }
       } else {
         focusedKnownMoonLabel.hidden = true;
+        focusedKnownMoonLabel.classList.remove("is-selected");
+        focusedKnownMoonLabel.classList.remove("is-focused");
       }
       container.dataset["visibleBodyLabels"] = String(visibleLabelCount);
 
@@ -3464,6 +5624,18 @@ export function SolarSystemScene({
           separationPixels.toFixed(2);
       }
       renderer.render(scene, camera);
+      container.dataset["renderFrameIntervalMs"] =
+        frameIntervalEmaMs.toFixed(2);
+      container.dataset["renderFps"] = (
+        1_000 / Math.max(frameIntervalEmaMs, 0.001)
+      ).toFixed(1);
+      container.dataset["renderCpuSubmissionMs"] = (
+        performance.now() - frameRenderStartedAtMs
+      ).toFixed(2);
+      container.dataset["renderCalls"] = String(renderer.info.render.calls);
+      container.dataset["renderTriangles"] = String(
+        renderer.info.render.triangles,
+      );
       if (gpuLayer !== undefined) {
         const requestedFocusBodyId = focusBodyIdRef.current;
         const focusState =
@@ -3509,16 +5681,39 @@ export function SolarSystemScene({
 
     return () => {
       active = false;
+      modelLoadingActive = false;
       snapshotAbortController.abort();
       window.clearTimeout(startupTimer);
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       controls.dispose();
+      dracoLoader.dispose();
       controls.removeEventListener("start", handleControlStart);
+      renderer.domElement.removeEventListener(
+        "pointerdown",
+        handleSurfacePointerDown,
+      );
+      renderer.domElement.removeEventListener(
+        "pointermove",
+        handleSurfacePointerMove,
+      );
+      renderer.domElement.removeEventListener(
+        "pointerup",
+        handleSurfacePointerUp,
+      );
+      renderer.domElement.removeEventListener(
+        "pointercancel",
+        handlePointerCancel,
+      );
+      renderer.domElement.removeEventListener(
+        "pointerleave",
+        hideBodyHoverTooltip,
+      );
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       gpuLayer?.dispose();
       gravityWellLayer.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       for (const geometry of geometries) {
         geometry.dispose();
       }
@@ -3529,8 +5724,19 @@ export function SolarSystemScene({
         texture.dispose();
       }
       container.removeChild(rangeLegend);
+      container.removeChild(spacecraftModelStatus);
+      container.removeChild(cameraJourney);
+      container.removeChild(bodyHoverTooltip);
+      for (const label of deepSpaceLabels) {
+        container.removeChild(label);
+      }
+      container.removeChild(deepSunLabel);
+      container.removeChild(navigationMap);
       container.removeChild(focusBracket);
       container.removeChild(sunGuideLabel);
+      for (const visual of planetWayfinderVisuals) {
+        container.removeChild(visual.label);
+      }
       container.removeChild(sunGuideOverlay);
       container.removeChild(tacticalOverlay);
       container.removeChild(markerLayer);
@@ -3556,17 +5762,38 @@ export function SolarSystemScene({
       data-planets-visible={String(objectVisibility.planets)}
       data-moons-visible={String(objectVisibility.moons)}
       data-spacecraft-visible={String(objectVisibility.spacecraft)}
+      data-wayfinder-mode={wayfinderMode}
       data-star-field-count={hipparcosStarSnapshot.stars.length}
       data-star-catalogue="ESA Hipparcos I/239"
       data-star-reference-frame="ICRS"
-      data-surface-lighting="solar-point-light"
-      data-atmosphere-rendering="fresnel-rim"
+      data-surface-lighting="inverse-square-solar-point-light-auto-exposure"
+      data-atmosphere-rendering="sunlit-single-scattering-phase-functions"
+      data-heliopause-voyager-1-au={VOYAGER_1_HELIOPAUSE_AU}
+      data-heliopause-voyager-2-au={VOYAGER_2_HELIOPAUSE_AU}
+      data-oort-inner-min-au={OORT_CLOUD_INNER_MIN_AU}
+      data-oort-inner-max-au={OORT_CLOUD_INNER_MAX_AU}
+      data-oort-outer-min-au={OORT_CLOUD_OUTER_MIN_AU}
+      data-oort-outer-max-au={OORT_CLOUD_OUTER_MAX_AU}
+      data-alpha-distance-au={ALPHA_CENTAURI_DISTANCE_AU}
+      data-solar-system-share-percent={(
+        (PREVIOUS_SOLAR_SYSTEM_VIEW_AU / ALPHA_CENTAURI_DISTANCE_AU) *
+        100
+      ).toFixed(6)}
+      data-oort-cloud-share-percent={(
+        (OORT_CLOUD_OUTER_MAX_AU / ALPHA_CENTAURI_DISTANCE_AU) *
+        100
+      ).toFixed(6)}
     >
       {gravityWellMode === "off" ? null : (
         <span className="gravity-field-legend" aria-hidden="true">
           <strong>Newtonian potential</strong>
           <span data-gravity-potential-range>Calculating J/kg range...</span>
-          <small>Combined field · logarithmic display</small>
+          <small>
+            Combined field · logarithmic display ·{" "}
+            {gravityWellScale === "local"
+              ? "locally normalised detail"
+              : "fixed absolute comparison"}
+          </small>
         </span>
       )}
     </div>

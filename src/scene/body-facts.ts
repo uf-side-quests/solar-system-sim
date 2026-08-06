@@ -1,4 +1,6 @@
 export const PARENT_BODY_ID: Readonly<Record<string, string>> = {
+  "voyager-1": "sun",
+  "voyager-2": "sun",
   mercury: "sun",
   venus: "sun",
   earth: "sun",

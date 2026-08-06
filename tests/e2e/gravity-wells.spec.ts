@@ -31,9 +31,11 @@ test("renders the live superposed Newtonian potential as contours and a 3D well"
     .getByRole("combobox", { name: "Orientation" })
     .selectOption("overhead");
   const gravityField = page.getByRole("combobox", { name: "Gravity field" });
+  const gravityScale = page.getByRole("combobox", { name: "Gravity scale" });
   await gravityField.selectOption("contours");
   await expect(scene).toHaveAttribute("data-gravity-well-mode", "contours");
   await expect(scene).toHaveAttribute("data-gravity-well-visible", "true");
+  await expect(scene).toHaveAttribute("data-gravity-well-scale", "local");
   await expect(scene).toHaveAttribute(
     "data-gravity-potential-equation",
     "negative-sum-gm-over-r",
@@ -71,6 +73,8 @@ test("renders the live superposed Newtonian potential as contours and a 3D well"
   });
 
   await page.getByRole("button", { name: "Display" }).click();
+  await gravityScale.selectOption("absolute");
+  await expect(scene).toHaveAttribute("data-gravity-well-scale", "absolute");
   await page
     .getByRole("combobox", { name: "Orientation" })
     .selectOption("perspective");

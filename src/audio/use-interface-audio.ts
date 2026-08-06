@@ -9,6 +9,7 @@ import {
 import {
   type AudioEngineStatus,
   type InterfaceSound,
+  type NarrationStatus,
   SolarAudioEngine,
 } from "./SolarAudioEngine";
 
@@ -17,7 +18,11 @@ type AudioSetting = keyof AudioSettings;
 export function useInterfaceAudio(): Readonly<{
   settings: AudioSettings;
   status: AudioEngineStatus;
+  narrationStatus: NarrationStatus;
   interact(sound: InterfaceSound): void;
+  loadNarration(sourceUrl: string | undefined, autoplay: boolean): void;
+  setNarrationPlaying(playing: boolean): void;
+  clearNarration(): void;
   updateSetting<T extends AudioSetting>(
     setting: T,
     value: AudioSettings[T],
@@ -35,10 +40,16 @@ export function useInterfaceAudio(): Readonly<{
   const [status, setStatus] = useState<AudioEngineStatus>(
     "awaiting-interaction",
   );
+  const [narrationStatus, setNarrationStatus] =
+    useState<NarrationStatus>("idle");
   const engineRef = useRef<SolarAudioEngine | undefined>(undefined);
 
   useEffect(() => {
-    const engine = new SolarAudioEngine(settings, setStatus);
+    const engine = new SolarAudioEngine(
+      settings,
+      setStatus,
+      setNarrationStatus,
+    );
     engineRef.current = engine;
     const handleVisibilityChange = (): void => {
       void engine.setDocumentVisible(!document.hidden);
@@ -67,6 +78,21 @@ export function useInterfaceAudio(): Readonly<{
     engineRef.current?.interact(sound);
   }, []);
 
+  const loadNarration = useCallback(
+    (sourceUrl: string | undefined, autoplay: boolean): void => {
+      void engineRef.current?.loadNarration(sourceUrl, autoplay);
+    },
+    [],
+  );
+
+  const setNarrationPlaying = useCallback((playing: boolean): void => {
+    engineRef.current?.setNarrationPlaying(playing);
+  }, []);
+
+  const clearNarration = useCallback((): void => {
+    engineRef.current?.clearNarration();
+  }, []);
+
   const updateSetting = useCallback(
     <T extends AudioSetting>(setting: T, value: AudioSettings[T]): void => {
       setSettings((current) => ({ ...current, [setting]: value }));
@@ -74,5 +100,14 @@ export function useInterfaceAudio(): Readonly<{
     [],
   );
 
-  return { settings, status, interact, updateSetting };
+  return {
+    settings,
+    status,
+    narrationStatus,
+    interact,
+    loadNarration,
+    setNarrationPlaying,
+    clearNarration,
+    updateSetting,
+  };
 }

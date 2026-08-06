@@ -182,6 +182,32 @@ export const BODY_COMPOSITION_BY_ID: Readonly<
     sourceUrl:
       "https://www.nasa.gov/international-space-station/space-station-facts-and-figures/",
   },
+  "voyager-1": {
+    summary:
+      "Engineered aluminium structure, high-gain antenna, radioisotope power systems and scientific instruments",
+    authority: "NASA Voyager Frequently Asked Questions",
+    sourceUrl:
+      "https://science.nasa.gov/mission/voyager/frequently-asked-questions/",
+  },
+  "voyager-2": {
+    summary:
+      "Engineered aluminium structure, high-gain antenna, radioisotope power systems and scientific instruments",
+    authority: "NASA Voyager Frequently Asked Questions",
+    sourceUrl:
+      "https://science.nasa.gov/mission/voyager/frequently-asked-questions/",
+  },
+  hubble: {
+    summary:
+      "Engineered aluminium structure, optical telescope assembly, solar arrays and scientific instruments",
+    authority: "NASA Hubble Observatory Design",
+    sourceUrl: "https://science.nasa.gov/mission/hubble/observatory/design/",
+  },
+  jwst: {
+    summary:
+      "Beryllium mirror segments, graphite composite structure, multilayer polymer sunshield and scientific instruments",
+    authority: "NASA Webb Telescope Overview",
+    sourceUrl: "https://science.nasa.gov/mission/webb/spacecraft/",
+  },
 };
 
 const SUPERSCRIPT_DIGIT: Readonly<Record<string, string>> = {

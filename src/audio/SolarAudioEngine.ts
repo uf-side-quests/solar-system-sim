@@ -2,6 +2,8 @@ import type { AudioSettings } from "./audio-settings";
 
 export type AudioEngineStatus =
   "awaiting-interaction" | "running" | "suspended" | "unavailable";
+export type NarrationStatus =
+  "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
 export type InterfaceSound = "button" | "option" | "slider";
 
@@ -13,10 +15,13 @@ const CHORDS_HZ = [
 ] as const;
 const CHIME_NOTES_HZ = [220, 261.63, 293.66, 329.63, 392, 440] as const;
 const MUSIC_FADE_SECONDS = 0.8;
+const NARRATION_FADE_IN_SECONDS = 0.08;
+const NARRATION_FADE_OUT_SECONDS = 0.16;
 
 type AudioNodes = Readonly<{
   musicGain: GainNode;
   effectsGain: GainNode;
+  narrationGain: GainNode;
   padFilter: BiquadFilterNode;
   delayInput: GainNode;
 }>;
@@ -30,11 +35,20 @@ export class SolarAudioEngine {
   private chordTimer: number | undefined;
   private chimeTimer: number | undefined;
   private padOscillators: OscillatorNode[] = [];
+  private narrationBuffer: AudioBuffer | undefined;
+  private narrationSource: AudioBufferSourceNode | undefined;
+  private narrationSourceGain: GainNode | undefined;
+  private narrationOffsetSeconds = 0;
+  private narrationStartedAt = 0;
+  private narrationRequestVersion = 0;
+  private narrationShouldPlay = false;
+  private narrationActive = false;
   private disposed = false;
 
   public constructor(
     settings: AudioSettings,
     private readonly onStatusChange: (status: AudioEngineStatus) => void,
+    private readonly onNarrationStatusChange: (status: NarrationStatus) => void,
   ) {
     this.settings = settings;
     this.onStatusChange(
@@ -45,8 +59,84 @@ export class SolarAudioEngine {
   }
 
   public setSettings(settings: AudioSettings): void {
+    const narrationWasDisabled =
+      this.settings.narrationEnabled && !settings.narrationEnabled;
     this.settings = settings;
+    if (narrationWasDisabled) {
+      this.clearNarration();
+    }
     this.applySettings();
+  }
+
+  public async loadNarration(
+    sourceUrl: string | undefined,
+    autoplay: boolean,
+  ): Promise<void> {
+    const requestVersion = ++this.narrationRequestVersion;
+    this.stopNarrationSource(false);
+    this.narrationBuffer = undefined;
+    this.narrationOffsetSeconds = 0;
+    this.narrationShouldPlay = autoplay;
+    this.narrationActive = false;
+    this.applySettings();
+    if (sourceUrl === undefined || !this.settings.narrationEnabled) {
+      this.onNarrationStatusChange("idle");
+      return;
+    }
+
+    this.onNarrationStatusChange("loading");
+    try {
+      const unlocked = await this.unlock();
+      if (!unlocked || this.context === undefined) {
+        throw new Error("Audio context is unavailable");
+      }
+      const response = await fetch(sourceUrl);
+      if (!response.ok) {
+        throw new Error(
+          `Narration request failed with HTTP ${String(response.status)}`,
+        );
+      }
+      const encodedAudio = await response.arrayBuffer();
+      const buffer = await this.context.decodeAudioData(encodedAudio);
+      if (requestVersion !== this.narrationRequestVersion || this.disposed) {
+        return;
+      }
+      this.narrationBuffer = buffer;
+      if (this.narrationShouldPlay) {
+        this.startNarrationSource();
+      } else {
+        this.onNarrationStatusChange("paused");
+      }
+    } catch {
+      if (requestVersion === this.narrationRequestVersion && !this.disposed) {
+        this.narrationShouldPlay = false;
+        this.narrationActive = false;
+        this.applySettings();
+        this.onNarrationStatusChange("error");
+      }
+    }
+  }
+
+  public setNarrationPlaying(playing: boolean): void {
+    this.narrationShouldPlay = playing;
+    if (!this.settings.narrationEnabled || this.narrationBuffer === undefined) {
+      return;
+    }
+    if (playing) {
+      this.startNarrationSource();
+      return;
+    }
+    this.stopNarrationSource(true);
+    this.onNarrationStatusChange("paused");
+  }
+
+  public clearNarration(): void {
+    this.narrationRequestVersion += 1;
+    this.narrationShouldPlay = false;
+    this.stopNarrationSource(false);
+    this.narrationBuffer = undefined;
+    this.narrationOffsetSeconds = 0;
+    this.onNarrationStatusChange("idle");
   }
 
   public interact(sound: InterfaceSound): void {
@@ -67,7 +157,11 @@ export class SolarAudioEngine {
       this.publishStatus();
       return;
     }
-    if (this.settings.musicEnabled) {
+    if (
+      this.settings.musicEnabled ||
+      this.settings.effectsEnabled ||
+      this.settings.narrationEnabled
+    ) {
       await this.context.resume();
       this.publishStatus();
     }
@@ -75,6 +169,7 @@ export class SolarAudioEngine {
 
   public dispose(): void {
     this.disposed = true;
+    this.clearNarration();
     if (this.chordTimer !== undefined) {
       window.clearInterval(this.chordTimer);
     }
@@ -130,8 +225,10 @@ export class SolarAudioEngine {
 
     const musicGain = context.createGain();
     const effectsGain = context.createGain();
+    const narrationGain = context.createGain();
     musicGain.connect(compressor);
     effectsGain.connect(compressor);
+    narrationGain.connect(compressor);
 
     const padFilter = context.createBiquadFilter();
     padFilter.type = "lowpass";
@@ -156,7 +253,13 @@ export class SolarAudioEngine {
     delayTone.connect(wet);
     wet.connect(musicGain);
 
-    this.nodes = { musicGain, effectsGain, padFilter, delayInput };
+    this.nodes = {
+      musicGain,
+      effectsGain,
+      narrationGain,
+      padFilter,
+      delayInput,
+    };
     this.createPadVoices();
     this.startCompositionTimers();
     this.applySettings();
@@ -278,16 +381,110 @@ export class SolarAudioEngine {
     oscillator.stop(now + 0.06);
   }
 
+  private startNarrationSource(): void {
+    if (
+      this.context === undefined ||
+      this.nodes === undefined ||
+      this.narrationBuffer === undefined ||
+      this.narrationSource !== undefined ||
+      !this.narrationShouldPlay ||
+      !this.settings.narrationEnabled
+    ) {
+      return;
+    }
+    if (this.narrationOffsetSeconds >= this.narrationBuffer.duration) {
+      this.narrationOffsetSeconds = 0;
+    }
+    const source = this.context.createBufferSource();
+    const sourceGain = this.context.createGain();
+    source.buffer = this.narrationBuffer;
+    source.connect(sourceGain);
+    sourceGain.connect(this.nodes.narrationGain);
+    source.onended = () => {
+      if (this.narrationSource !== source) {
+        return;
+      }
+      this.narrationSource = undefined;
+      this.narrationSourceGain = undefined;
+      this.narrationOffsetSeconds = 0;
+      this.narrationShouldPlay = false;
+      this.narrationActive = false;
+      this.applySettings();
+      this.onNarrationStatusChange("ended");
+    };
+    this.narrationSource = source;
+    this.narrationSourceGain = sourceGain;
+    const now = this.context.currentTime;
+    const remainingDuration =
+      this.narrationBuffer.duration - this.narrationOffsetSeconds;
+    const fadeInDuration = Math.min(
+      NARRATION_FADE_IN_SECONDS,
+      remainingDuration / 2,
+    );
+    const fadeOutStartsAt =
+      now +
+      Math.max(fadeInDuration, remainingDuration - NARRATION_FADE_OUT_SECONDS);
+    this.narrationStartedAt = now;
+    this.narrationActive = true;
+    this.applySettings();
+    sourceGain.gain.setValueAtTime(0.0001, now);
+    sourceGain.gain.linearRampToValueAtTime(1, now + fadeInDuration);
+    sourceGain.gain.setValueAtTime(1, fadeOutStartsAt);
+    sourceGain.gain.linearRampToValueAtTime(0.0001, now + remainingDuration);
+    source.start(0, this.narrationOffsetSeconds);
+    this.onNarrationStatusChange("playing");
+  }
+
+  private stopNarrationSource(preserveOffset: boolean): void {
+    if (this.narrationSource === undefined) {
+      this.narrationActive = false;
+      this.applySettings();
+      return;
+    }
+    if (
+      preserveOffset &&
+      this.context !== undefined &&
+      this.narrationBuffer !== undefined
+    ) {
+      this.narrationOffsetSeconds = Math.min(
+        this.narrationBuffer.duration,
+        this.narrationOffsetSeconds +
+          Math.max(0, this.context.currentTime - this.narrationStartedAt),
+      );
+    }
+    const source = this.narrationSource;
+    const sourceGain = this.narrationSourceGain;
+    this.narrationSource = undefined;
+    this.narrationSourceGain = undefined;
+    source.onended = null;
+    if (this.context === undefined || sourceGain === undefined) {
+      source.stop();
+    } else {
+      const now = this.context.currentTime;
+      sourceGain.gain.cancelAndHoldAtTime(now);
+      sourceGain.gain.linearRampToValueAtTime(
+        0.0001,
+        now + NARRATION_FADE_OUT_SECONDS,
+      );
+      source.stop(now + NARRATION_FADE_OUT_SECONDS);
+    }
+    this.narrationActive = false;
+    this.applySettings();
+  }
+
   private applySettings(): void {
     if (this.context === undefined || this.nodes === undefined) {
       return;
     }
     const now = this.context.currentTime;
     const musicLevel = this.settings.musicEnabled
-      ? this.settings.musicVolume
+      ? this.settings.musicVolume * (this.narrationActive ? 0.24 : 1)
       : 0.0001;
     const effectsLevel = this.settings.effectsEnabled
       ? this.settings.effectsVolume
+      : 0.0001;
+    const narrationLevel = this.settings.narrationEnabled
+      ? this.settings.narrationVolume
       : 0.0001;
     this.nodes.musicGain.gain.cancelScheduledValues(now);
     this.nodes.musicGain.gain.setTargetAtTime(
@@ -297,6 +494,12 @@ export class SolarAudioEngine {
     );
     this.nodes.effectsGain.gain.cancelScheduledValues(now);
     this.nodes.effectsGain.gain.setTargetAtTime(effectsLevel, now, 0.03);
+    this.nodes.narrationGain.gain.cancelScheduledValues(now);
+    this.nodes.narrationGain.gain.setTargetAtTime(
+      narrationLevel,
+      now,
+      MUSIC_FADE_SECONDS / 4,
+    );
   }
 
   private readonly publishStatus = (): void => {

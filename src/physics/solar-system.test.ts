@@ -67,8 +67,13 @@ describe("NASA/JPL Horizons major-body snapshot", () => {
     });
   });
 
-  it("keeps small moons outside the massive REBOUND state for bounded playback", () => {
+  it("keeps small moons outside REBOUND while retaining the two massless probes", () => {
     expect(additionalAvailableKnownSatellites).toHaveLength(437);
-    expect(majorBodySystem.bodies).toHaveLength(31);
+    expect(majorBodySystem.bodies).toHaveLength(33);
+    expect(
+      majorBodySystem.bodies.filter(
+        (body) => body.gravitationalParameterM3S2 === 0,
+      ),
+    ).toHaveLength(2);
   });
 });

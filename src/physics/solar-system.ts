@@ -4,6 +4,7 @@ import { z } from "zod";
 import naifPhysicalSnapshotJson from "../data/naif-physical.snapshot.json";
 export { majorBodySnapshot } from "./solar-system-data";
 import { majorBodySnapshot } from "./solar-system-data";
+import { voyagerInitialBodies } from "./voyager-ephemeris";
 
 export const ASTRONOMICAL_UNIT_M = 149_597_870_700;
 export const SUN_GRAVITATIONAL_PARAMETER_M3_S2 = Number(
@@ -61,16 +62,19 @@ export const naifPhysicalSnapshot = naifPhysicalSnapshotSchema.parse(
 export type { MajorBodyDefinition } from "./solar-system-data";
 
 export const majorBodySystem: SimulationInitialState = {
-  bodies: majorBodySnapshot.bodies.map((body) => ({
-    id: body.id,
-    gravitationalParameterM3S2:
-      naifPhysicalSnapshot.bodies[body.id]?.gravitationalParameterM3S2 ??
-      (() => {
-        throw new Error(`NAIF physical data is missing body ${body.id}`);
-      })(),
-    positionM: body.positionM,
-    velocityMps: body.velocityMps,
-  })),
+  bodies: [
+    ...majorBodySnapshot.bodies.map((body) => ({
+      id: body.id,
+      gravitationalParameterM3S2:
+        naifPhysicalSnapshot.bodies[body.id]?.gravitationalParameterM3S2 ??
+        (() => {
+          throw new Error(`NAIF physical data is missing body ${body.id}`);
+        })(),
+      positionM: body.positionM,
+      velocityMps: body.velocityMps,
+    })),
+    ...voyagerInitialBodies,
+  ],
 };
 
 const mu =

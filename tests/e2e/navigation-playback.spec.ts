@@ -9,7 +9,7 @@ async function selectFocus(focus: Locator, label: string): Promise<void> {
   await expect(focus).toHaveValue(label);
 }
 
-test("selects and focuses a body by clicking its visible label", async ({
+test("selects on one click, focuses explicitly, and re-centres the view", async ({
   page,
 }) => {
   await page.goto("/");
@@ -19,12 +19,65 @@ test("selects and focuses a body by clicking its visible label", async ({
   });
   const venusLabel = page.getByRole("button", { name: "Focus Venus" });
   await expect(venusLabel).toBeVisible();
+  const cameraDirectionBeforeSelection = await scene.getAttribute(
+    "data-camera-direction",
+  );
   await venusLabel.click();
+  await expect(scene).toHaveAttribute("data-focus-body", "solar-system");
+  await expect(scene).toHaveAttribute("data-selected-body", "venus");
+  await expect(scene).toHaveAttribute(
+    "data-camera-direction",
+    cameraDirectionBeforeSelection ?? "",
+  );
+  await expect(venusLabel).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator(".selected-body-detail").getByText("Venus", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(scene).toHaveAttribute("data-focus-body", "venus");
   await expect(page.getByRole("combobox", { name: "Focus" })).toHaveValue(
     "Venus",
   );
   await expect(venusLabel).toHaveAttribute("aria-pressed", "true");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 20_000,
+    },
+  );
+
+  const canvas = page.locator("canvas.major-body-layer");
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (bounds !== null) {
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(
+      bounds.x + bounds.width * 0.7,
+      bounds.y + bounds.height * 0.62,
+      {
+        steps: 8,
+      },
+    );
+    await page.mouse.up({ button: "right" });
+  }
+  await expect(scene).toHaveAttribute("data-camera-orientation", "custom");
+  await page.getByRole("button", { name: "Re-centre", exact: true }).click();
+  await expect(scene).toHaveAttribute(
+    "data-camera-orientation",
+    "parent-facing",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 20_000,
+    },
+  );
 });
 
 test("navigates bodies, configures trails, and reports measured buffered playback", async ({
@@ -67,23 +120,35 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await expect(scene).toHaveAttribute("data-stars-visible", "true");
   await expect(scene).toHaveAttribute(
     "data-surface-lighting",
-    "solar-point-light",
+    "inverse-square-solar-point-light-auto-exposure",
   );
   await expect(scene).toHaveAttribute(
     "data-atmosphere-rendering",
-    "fresnel-rim",
+    "sunlit-single-scattering-phase-functions",
   );
 
   const focus = page.getByRole("combobox", { name: "Focus" });
   await selectFocus(focus, "Earth");
-  await page.getByRole("button", { name: "Next planet" }).click();
+  await page.getByRole("button", { name: "Next object" }).click();
+  await expect(scene).toHaveAttribute("data-selected-body", "mars");
+  await expect(focus).toHaveValue("Earth");
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("Mars");
   await page.getByRole("button", { name: "Parent" }).click();
+  await expect(scene).toHaveAttribute("data-selected-body", "sun");
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(focus).toHaveValue("Mars");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(focus).toHaveValue("Earth");
+  await selectFocus(focus, "Hubble Space Telescope");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("James Webb Space Telescope");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Home" }).click();
   await expect(focus).toHaveValue("Solar System");
 

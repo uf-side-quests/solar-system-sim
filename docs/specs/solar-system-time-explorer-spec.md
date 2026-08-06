@@ -4,9 +4,9 @@
 
 **Author**: Laurence Hook
 
-**Date**: 2026-08-03
+**Date**: 2026-08-06
 
-**Version**: 2.1.0
+**Version**: 2.3.0
 
 **Companion files**: `solar-system-time-explorer-test-matrix.md` | `solar-system-time-explorer-changelog.md`
 
@@ -277,8 +277,8 @@ The view-state interface contains camera frame, camera transform, selected objec
 - **REQ-133**: WHEN a guided-tour step is presented, the step SHALL specify its camera distance, orientation, view mode, body-size treatment, and visible overlay set.
 - **REQ-134**: WHERE a guided-tour step enables a line overlay, the tour card SHALL identify what the line represents.
 - **REQ-135**: WHEN Reality first loads, planet trails, Moon trails, orbit guides, the tactical overlay, the ecliptic grid, and the gravity field SHALL be off.
-- **REQ-136**: The three-dimensional scene SHALL render body labels as compact screen-space annotations and SHALL use collision bounds corresponding to their rendered dimensions.
-- **REQ-137**: WHEN a guided-tour scene changes, the camera SHALL use eased logarithmic-distance motion through the smallest authored overview that contains the relevant local, planetary, or Solar System context, SHALL hold that overview long enough to establish location, and SHALL settle into the next shot before automatic advancement.
+- **REQ-136**: The three-dimensional scene SHALL render body and wayfinder labels as compact screen-space annotations and SHALL use collision bounds corresponding to their rendered dimensions; single activation of rendered body geometry or a label SHALL select the body without moving the camera; an explicit Focus action and double activation SHALL focus and fit the selected body.
+- **REQ-137**: WHEN a guided-tour scene changes, the camera SHALL depart from the current subject, traverse the smallest authored overview at a stable readable scale, and settle into the next shot before automatic advancement; an observer scene SHALL route around its declared observer origin independently of the remote body it looks toward.
 - **REQ-138**: WHEN the operating system requests reduced motion, the guided tour SHALL apply its authored shot without an animated camera transition.
 - **REQ-139**: The renderer SHALL present the Sun with a granular photosphere, subtle chromosphere rim, and restrained diffuse corona and SHALL NOT invent a time-specific prominence or flare without corresponding observational data.
 - **REQ-140**: The guided tour SHALL use varied three-dimensional compositions and SHALL place ordinary close planetary cameras toward the Sun-facing hemisphere rather than arbitrarily presenting the dark side.
@@ -287,7 +287,36 @@ The view-state interface contains camera frame, camera transform, selected objec
 - **REQ-143**: WHERE a guided-tour scene declares an observer body, the application SHALL commit the observer and target as one matching pair, SHALL keep the observer as the selected view origin for breadcrumbs, statistics, transition framing, and Sun distance, SHALL place the camera above the observer body's physical reference radius toward the target, and SHALL keep the target centred while both bodies follow their current physics positions.
 - **REQ-144**: WHERE an observer scene uses optical zoom or presents a physically sub-pixel target, the tour card SHALL disclose the optical transformation and resolution limit without enlarging the body.
 - **REQ-145**: WHERE an observer scene is not a surface-and-atmosphere reconstruction, the tour card SHALL identify it as a clear-space viewpoint rather than implying a literal surface view.
-- **REQ-146**: WHEN a focus body is selected, the scene SHALL continuously display a clickable Sun label, the current focus-to-Sun distance derived from the rendered physics state, and a bearing line clipped to an unobstructed viewport boundary when the Sun is outside or behind the camera view.
+- **REQ-146**: WHEN a focus body is selected, the scene SHALL continuously display an interactive Sun label, the current focus-to-Sun distance derived from the rendered physics state, and a bearing line clipped to an unobstructed viewport boundary when the Sun is outside or behind the camera view.
+- **REQ-147**: WHEN an automated camera journey runs while simulation time advances, the destination camera SHALL follow the current physics state and SHALL NOT snap to a stale endpoint when the journey settles.
+- **REQ-148**: WHEN manual navigation crosses between bodies, the camera SHALL derive the overview scale from their current physical separation; WHEN an authored tour scene changes, its declared overview scale SHALL take precedence.
+- **REQ-149**: Voyager 1 and Voyager 2 SHALL be initialized from NASA/JPL Horizons barycentric ICRF state vectors at the common major-body epoch and SHALL be propagated by REBOUND as zero-gravitational-parameter test particles.
+- **REQ-150**: WHEN a Voyager probe is selected, the renderer SHALL use physical spacecraft dimensions, orient the high-gain antenna boresight toward the live Earth position, expose its distance and speed relative to the Sun, identify the state-vector and propagation provenance, and allow the Spacecraft control to hide it.
+- **REQ-151**: The Focus control SHALL provide keyboard-operable grouped search across every installed overview, star, planet, major body, moon, and spacecraft target; opening the control SHALL show the complete catalogue regardless of the current selection or previous search, and typing SHALL filter that catalogue.
+- **REQ-152**: The camera SHALL provide logarithmic optical zoom from 1/64x through 128x and SHALL derive the default close-spacecraft framing from the selected object's sourced physical maximum dimension.
+- **REQ-153**: The ISS, Voyager probes, Hubble, and JWST SHALL use checksummed official NASA 3D models normalized to sourced physical dimensions, and a model-loading failure SHALL be visible rather than replaced by procedural geometry.
+- **REQ-154**: Hubble and JWST SHALL use NASA/JPL Horizons barycentric ICRF position and velocity samples with cubic Hermite interpolation only inside each installed coverage window and SHALL NOT clamp or extrapolate beyond that window.
+- **REQ-155**: The gravity-field presentation SHALL provide both a selected-field local-detail scale and a fixed Sun-referenced absolute-comparison scale, and SHALL label which scale is active.
+- **REQ-156**: Atmosphere scattering SHALL depend on both view direction and the live Sun direction so the renderer does not apply a false illuminated rim to the night hemisphere.
+- **REQ-157**: The application SHALL provide Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets wayfinder modes; every active wayfinder SHALL use current three-dimensional physics positions, display live focus-relative distance, remain visible at the viewport boundary when off-screen or behind the camera, and use the selection and explicit-focus interaction defined by REQ-136.
+- **REQ-158**: Known-moon bound elliptic propagation SHALL remove complete orbital revolutions before solving the universal-variable equation inside a maintained root bracket, and generated moon-state calculation SHALL remain outside the active REBOUND N-body engine.
+- **REQ-159**: Every guided-tour scene SHALL provide both concise visible educational copy and a matching spoken narration that explains the represented scale, motion, physical model, and material display limitation relevant to that scene.
+- **REQ-160**: Tour narration SHALL start only after browser-authorised user interaction, SHALL pause and resume with the guided tour, SHALL advance to the matching scene track, and SHALL expose independent keyboard-operable enable and volume controls that persist in browser storage.
+- **REQ-161**: Tour narration SHALL be delivered as same-origin static audio generated ahead of publication, and its committed manifest SHALL identify the provider, voice, model, generation settings, source-text hash, and audio hash without containing the generation credential.
+- **REQ-162**: Every narration track SHALL finish within the twenty-eight-second automatic tour stop so spoken content is not cut off by scene advancement.
+- **REQ-163**: The final guided-tour scene SHALL compare the possible 100,000 astronomical-unit outer Oort Cloud estimate with the approximately 4.3 light-year, 272,000 astronomical-unit distance to the Alpha Centauri system in the same continuous three-dimensional renderer, and SHALL distinguish sourced direction and scale markers from live N-body objects.
+- **REQ-164**: WHEN an authored guided-tour scene is active, the renderer SHALL suppress unrelated spacecraft labels and SHALL show only the contextual spacecraft explicitly declared by that scene.
+- **REQ-165**: The guided tour SHALL define the solar wind, termination shock, heliosphere, and heliopause in visible text and narration; SHALL show the Voyager termination-shock and heliopause crossings in the live three-dimensional scene; and SHALL disclose that its boundary shape is directional, variable, and simplified.
+- **REQ-166**: The guided tour SHALL continue outward in the live three-dimensional scene to show the estimated 2,000-5,000 astronomical-unit Oort Cloud inner edge and 10,000-100,000 astronomical-unit outer range, distinguish the gravitationally bound cloud from the heliosphere, and identify every displayed cloud particle as illustrative rather than a catalogued object.
+- **REQ-167**: Body and wayfinder labels SHALL use transparent borderless presentation, and the selected target SHALL be distinguished from unselected targets using both higher font weight and a different text colour while preserving the textual selected-body representation required by REQ-096.
+- **REQ-168**: WHERE a solid surface with sourced radius and NAIF orientation is installed, the application SHALL provide a surface observer at user-selected planetographic latitude and positive-east longitude; SHALL place the eye point at physical scale; SHALL derive local horizon, compass, solar time, geometric sunrise and sunset regime, live target altitude, azimuth, angular diameter, illuminated fraction, north-pole orientation, and bright-limb orientation from the current physics state; and SHALL disclose omitted terrain, atmosphere, and refraction.
+- **REQ-169**: The renderer SHALL provide named, user-selectable quality profiles with bounded device-pixel ratios; SHALL use inverse-square solar illumination, smooth focus-distance exposure adaptation, and live Sun-dependent atmospheric scattering; SHALL illuminate Saturn's installed observed ring profile from the live solar incidence angle with the planet's projected shadow and a declared bounded unresolved-particle scattering approximation; and SHALL expose measured frame diagnostics for browser verification.
+- **REQ-170**: WHEN the user activates Full screen, the application SHALL request native browser fullscreen for the complete simulation surface; SHALL hide the command bar, camera dock, timeline, panels, guided-tour controls, and interactive scene labels only after fullscreen succeeds; SHALL retain one unobtrusive keyboard-operable exit action; and SHALL restore all hidden interface state and focus when fullscreen ends through either that action or the browser Escape mechanism.
+- **REQ-171**: WHILE Surface Observer is active, pointer drag SHALL change local azimuth and altitude without changing the observer's physical surface position, and the user SHALL be able to centre the configured target again.
+- **REQ-172**: WHEN the pointer is over physically rendered major-body, moon, or spacecraft geometry, the application SHALL identify the object in a tooltip even when its persistent label is hidden.
+- **REQ-173**: WHEN wheel, trackpad, button, preset, or range input changes camera magnification, the camera zoom control SHALL report the resulting effective view magnification.
+- **REQ-174**: The heliosphere, Oort Cloud, and Alpha Centauri tour steps SHALL remain in the primary three-dimensional renderer and SHALL preserve the live Solar System state while camera distance expands across their physical scale.
+- **REQ-175**: WHILE Reality view is active, the application SHALL show a compact top-down navigation map containing the Sun, live planet positions, current observer or focus, current view direction, and map radius.
 
 ## 10. State Machines (normative)
 
@@ -413,9 +442,12 @@ No telemetry leaves the device unless a later specification defines an explicit 
 | Deep time     | A period sufficiently remote that present orbital measurements do not define a unique state     |
 | Ephemeris     | A time-indexed prediction or measurement-derived table of body state                            |
 | Force model   | The complete declared set of accelerations and interactions used by a simulation                |
+| Heliopause    | The boundary where solar-wind pressure balances the surrounding interstellar medium             |
+| Heliosphere   | The magnetised region around the Sun created by the outward-flowing solar wind                  |
 | IAS15         | REBOUND's adaptive, fifteenth-order, high-accuracy integrator                                   |
 | N-body        | Numerical integration of interacting bodies under mutual gravity                                |
 | OMM           | Orbit Mean-Elements Message, a standard record of mean orbital elements                         |
+| Oort Cloud    | A predicted distant shell of icy bodies on long gravitationally bound orbits around the Sun     |
 | Provenance    | Sources, versions, assumptions, and transformations required to reproduce a result              |
 | SGP4          | Simplified General Perturbations 4, the propagation model paired with GP orbital elements       |
 | TEME          | True Equator Mean Equinox, the reference frame used by SGP4 output                              |

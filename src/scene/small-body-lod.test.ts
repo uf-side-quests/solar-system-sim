@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   categoryVisibilityFraction,
+  effectiveSmallBodyPointOpacity,
   smallBodyLevelOfDetail,
 } from "./small-body-lod";
 
@@ -49,6 +50,18 @@ describe("small-body level of detail", () => {
     );
     expect(() => categoryVisibilityFraction(0.1, 10, -1)).toThrow(
       /non-negative integer/u,
+    );
+  });
+
+  it("keeps a spatially filtered focus region legible", () => {
+    expect(effectiveSmallBodyPointOpacity(0.15, 0.05)).toBe(0.4);
+    expect(effectiveSmallBodyPointOpacity(0.7, 0.05)).toBe(0.7);
+    expect(effectiveSmallBodyPointOpacity(0.15, 0)).toBe(0.15);
+    expect(() => effectiveSmallBodyPointOpacity(1.1, 0.05)).toThrow(
+      /between zero and one/u,
+    );
+    expect(() => effectiveSmallBodyPointOpacity(0.5, -0.05)).toThrow(
+      /non-negative/u,
     );
   });
 });

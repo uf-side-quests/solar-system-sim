@@ -18,6 +18,12 @@ test("focused Earth visibly rotates with simulation time", async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Pause" }).click();
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const sequenceBeforeEarth = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   const focus = page.getByRole("combobox", { name: "Focus" });
   await focus.fill("Earth");
   await focus.press("Enter");
@@ -33,11 +39,18 @@ test("focused Earth visibly rotates with simulation time", async ({ page }) => {
   );
   await page.getByRole("slider", { name: "Playback rate" }).fill("2");
 
-  const scene = page.getByRole("img", {
-    name: /Physics-driven Solar System/u,
-  });
   const canvas = page.locator("canvas.major-body-layer");
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeEarth);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
   await expect(page.locator('[data-body-id="earth"]')).toHaveAttribute(
     "data-body-rendered",
     "true",

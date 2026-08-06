@@ -13,15 +13,19 @@ describe("audio settings", () => {
         JSON.stringify({
           musicEnabled: false,
           effectsEnabled: true,
+          narrationEnabled: false,
           musicVolume: 0.35,
           effectsVolume: 0.6,
+          narrationVolume: 0.8,
         }),
       ),
     ).toEqual({
       musicEnabled: false,
       effectsEnabled: true,
+      narrationEnabled: false,
       musicVolume: 0.35,
       effectsVolume: 0.6,
+      narrationVolume: 0.8,
     });
   });
 
@@ -31,15 +35,19 @@ describe("audio settings", () => {
         JSON.stringify({
           musicEnabled: "yes",
           effectsEnabled: false,
+          narrationEnabled: "yes",
           musicVolume: 4,
           effectsVolume: Number.NaN,
+          narrationVolume: -2,
         }),
       ),
     ).toEqual({
       musicEnabled: true,
       effectsEnabled: false,
+      narrationEnabled: true,
       musicVolume: 1,
       effectsVolume: DEFAULT_AUDIO_SETTINGS.effectsVolume,
+      narrationVolume: 0,
     });
     expect(parseAudioSettings("not json")).toEqual(DEFAULT_AUDIO_SETTINGS);
   });

@@ -3,7 +3,12 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  globalIgnores(["dist/", "src/physics/wasm/generated/", "vendor/"]),
+  globalIgnores([
+    "dist/",
+    "public/draco/",
+    "src/physics/wasm/generated/",
+    "vendor/",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [

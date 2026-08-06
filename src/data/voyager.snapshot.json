@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "NASA/JPL Horizons",
+  "endpoint": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "epoch": {
+    "julianDateTdb": 2461041.5,
+    "isoDateTdb": "2026-01-01T00:00:00 TDB",
+    "referenceFrame": "ICRF",
+    "center": "Solar System Barycenter (500@0)"
+  },
+  "trajectoryCoverage": {
+    "endYear": 2049,
+    "source": "JPL Horizons Voyager trajectory solutions"
+  },
+  "probes": [
+    {
+      "id": "voyager-1",
+      "name": "Voyager 1",
+      "horizonsCommand": "-31",
+      "launchDateUtc": "1977-09-05T12:56:00Z",
+      "massKg": 733,
+      "maximumDimensionM": 13,
+      "highGainAntennaDiameterM": 3.7,
+      "heightM": 3.8,
+      "positionM": [-4763118603210.161, -24284452885128.66, 5360055329408.199],
+      "velocityMps": [
+        -2060.391856037982, -16399.59274548261, 3608.862183087701
+      ],
+      "horizonsSolution": "Voyager_1_ST+refit2022_m"
+    },
+    {
+      "id": "voyager-2",
+      "name": "Voyager 2",
+      "horizonsCommand": "-32",
+      "launchDateUtc": "1977-08-20T14:29:00Z",
+      "massKg": 735,
+      "maximumDimensionM": 13,
+      "highGainAntennaDiameterM": 3.7,
+      "heightM": 3.8,
+      "positionM": [5867896396959.249, -9042215429222.994, -18255627845319.05],
+      "velocityMps": [
+        4215.853966825307, -4066.898715954376, -14102.66913564379
+      ],
+      "horizonsSolution": "Voyager_2_ST+refit2022_m"
+    }
+  ]
+}

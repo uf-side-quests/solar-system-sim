@@ -1,0 +1,138 @@
+{
+  "artifact": "solar-system-time-explorer.tour-narration",
+  "generatedAt": "2026-08-06T17:33:32.847Z",
+  "provider": "ElevenLabs",
+  "disclosure": "AI-generated speech from original educational scripts",
+  "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
+  "voiceName": "Alice - Clear, Engaging Educator",
+  "modelId": "eleven_multilingual_v2",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.82,
+    "similarity_boost": 0.85,
+    "style": 0,
+    "use_speaker_boost": true
+  },
+  "entries": [
+    {
+      "id": "earth",
+      "audioSource": "/audio/tour/earth.mp3",
+      "textSha256": "13ed1eba6b71b222d33072219abb939fc7729d0d4afd7094e7bb2f3eb4a28b3a",
+      "contextSha256": "4d7fee2e16179a103955a1573dceeeeaae9c34246517fdd221532295847aed31",
+      "audioSha256": "7c96292daf2f0f15f4a9de5e5ec9af85d1dc3e6a68ab8ed36d41ae6ff0eaef66",
+      "bytes": 347368
+    },
+    {
+      "id": "moon-gap",
+      "audioSource": "/audio/tour/moon-gap.mp3",
+      "textSha256": "07df743c1ecfdc71a08472fa6ab9a119628a1c0d17c9fec4c3dd6b007c92ea5f",
+      "contextSha256": "ffab7f7e35a536d300e8ac0567405dae7604977211dfef07f65696db1dcab5d0",
+      "audioSha256": "6d7d1d0352e274c348b0d0e7386cdc73de5b903d0ef94ae761075416ee9c0b5c",
+      "bytes": 327306
+    },
+    {
+      "id": "sun-atmosphere",
+      "audioSource": "/audio/tour/sun-atmosphere.mp3",
+      "textSha256": "8dbd9f2b4c2ee9d1a57d2c20a449b3305d3e7dac43dc1bd7b4d379d86637367b",
+      "contextSha256": "b30b4f372950e1984aeae5ebaf56a50f0612ecfea43ded49075692d3a4cabd49",
+      "audioSha256": "f6bb34caf16bd003ad4ddc26026181f6bbb2c2240bbee25b22849b1093171e09",
+      "bytes": 337755
+    },
+    {
+      "id": "sun-from-mars",
+      "audioSource": "/audio/tour/sun-from-mars.mp3",
+      "textSha256": "5610f33975a6e8d2fcd4c5a94511481b8785dd4eaf3918a3b0c0453aa425b2df",
+      "contextSha256": "d67295386d500e90f276f09dfa34788e1274e97b24f8ae3e901abfc11adec593",
+      "audioSha256": "47f8eb33b06eaef904bd62cfc69937ef460ec0dbd8b15c52921d33a4cfe39b25",
+      "bytes": 323544
+    },
+    {
+      "id": "jupiter",
+      "audioSource": "/audio/tour/jupiter.mp3",
+      "textSha256": "0d92039665d044c45fbabe5aad1752cedf0de9cdc8e2f018d841730fdb7ab78f",
+      "contextSha256": "cc3daf64d0ae620d46b43b838b72b35611262cce42f2cb8cd8b10e94f6a35862",
+      "audioSha256": "70d5652d7094d9818925ad78f8f6395c64fea8ce5bdd086d7218a8293440eb03",
+      "bytes": 335247
+    },
+    {
+      "id": "jupiter-from-io",
+      "audioSource": "/audio/tour/jupiter-from-io.mp3",
+      "textSha256": "5a4524ad60d286dc295b6550acb8d0b515def7529e96303b77157e9713b8ac26",
+      "contextSha256": "10c93429a85f74d96ae0707f39ae1aa681bc0ce5576812db77fbb4c2cde9b1ed",
+      "audioSha256": "1aea581e63a81d7fbdc06e2bc3ffb5343f46bf9ad24251a0385b863ba58704a9",
+      "bytes": 328142
+    },
+    {
+      "id": "earth-from-jupiter",
+      "audioSource": "/audio/tour/earth-from-jupiter.mp3",
+      "textSha256": "ac6fb523066cdc388477fe04247c4f707b030a8c06b621dc3d80b20271baeba5",
+      "contextSha256": "fd5fd2469304661cd045e516da9f0ce41ab11755c62c652dd61edf1b53b2cc30",
+      "audioSha256": "feee1b76055d49aa0ad30d4250a7656a2bdaf2ef6cb8db7347f92e6f88de89f1",
+      "bytes": 361996
+    },
+    {
+      "id": "saturn",
+      "audioSource": "/audio/tour/saturn.mp3",
+      "textSha256": "35c9441390fd2c9c945119ca5a4f480794a67b053fb9bb28302d9cc0dc5af379",
+      "contextSha256": "ed5d79486b9c0c0caf78a5b60512772591a1c3724ad439f748e437e06204829c",
+      "audioSha256": "d3f63ec7141a46ab7e91545ca439d043b2aecdc5d39a3b6bbb28155b8644e472",
+      "bytes": 359906
+    },
+    {
+      "id": "saturn-from-titan",
+      "audioSource": "/audio/tour/saturn-from-titan.mp3",
+      "textSha256": "8455a1d093a6e7223f0febea1f211f573c8a6b1a93a4d859ea805e884b67eef5",
+      "contextSha256": "fd5ea3ecfb85081f50dd18e6762e3b92ba06a19824cba48dfee4468239af1ee5",
+      "audioSha256": "e5477028681e38565d405a252987a8d482a3993f230ce78516c65b1937bd7b18",
+      "bytes": 301810
+    },
+    {
+      "id": "neptune",
+      "audioSource": "/audio/tour/neptune.mp3",
+      "textSha256": "8c17ce0a321e95f6e838b40d99fa2147be44887df6e34e47c1cc2fc078fcb798",
+      "contextSha256": "6aff9f811a044e3ee1216b38e1f7406a75cb4ca81c104906b8ab9f429c46e33d",
+      "audioSha256": "bce9d8540f032157bf53eb178e2da853f4cb7d6c55a3b70bab0e4309a15e3e8f",
+      "bytes": 394179
+    },
+    {
+      "id": "voyager-2",
+      "audioSource": "/audio/tour/voyager-2.mp3",
+      "textSha256": "dbed95f364983f16d22740651ad77d7414c87e42e895eeee3a515c728157622f",
+      "contextSha256": "e422778a801d5f416179b6fc189de38058fc872c459f95d4b01c48c2eed99b56",
+      "audioSha256": "29a05ed24da924f501a0cf9df933562e9a4cc846749c8d523caeb25510483365",
+      "bytes": 392507
+    },
+    {
+      "id": "voyager-1",
+      "audioSource": "/audio/tour/voyager-1.mp3",
+      "textSha256": "35de86c1a1914cb34f45e3aee5662eeeb5b10753fcd977042d412062c449e10f",
+      "contextSha256": "89959c5514e8df8a12ea79f754f733c041ad1c10e917c3c2be10ba621d718fdd",
+      "audioSha256": "e9cbbb45da8e0b5caa4174a74ec1a2722d6b61c9fa144fdb09ec14c75c65d44a",
+      "bytes": 378715
+    },
+    {
+      "id": "solar-system",
+      "audioSource": "/audio/tour/solar-system.mp3",
+      "textSha256": "c832d83c9f99b9fedfcd9b0b91e99c28e854a815dbaedb4cc4395d0a3fb22d19",
+      "contextSha256": "7b6089f185fae0a2b3ddd7fdc21ca6a9746fd910d84202e6fa8830b3827495cc",
+      "audioSha256": "ccc9edcc63f18acd9da75de2554ce496f44de6f18f3831105149ea9f224ab870",
+      "bytes": 420093
+    },
+    {
+      "id": "oort-cloud",
+      "audioSource": "/audio/tour/oort-cloud.mp3",
+      "textSha256": "c054ff267da6ad53676734563279e322a32efdd869b603ca9e4423870ffbc620",
+      "contextSha256": "c42b54fdb7653664023c8c445348592921da3b4316fdc5e52a35ab3a502d26c0",
+      "audioSha256": "03e456fa9b26cb15c8fae56241bbf2fb4e511833a95a6c97de6ca7fa15337506",
+      "bytes": 393343
+    },
+    {
+      "id": "alpha-centauri",
+      "audioSource": "/audio/tour/alpha-centauri.mp3",
+      "textSha256": "3ce8d21341e3777781502e20c3271989dec84a21f61134ea13b2bdd25fa5cdca",
+      "contextSha256": "fc2222f7724c3bc00c008f4ff12f4b41df97cb4779dff1df7a737808706cf58e",
+      "audioSha256": "332a318a859e8bb6109c07674a6fa352e852767d36be619db96fca6c59fcaf38",
+      "bytes": 425526
+    }
+  ]
+}

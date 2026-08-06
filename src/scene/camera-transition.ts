@@ -6,8 +6,8 @@ export type CameraTransitionSample = Readonly<{
   segmentProgress: number;
 }>;
 
-const OUTBOUND_END = 0.4;
-const INBOUND_START = 0.58;
+const OUTBOUND_END = 0.3;
+const INBOUND_START = 0.7;
 
 function smootherStep(value: number): number {
   const clamped = Math.min(1, Math.max(0, value));
@@ -60,7 +60,12 @@ export function sampleCameraTransition(
     };
   }
   if (progress <= INBOUND_START) {
-    return { phase: "overview", segmentProgress: 1 };
+    return {
+      phase: "overview",
+      segmentProgress: smootherStep(
+        (progress - OUTBOUND_END) / (INBOUND_START - OUTBOUND_END),
+      ),
+    };
   }
   return {
     phase: "inbound",

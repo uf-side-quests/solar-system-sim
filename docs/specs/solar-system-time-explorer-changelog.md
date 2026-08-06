@@ -10,6 +10,92 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.5.0] - 2026-08-06
+
+### Added in 2.5.0
+
+- Added anchored Surface Observer free-look with a centre-target action.
+- Added ray-picked hover identification for rendered bodies and spacecraft whose persistent labels are hidden.
+- Added a compact Reality navigation map with live planet positions, observer location, view direction, and scale.
+- Added native three-dimensional heliosphere, illustrative Oort Cloud, and Hipparcos Alpha Centauri scale layers.
+- Added REQ-171 through REQ-175 for free-look, hover identification, zoom reporting, continuous deep-space rendering, and navigation context.
+
+### Changed in 2.5.0
+
+- Kept the final three tour scenes in the primary renderer instead of replacing it with diagram overlays.
+- Made wheel and trackpad dolly update the camera zoom control's displayed magnification.
+- Rewrote the most software-focused tour cards and narration as direct astronomy explanations.
+- Regenerated all context-affected British-voice narration files and their provenance hashes.
+- Replaced hidden two-stage label orientation with conventional single-click selection, explicit Focus, double-click focus, and persistent Re-centre navigation.
+- Made Parent and Next object browse the selected object without unexpectedly moving the camera.
+
+### Fixed in 2.5.0
+
+- Prevented Surface Observer tracking from overwriting user free-look every animation frame.
+- Preserved the observer's physical position while the local view direction changes.
+- Restored visible Saturn rings at low solar elevation with a declared unresolved-particle scattering approximation and pole-aware Sun-facing framing.
+
+## [2.4.0] - 2026-08-06
+
+### Added in 2.4.0
+
+- Added REQ-169 for named rendering-quality profiles, inverse-square solar illumination, smooth focus-distance exposure adaptation, Sun-dependent atmospheric phase functions, and live frame diagnostics.
+- Added live solar-incidence lighting and planet shadowing to Saturn's observed Cassini ring profile.
+- Added installed-Chrome photographic reference captures for Earth, Saturn, and the authored close-Sun scene.
+- Added a native immersive fullscreen mode that hides application chrome and interactive labels while retaining a restrained exit action.
+- Restored all controls and focus when fullscreen exits through either the application action or the browser Escape mechanism.
+
+## [2.3.0] - 2026-08-06
+
+### Added in 2.3.0
+
+- Added REQ-168 for physical surface observation from user-selected planetographic coordinates.
+- Added a two-metre physical eye point, live NAIF surface orientation, geometric horizon, local compass, local solar time, and geometric sunrise and sunset regimes.
+- Added live target altitude, azimuth, angular diameter, illuminated fraction, north-pole position angle, and bright-limb position angle.
+- Limited supported observers to installed solid surfaces and explicitly excluded invented terrain, atmosphere, and refraction.
+
+## [2.2.0] - 2026-08-05
+
+### Added in 2.2.0
+
+- Added Voyager 1 and Voyager 2 from NASA/JPL Horizons barycentric ICRF states as massless REBOUND test particles.
+- Added physical-scale NASA-dimensioned Voyager models, searchable focus, Sun-relative statistics, labels, visibility control, and two guided-tour scenes.
+- Added Hubble and JWST from NASA/JPL Horizons vector snapshots with coverage-bounded cubic Hermite interpolation.
+- Added checksummed official NASA 3D models for the ISS, Voyager probes, Hubble, and JWST, normalized to sourced physical dimensions.
+- Added grouped keyboard-operable focus search, logarithmic 1/64x to 128x zoom, and object-size-derived spacecraft framing.
+- Added local-detail and Sun-referenced absolute-comparison Newtonian gravity-well scales.
+- Added configurable Sun and nearest-planet wayfinders with live distances and clickable viewport-pinned endpoints.
+- Added REQ-147 through REQ-158 for camera transitions, spacecraft physics and presentation, focus search, zoom, gravity scales, Sun-aware atmosphere scattering, wayfinders, and robust known-moon propagation.
+- Added original educational narration for every guided-tour scene, generated as static ElevenLabs audio with reproducible provenance metadata and independent accessible controls.
+- Added a final Alpha Centauri linear-scale scene showing that the preceding 220 AU view is about 0.08 percent of the roughly 272,000 AU distance.
+- Added REQ-159 through REQ-164 for tour narration, static audio provenance, narration timing, the sourced interstellar comparison, and scene-relevant labels.
+- Added a measured Voyager-scale heliosphere diagram explaining the solar wind, termination shock, heliopause, and the boundary model's limitations.
+- Added a separate Oort Cloud scene with NASA's estimated inner and outer ranges, a physical-proportion shell, an Alpha Centauri comparison, and explicit illustrative-object disclosure.
+- Added REQ-165 through REQ-167 for outer-region education and borderless selected-label hierarchy.
+
+### Changed in 2.2.0
+
+- Replaced simultaneous target translation, rotation, and dolly motion with separate depart, coast, and arrive camera phases.
+- Routed observer-scene journeys around the physical observer origin independently of the remote look-at target, removing target dives and endpoint snaps.
+- Extended guided transitions to 12 seconds and tour scenes to 28 seconds, with continuous destination tracking during accelerated simulation time.
+- Separated automatic manual-navigation framing from authored tour framing so local journeys stay local and interplanetary journeys reveal their real separation.
+- Replaced procedural spacecraft geometry with official NASA assets and a visible load-error state.
+- Increased shared major-body sphere geometry to 256 by 192 segments and made atmosphere scattering respond to the live Sun direction.
+- Replaced unconstrained known-moon Newton iteration with a complete-revolution reduction and bracketed Newton-bisection solve after reproducing the S2023_S38 failure at TDB -1723 days.
+- Moved generated moon-state attachment out of the REBOUND worker and added an in-app simulation restart action for unexpected failures.
+- Rewrote all fourteen tour cards and narration scripts to explain scale, physical models, display transformations, and scientific limits more clearly.
+- Rewrote both Voyager scenes around heliopause distance, radio delay, physical spacecraft size, and continued Earth communication rather than renderer implementation details.
+- Aligned each Voyager model's high-gain antenna boresight continuously to the live Earth position.
+- Changed body and wayfinder labels to rotate the camera toward their target on the first click and focus with fitted zoom on the second click.
+- Changed body and wayfinder labels to transparent borderless text, using colour and font weight to distinguish the selected target.
+- Expanded the guided tour from fourteen to fifteen narrated scenes and regenerated every context-affected British-voice audio artifact with updated hashes.
+- Changed the Neptune tour shot to a Sun-facing physical close-up with the live 30 AU Sun wayfinder instead of leaving Neptune hidden at the edge of a system overview.
+- Suppressed unrelated spacecraft labels during authored tour scenes and prevented live-scene wayfinders from leaking through the Alpha Centauri diagram.
+
+### Fixed in 2.2.0
+
+- Reset the Focus picker to the complete grouped catalogue whenever it opens instead of retaining the current selection as a one-item search filter.
+
 ## [2.1.0] - 2026-08-04
 
 ### Added in 2.1.0
@@ -126,7 +212,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Corrected star point sizing for high-density displays and increased magnitude-derived minimum exposure so the Hipparcos layer remains perceptible without changing catalogue positions.
 - Added category-aware small-body sampling with a 1,024-record pre-frustum floor per enabled category so the 4,069 comets no longer disappear under the 1,554,071-asteroid density rate.
 - Added double-buffered exact-state playback, render-adaptive endpoint display, and separate requested-versus-measured achieved-rate status without increasing the one-day maximum solver interval.
-- Added Back, Home, Parent, and Next planet navigation plus double-click focus for rendered major bodies.
+- Added Back, Home, Parent, and Next object navigation plus double-click focus for rendered major bodies.
 - Added trail-duration, fade, and clear controls for exact Moon and planet trails, plus screen-space fading history of GPU-propagated minor-body positions.
 - Replaced the synthetic star field with a validated local snapshot of 8,789 ESA Hipparcos stars brighter than Johnson V 6.5, using ICRS positions, published proper motions, V-magnitude prominence, B-V display colour, and an independent Stars toggle.
 - Added Fresnel atmosphere rims, a restrained solar corona, and procedural ring banding while retaining local checksummed NASA surface maps.

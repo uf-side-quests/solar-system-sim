@@ -2,4 +2,5 @@ dist/
 node_modules/
 src/physics/wasm/generated/
 vendor/
+public/draco/
 pnpm-lock.yaml

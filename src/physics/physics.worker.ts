@@ -6,15 +6,31 @@ import type {
   SimulationState,
 } from "./contracts";
 import { ReboundEngine } from "./rebound-engine";
-import { withKnownSatellites } from "./known-satellite-ephemeris";
 import createReboundModule from "./wasm/generated/rebound.mjs";
 
 const wasmUrl = new URL("./wasm/generated/rebound.wasm", import.meta.url).href;
 let enginePromise: Promise<ReboundEngine> | undefined;
-function engine(): Promise<ReboundEngine> {
-  enginePromise ??= createReboundModule({
+async function createEngine(): Promise<ReboundEngine> {
+  const response = await fetch(wasmUrl, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(
+      `REBOUND WebAssembly download failed: ${String(response.status)} ${response.statusText}`,
+    );
+  }
+  const compiledModule = await WebAssembly.compile(
+    await response.arrayBuffer(),
+  );
+  const module = await createReboundModule({
     locateFile: (path) => (path.endsWith(".wasm") ? wasmUrl : path),
-  }).then((module) => new ReboundEngine(module));
+    instantiateWasm: (imports, receiveInstance) => {
+      receiveInstance(new WebAssembly.Instance(compiledModule, imports));
+    },
+  });
+  return new ReboundEngine(module);
+}
+
+function engine(): Promise<ReboundEngine> {
+  enginePromise ??= createEngine();
   return enginePromise;
 }
 
@@ -22,10 +38,10 @@ const api: PhysicsWorkerApi = {
   async initialize(
     initialState: SimulationInitialState,
   ): Promise<SimulationState> {
-    return withKnownSatellites((await engine()).initialize(initialState));
+    return (await engine()).initialize(initialState);
   },
   async integrateTo(timeSeconds: number): Promise<SimulationState> {
-    return withKnownSatellites((await engine()).integrateTo(timeSeconds));
+    return (await engine()).integrateTo(timeSeconds);
   },
   async integrateSeries(
     timeSeconds: readonly number[],

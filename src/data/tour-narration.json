@@ -1,0 +1,77 @@
+[
+  {
+    "id": "earth",
+    "audioSource": "/audio/tour/earth.mp3",
+    "text": "We begin close to home. Earth is twelve thousand seven hundred and forty-two kilometres across, yet this familiar world is already too large to grasp at human scale. The planet turns once every sidereal day, so at one simulated hour per second you can watch its surface rotate beneath the sunlight."
+  },
+  {
+    "id": "moon-gap",
+    "audioSource": "/audio/tour/moon-gap.mp3",
+    "text": "Now the camera crosses the Earth-Moon system. The Moon is about three hundred and eighty-four thousand kilometres away on average. Its orbit is not a decorative ring: the curve follows the live physical model. The empty gap is so wide that all eight planets could fit across it, with a little room left over."
+  },
+  {
+    "id": "sun-atmosphere",
+    "audioSource": "/audio/tour/sun-atmosphere.mp3",
+    "text": "The Sun is one point three nine million kilometres wide and contains ninety-nine point eight six percent of the Solar System's mass. The glowing layer we see is the photosphere, not a solid surface. Above it, the thin chromosphere gives way to a corona that reaches millions of kilometres into space."
+  },
+  {
+    "id": "sun-from-mars",
+    "audioSource": "/audio/tour/sun-from-mars.mp3",
+    "text": "From Mars, the Sun looks smaller. Mars is roughly half again as far from the Sun as Earth, so the solar disc spans only about two-thirds of the angle we see at home. Daylight is weaker too: at Mars's average distance, each square metre receives less than half the sunlight it would near Earth."
+  },
+  {
+    "id": "jupiter",
+    "audioSource": "/audio/tour/jupiter.mp3",
+    "text": "Jupiter is about eleven Earths wide and holds most of the mass in all the planets combined. Its day lasts only about ten hours, so the atmosphere turns quickly. The thin curves are the physical paths of its major moons, spread across millions of kilometres around a planet that behaves like a small system of its own."
+  },
+  {
+    "id": "jupiter-from-io",
+    "audioSource": "/audio/tour/jupiter-from-io.mp3",
+    "text": "Io circles only four hundred and twenty-two thousand kilometres from Jupiter's centre. From here the giant planet spans roughly nineteen degrees of sky, more than thirty times the apparent width of our Moon. Jupiter would dominate the view, while Io races around it in less than two Earth days."
+  },
+  {
+    "id": "earth-from-jupiter",
+    "audioSource": "/audio/tour/earth-from-jupiter.mp3",
+    "text": "Now look back toward Earth from Jupiter. Across several astronomical units, our whole planet shrinks below the resolution of a screen pixel. The label marks the calculated direction of home. From the realm of the giant planets, Earth is not a blue world filling the view, but an almost invisible point in interplanetary darkness."
+  },
+  {
+    "id": "saturn",
+    "audioSource": "/audio/tour/saturn.mp3",
+    "text": "Saturn's observed main rings span about two hundred and seventy-four thousand kilometres, more than twenty-one Earth diameters. Yet they are extraordinarily thin compared with that width. They are not a solid disc, but countless particles following individual orbits, rendered here from a Cassini radial mosaic at physical scale."
+  },
+  {
+    "id": "saturn-from-titan",
+    "audioSource": "/audio/tour/saturn-from-titan.mp3",
+    "text": "Titan circles Saturn at about one point two million kilometres. From clear space above its dense orange atmosphere, the planet and rings would stretch across several degrees of sky. Titan itself is larger than Mercury, yet Saturn still appears immense from this close orbit."
+  },
+  {
+    "id": "neptune",
+    "audioSource": "/audio/tour/neptune.mp3",
+    "text": "Neptune orbits about thirty astronomical units from the Sun. The camera looks from its sunward side, while the gold wayfinder preserves the live distance. Sunlight takes roughly four hours to arrive, and a Neptune year lasts nearly one hundred and sixty-five Earth years. Even at one simulated week per second, its orbital motion remains subtle."
+  },
+  {
+    "id": "voyager-2",
+    "audioSource": "/audio/tour/voyager-2.mp3",
+    "text": "Voyager 2 crossed the heliopause in 2018 and now samples interstellar space, more than 140 astronomical units from the Sun. A one-way radio signal takes almost 20 hours to reach it. Its 3.7 metre high-gain antenna must stay pointed back toward Earth so this forty-nine-year-old spacecraft can still return data."
+  },
+  {
+    "id": "voyager-1",
+    "audioSource": "/audio/tour/voyager-1.mp3",
+    "text": "Voyager 1 is humanity's most distant spacecraft, more than 160 astronomical units from the Sun. A one-way radio signal takes over 23 hours to reach it. The 3.7 metre dish points back toward Earth, while the whole spacecraft is only about 13 metres wide and would be far smaller than one screen pixel at true distance."
+  },
+  {
+    "id": "solar-system",
+    "audioSource": "/audio/tour/solar-system.mp3",
+    "text": "The Sun's solar wind forms the heliosphere. At the termination shock, this stream abruptly slows. The heliopause is the outer boundary with interstellar space. Voyager 1 crossed it near one hundred and twenty-two astronomical units; Voyager 2 near one hundred and nineteen. Both are beyond the heliosphere, but remain inside the Sun's far larger gravitational domain."
+  },
+  {
+    "id": "oort-cloud",
+    "audioSource": "/audio/tour/oort-cloud.mp3",
+    "text": "Far beyond the heliosphere lies the predicted Oort Cloud: a spherical reservoir of icy bodies on long orbits around the Sun. It may begin between two and five thousand astronomical units and extend as far as one hundred thousand. No spacecraft has reached it. The dots are illustrative because individual Oort Cloud objects have not been mapped."
+  },
+  {
+    "id": "alpha-centauri",
+    "audioSource": "/audio/tour/alpha-centauri.mp3",
+    "text": "Alpha Centauri lies 4.3 light-years, or about 272,000 astronomical units, away. Even the possible one-hundred-thousand-AU outer edge of the Oort Cloud reaches only about thirty-seven percent of that distance. Light takes 4.3 years to cross it. At Voyager 1's speed, the trip would take about 75,000 years, and Voyager is not heading there."
+  }
+]

@@ -20,6 +20,10 @@ export type ReboundModule = {
 
 export type ReboundModuleOptions = {
   locateFile(path: string): string;
+  instantiateWasm(
+    imports: WebAssembly.Imports,
+    receiveInstance: (instance: WebAssembly.Instance) => void,
+  ): void;
 };
 
 declare const createReboundModule: (

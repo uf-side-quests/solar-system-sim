@@ -95,8 +95,21 @@ test("switches between physical, orrery, and schematic views without changing ph
   );
 
   const focus = page.getByRole("combobox", { name: "Focus" });
+  const sequenceBeforeEarth = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await focus.fill("Earth");
   await focus.press("Enter");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeEarth);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "false");
   await page.getByRole("button", { name: "Display" }).click();
   const tacticalOverlay = page.getByRole("checkbox", {
@@ -106,9 +119,24 @@ test("switches between physical, orrery, and schematic views without changing ph
   await tacticalOverlay.check();
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "true");
   const orientation = page.getByRole("combobox", { name: "Orientation" });
+  const sequenceBeforeVelocity = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await orientation.selectOption("velocity");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeVelocity);
   await expect(scene).toHaveAttribute("data-camera-orientation", "velocity");
-  await expect(scene).toHaveAttribute("data-camera-tracking", "continuous");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(scene).toHaveAttribute("data-camera-tracking", "continuous", {
+    timeout: 10_000,
+  });
   await expect(scene).toHaveAttribute("data-semantic-zoom-level", "surface");
   await page
     .getByRole("combobox", { name: "Zoom preset" })

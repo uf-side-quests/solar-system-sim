@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
 import {
+  absoluteGravityPotentialDisplayRange,
   gravityPotentialDisplayRange,
   gravityWellDisplayDepthAu,
   newtonianPotentialJPerKgAt,
@@ -20,6 +21,14 @@ const earth: GravityPotentialSource = {
 };
 
 describe("Newtonian gravity potential", () => {
+  it("provides one fixed range for truthful cross-body comparison", () => {
+    const range = absoluteGravityPotentialDisplayRange();
+    expect(range.minimumLog2SunUnits).toBe(-6);
+    expect(range.maximumLog2SunUnits).toBe(8);
+    expect(range.maximumMagnitudeJPerKg).toBeGreaterThan(
+      range.minimumMagnitudeJPerKg,
+    );
+  });
   it("matches -GM/r outside a spherical body's sourced mean radius", () => {
     const distanceAu = 0.01;
     expect(newtonianPotentialJPerKgAt([distanceAu, 0, 0], [earth])).toBeCloseTo(

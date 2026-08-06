@@ -4,6 +4,7 @@ import type { SbdbSnapshot } from "../catalogue/sbdb";
 import { J2000_MEAN_OBLIQUITY_RAD } from "./reference-frames";
 import {
   categoryVisibilityFraction,
+  effectiveSmallBodyPointOpacity,
   smallBodyLevelOfDetail,
 } from "./small-body-lod";
 import {
@@ -1010,6 +1011,10 @@ export class SmallBodyGpuLayer {
     const cameraUniforms = new ArrayBuffer(112);
     new Float32Array(cameraUniforms, 0, 16).set(viewProjectionElements);
     const levelOfDetail = smallBodyLevelOfDetail(camera.position.length());
+    const pointOpacity = effectiveSmallBodyPointOpacity(
+      levelOfDetail.pointOpacity,
+      this.#focusRadiusAu,
+    );
     const asteroidVisibilityFraction = categoryVisibilityFraction(
       levelOfDetail.visibilityFraction,
       this.#asteroidCount,
@@ -1031,7 +1036,7 @@ export class SmallBodyGpuLayer {
     const cameraUniformView = new DataView(cameraUniforms);
     cameraUniformView.setFloat32(64, asteroidVisibilityFraction, true);
     cameraUniformView.setFloat32(68, cometVisibilityFraction, true);
-    cameraUniformView.setFloat32(72, levelOfDetail.pointOpacity, true);
+    cameraUniformView.setFloat32(72, pointOpacity, true);
     cameraUniformView.setUint32(76, this.#showAsteroids ? 1 : 0, true);
     cameraUniformView.setUint32(80, this.#showComets ? 1 : 0, true);
     cameraUniformView.setFloat32(96, this.#focusCenterXAu, true);
@@ -1103,8 +1108,7 @@ export class SmallBodyGpuLayer {
       cometVisibilityFraction.toFixed(8);
     this.#canvas.dataset["submittedAsteroids"] = String(asteroidDrawCount);
     this.#canvas.dataset["submittedComets"] = String(cometDrawCount);
-    this.#canvas.dataset["pointOpacity"] =
-      levelOfDetail.pointOpacity.toFixed(4);
+    this.#canvas.dataset["pointOpacity"] = pointOpacity.toFixed(4);
     this.#canvas.dataset["asteroidsVisible"] = String(this.#showAsteroids);
     this.#canvas.dataset["cometsVisible"] = String(this.#showComets);
     this.#canvas.dataset["minorBodyTrails"] = String(

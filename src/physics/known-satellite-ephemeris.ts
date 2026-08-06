@@ -1,7 +1,8 @@
 import type { SimulationState } from "./contracts";
-import { withIssEphemeris } from "./iss-ephemeris";
+import { ISS_BODY_ID, withIssEphemeris } from "./iss-ephemeris";
 import { additionalAvailableKnownSatellites } from "./known-satellites";
 import { majorBodySnapshot, naifPhysicalSnapshot } from "./solar-system";
+import { withOperationalSpacecraft } from "./operational-spacecraft";
 import {
   propagateKnownSatellite,
   type KnownSatellitePropagationInput,
@@ -22,7 +23,10 @@ const parentInitialStates = new Map(
     },
   ]),
 );
-const majorBodyIds = new Set(majorBodySnapshot.bodies.map((body) => body.id));
+const generatedBodyIds = new Set([
+  ISS_BODY_ID,
+  ...additionalAvailableKnownSatellites.map((body) => body.id),
+]);
 
 const propagationInputs: readonly KnownSatellitePropagationInput[] =
   additionalAvailableKnownSatellites.map((definition) => {
@@ -49,8 +53,10 @@ export function withKnownSatellites(
   state: SimulationState,
   includedParentIds?: ReadonlySet<string>,
 ): SimulationState {
-  const majorBodies = state.bodies.filter((body) => majorBodyIds.has(body.id));
-  const stateById = new Map(majorBodies.map((body) => [body.id, body]));
+  const integratedBodies = state.bodies.filter(
+    (body) => !generatedBodyIds.has(body.id),
+  );
+  const stateById = new Map(integratedBodies.map((body) => [body.id, body]));
   const selectedInputs =
     includedParentIds === undefined
       ? propagationInputs
@@ -66,8 +72,10 @@ export function withKnownSatellites(
     }
     return propagateKnownSatellite(input, parentState, state.timeSeconds);
   });
-  return withIssEphemeris({
-    ...state,
-    bodies: [...majorBodies, ...satellites],
-  });
+  return withOperationalSpacecraft(
+    withIssEphemeris({
+      ...state,
+      bodies: [...integratedBodies, ...satellites],
+    }),
+  );
 }

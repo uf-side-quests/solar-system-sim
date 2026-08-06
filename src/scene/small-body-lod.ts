@@ -6,6 +6,22 @@ export type SmallBodyLevelOfDetail = Readonly<{
 const REFERENCE_DISTANCE_AU = 70;
 const REFERENCE_VISIBILITY_FRACTION = 0.0015;
 const MINIMUM_VISIBILITY_FRACTION = 0.00025;
+const MINIMUM_FOCUSED_POINT_OPACITY = 0.4;
+
+export function effectiveSmallBodyPointOpacity(
+  baseOpacity: number,
+  focusRadiusAu: number,
+): number {
+  if (!Number.isFinite(baseOpacity) || baseOpacity < 0 || baseOpacity > 1) {
+    throw new Error("Base point opacity must be between zero and one");
+  }
+  if (!Number.isFinite(focusRadiusAu) || focusRadiusAu < 0) {
+    throw new Error("Focus radius must be finite and non-negative");
+  }
+  return focusRadiusAu > 0
+    ? Math.max(baseOpacity, MINIMUM_FOCUSED_POINT_OPACITY)
+    : baseOpacity;
+}
 
 export function categoryVisibilityFraction(
   baseVisibilityFraction: number,

@@ -32,17 +32,23 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   });
   await expect(scene).toHaveAttribute("data-iss-model-scale", "physical");
   await expect(scene).toHaveAttribute("data-iss-maximum-dimension-m", "109");
-  await expect(scene).toHaveAttribute("data-iss-geometry-visible", "true");
+  await expect(scene).toHaveAttribute("data-iss-geometry-visible", "true", {
+    timeout: 15_000,
+  });
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-iss-radius-pixels")),
     )
     .toBeGreaterThan(0.5);
   await expect(
-    page.getByText(
-      "NASA-dimensioned procedural model · SGP4 from CelesTrak OMM",
-    ),
+    page.getByText("Official NASA 3D model · physical scale · SGP4 trajectory"),
   ).toBeVisible();
+  await expect(scene).toHaveAttribute("data-iss-model-loaded", "true");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 16_000 },
+  );
   await expect(
     page.getByText("Geocentric distance", { exact: true }),
   ).toBeVisible();
@@ -60,6 +66,9 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   });
 
   await page.getByRole("button", { name: "Parent" }).click();
+  await expect(scene).toHaveAttribute("data-selected-body", "earth");
+  await expect(scene).toHaveAttribute("data-focus-body", "iss");
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
   await expect(scene).toHaveAttribute("data-iss-geometry-visible", "false");
   await expect

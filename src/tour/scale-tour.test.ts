@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import tourNarrationData from "../data/tour-narration.json";
 import { majorBodySnapshot } from "../physics/solar-system";
+import { VOYAGER_BODY_IDS } from "../physics/voyager-ephemeris";
+import {
+  ALPHA_CENTAURI_DISTANCE_AU,
+  SOLAR_SYSTEM_SHARE_OF_ALPHA_DISTANCE_PERCENT,
+} from "./InterstellarScaleScene";
 import {
   SCALE_TOUR_STEPS,
   SCALE_TOUR_STEP_DURATION_MS,
@@ -19,6 +25,7 @@ describe("Solar System scale tour", () => {
     const knownBodyIds = new Set(
       majorBodySnapshot.bodies.map((body) => body.id),
     );
+    for (const bodyId of VOYAGER_BODY_IDS) knownBodyIds.add(bodyId);
     knownBodyIds.add("");
     expect(new Set(SCALE_TOUR_STEPS.map((step) => step.id)).size).toBe(
       SCALE_TOUR_STEPS.length,
@@ -47,12 +54,44 @@ describe("Solar System scale tour", () => {
       expect(step.bodyVisibilityPercent).toBeGreaterThanOrEqual(0);
       expect(step.bodyVisibilityPercent).toBeLessThanOrEqual(100);
       expect(step.visualKey.length).toBeGreaterThan(20);
+      expect(step.narration.audioSource).toBe(`/audio/tour/${step.id}.mp3`);
+      expect(step.narration.text.length).toBeGreaterThan(120);
     }
   });
 
-  it("moves from a familiar body to the full physical-scale view", () => {
+  it("has one narration script for every scene and no orphan scripts", () => {
+    expect(tourNarrationData.map((entry) => entry.id)).toEqual(
+      SCALE_TOUR_STEPS.map((step) => step.id),
+    );
+    expect(
+      new Set(tourNarrationData.map((entry) => entry.audioSource)).size,
+    ).toBe(SCALE_TOUR_STEPS.length);
+  });
+
+  it("visits both Voyager probes with a true-scale spacecraft shot", () => {
+    for (const bodyId of VOYAGER_BODY_IDS) {
+      const step = SCALE_TOUR_STEPS.find(
+        (candidate) => candidate.focusBodyId === bodyId,
+      );
+      expect(step).toBeDefined();
+      expect(step?.bodyVisibilityPercent).toBe(0);
+      expect(step?.transitionOverviewDistanceAu).toBeGreaterThan(140);
+      expect(step?.spacecraftLabelBodyIds).toEqual([bodyId]);
+    }
+    expect(
+      SCALE_TOUR_STEPS.find((step) => step.id === "solar-system")
+        ?.spacecraftLabelBodyIds,
+    ).toEqual(["voyager-1", "voyager-2"]);
+  });
+
+  it("moves from a familiar body through the Solar System to interstellar scale", () => {
     expect(SCALE_TOUR_STEPS[0]?.focusBodyId).toBe("earth");
-    expect(SCALE_TOUR_STEPS.at(-1)?.focusBodyId).toBe("");
+    expect(SCALE_TOUR_STEPS.at(-3)?.id).toBe("solar-system");
+    expect(SCALE_TOUR_STEPS.at(-3)?.presentation).toBe("heliosphere-scale");
+    expect(SCALE_TOUR_STEPS.at(-2)?.id).toBe("oort-cloud");
+    expect(SCALE_TOUR_STEPS.at(-2)?.presentation).toBe("oort-cloud-scale");
+    expect(SCALE_TOUR_STEPS.at(-1)?.id).toBe("alpha-centauri");
+    expect(SCALE_TOUR_STEPS.at(-1)?.presentation).toBe("interstellar-scale");
     expect(SCALE_TOUR_STEPS[0]?.cameraDistanceAu).toBeLessThan(0.001);
     expect(
       SCALE_TOUR_STEPS.find((step) => step.id === "moon-gap")?.cameraDistanceAu,
@@ -65,6 +104,11 @@ describe("Solar System scale tour", () => {
       SCALE_TOUR_STEPS.find((step) => step.id === "moon-gap")
         ?.transitionOverviewDistanceAu,
     ).toBe(0.012);
+    expect(ALPHA_CENTAURI_DISTANCE_AU).toBe(272_000);
+    expect(SOLAR_SYSTEM_SHARE_OF_ALPHA_DISTANCE_PERCENT).toBeCloseTo(
+      0.080_882,
+      5,
+    );
   });
 
   it("includes physically anchored observer viewpoints", () => {

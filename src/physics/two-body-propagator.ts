@@ -82,28 +82,102 @@ export function propagateTwoBody(
       "Known-moon two-body model requires a bound elliptic state",
     );
   }
+  const semiMajorAxisM = 1 / alpha;
+  const orbitalPeriodSeconds =
+    2 *
+    Math.PI *
+    Math.sqrt(
+      (semiMajorAxisM * semiMajorAxisM * semiMajorAxisM) /
+        gravitationalParameterM3S2,
+    );
+  if (!Number.isFinite(orbitalPeriodSeconds) || orbitalPeriodSeconds <= 0) {
+    throw new Error("Known-moon two-body orbital period is invalid");
+  }
+  const periodRemainder = elapsedSeconds % orbitalPeriodSeconds;
+  const propagationSeconds =
+    periodRemainder > orbitalPeriodSeconds / 2
+      ? periodRemainder - orbitalPeriodSeconds
+      : periodRemainder < -orbitalPeriodSeconds / 2
+        ? periodRemainder + orbitalPeriodSeconds
+        : periodRemainder;
+  if (propagationSeconds === 0) {
+    return initial;
+  }
   const sqrtMu = Math.sqrt(gravitationalParameterM3S2);
-  let universalAnomaly = sqrtMu * alpha * elapsedSeconds;
-  let converged = false;
-  for (let iteration = 0; iteration < 64; iteration += 1) {
-    const anomalySquared = universalAnomaly * universalAnomaly;
+  const evaluateUniversalEquation = (anomaly: number) => {
+    const anomalySquared = anomaly * anomaly;
     const z = alpha * anomalySquared;
     const c = stumpffC(z);
     const s = stumpffS(z);
-    const value =
-      (radius0 * radialVelocity0 * anomalySquared * c) / sqrtMu +
-      (1 - alpha * radius0) * anomalySquared * universalAnomaly * s +
-      radius0 * universalAnomaly -
-      sqrtMu * elapsedSeconds;
-    const derivative =
-      (radius0 * radialVelocity0 * universalAnomaly * (1 - z * s)) / sqrtMu +
-      (1 - alpha * radius0) * anomalySquared * c +
-      radius0;
-    const correction = value / derivative;
-    universalAnomaly -= correction;
+    return {
+      value:
+        (radius0 * radialVelocity0 * anomalySquared * c) / sqrtMu +
+        (1 - alpha * radius0) * anomalySquared * anomaly * s +
+        radius0 * anomaly -
+        sqrtMu * propagationSeconds,
+      derivative:
+        (radius0 * radialVelocity0 * anomaly * (1 - z * s)) / sqrtMu +
+        (1 - alpha * radius0) * anomalySquared * c +
+        radius0,
+    };
+  };
+  const initialAnomaly = sqrtMu * alpha * propagationSeconds;
+  let lowerAnomaly: number;
+  let upperAnomaly: number;
+  if (propagationSeconds > 0) {
+    lowerAnomaly = 0;
+    upperAnomaly = Math.max(1, initialAnomaly);
+    for (let iteration = 0; iteration < 64; iteration += 1) {
+      if (evaluateUniversalEquation(upperAnomaly).value >= 0) {
+        break;
+      }
+      upperAnomaly *= 2;
+    }
+  } else {
+    lowerAnomaly = Math.min(-1, initialAnomaly);
+    upperAnomaly = 0;
+    for (let iteration = 0; iteration < 64; iteration += 1) {
+      if (evaluateUniversalEquation(lowerAnomaly).value <= 0) {
+        break;
+      }
+      lowerAnomaly *= 2;
+    }
+  }
+  if (
+    evaluateUniversalEquation(lowerAnomaly).value > 0 ||
+    evaluateUniversalEquation(upperAnomaly).value < 0
+  ) {
+    throw new Error("Known-moon two-body propagation root is not bracketed");
+  }
+  let universalAnomaly = Math.min(
+    upperAnomaly,
+    Math.max(lowerAnomaly, initialAnomaly),
+  );
+  let converged = false;
+  for (let iteration = 0; iteration < 96; iteration += 1) {
+    const { value, derivative } = evaluateUniversalEquation(universalAnomaly);
+    if (value === 0) {
+      converged = true;
+      break;
+    }
+    if (value > 0) {
+      upperAnomaly = universalAnomaly;
+    } else {
+      lowerAnomaly = universalAnomaly;
+    }
+    const newtonCandidate = universalAnomaly - value / derivative;
+    const nextAnomaly =
+      Number.isFinite(newtonCandidate) &&
+      newtonCandidate > lowerAnomaly &&
+      newtonCandidate < upperAnomaly
+        ? newtonCandidate
+        : (lowerAnomaly + upperAnomaly) / 2;
+    const correction = nextAnomaly - universalAnomaly;
+    universalAnomaly = nextAnomaly;
     if (
-      Math.abs(correction) <=
-      1e-9 * Math.max(1, Math.abs(universalAnomaly))
+      Math.abs(correction) <= 1e-12 * Math.max(1, Math.abs(universalAnomaly)) ||
+      Math.abs(upperAnomaly - lowerAnomaly) <=
+        1e-12 * Math.max(1, Math.abs(universalAnomaly))
     ) {
       converged = true;
       break;
@@ -117,7 +191,8 @@ export function propagateTwoBody(
   const c = stumpffC(z);
   const s = stumpffS(z);
   const f = 1 - (anomalySquared / radius0) * c;
-  const g = elapsedSeconds - (anomalySquared * universalAnomaly * s) / sqrtMu;
+  const g =
+    propagationSeconds - (anomalySquared * universalAnomaly * s) / sqrtMu;
   const positionM = add(
     scale(initial.positionM, f),
     scale(initial.velocityMps, g),

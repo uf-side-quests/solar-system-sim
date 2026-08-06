@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { RefObject } from "react";
+import { useCombobox } from "downshift";
 
 import { useInterfaceAudio } from "./audio/use-interface-audio";
 import { createPhysicsClient } from "./physics/client";
@@ -30,6 +31,17 @@ import {
   majorBodySnapshot,
   majorBodySystem,
 } from "./physics/solar-system";
+import {
+  isVoyagerBodyId,
+  voyagerById,
+  voyagerSnapshot,
+} from "./physics/voyager-ephemeris";
+import {
+  isOperationalSpacecraftBodyId,
+  isOperationalSpacecraftWithinValidity,
+  operationalSpacecraftRecommendedTimeSeconds,
+  operationalSpacecraftSnapshot,
+} from "./physics/operational-spacecraft";
 import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
@@ -40,11 +52,12 @@ import type {
   CameraNavigationCommand,
   CameraOrientationPreset,
 } from "./scene/camera-view";
-import type { GravityWellMode } from "./scene/gravity-potential";
-import {
-  interpolateSimulationFrame,
-  type SimulationFrame,
-} from "./scene/interpolation";
+import type {
+  GravityWellMode,
+  GravityWellScale,
+} from "./scene/gravity-potential";
+import { type SimulationFrame } from "./scene/interpolation";
+import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
 import {
   bodyOrientationAngles,
   siderealRotationPeriodHours,
@@ -52,9 +65,18 @@ import {
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
 import {
+  surfaceObserverBodies,
+  surfaceObserverFrame,
+  type SurfaceObserverConfiguration,
+} from "./scene/surface-observer";
+import {
   nasaMaterialPresentationByBodyId,
   nasaTextureByBodyId,
 } from "./scene/visual-assets";
+import {
+  VISUAL_QUALITY_PROFILES,
+  type VisualQuality,
+} from "./scene/visual-quality";
 import {
   DEFAULT_OBJECT_VISIBILITY,
   type ObjectVisibility,
@@ -64,6 +86,7 @@ import type {
   SemanticZoomLevel,
   ViewMode,
 } from "./scene/view-mode";
+import type { WayfinderMode } from "./scene/wayfinder";
 import {
   SCALE_TOUR_STEP_DURATION_MS,
   SCALE_TOUR_STEPS,
@@ -81,13 +104,20 @@ const MAXIMUM_SOLVER_KEYFRAME_SECONDS = DAY_SECONDS;
 const MINIMUM_TRANSITION_MS = 16;
 const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
+const MANUAL_CAMERA_TRANSITION_DURATION_MS = 8_000;
+const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
 const CAMERA_ZOOM_PRESETS = [
-  { id: "wide", label: "Wide (0.5x)", zoom: 0.5 },
-  { id: "normal", label: "Normal (1x)", zoom: 1 },
-  { id: "close", label: "Close (2x)", zoom: 2 },
-  { id: "detail", label: "Detail (4x)", zoom: 4 },
+  { id: "system", label: "System context (0.063x)", zoom: 0.0625 },
+  { id: "wide", label: "Wide (0.25x)", zoom: 0.25 },
+  { id: "fit", label: "Fit object (1x)", zoom: 1 },
+  { id: "close", label: "Close (4x)", zoom: 4 },
+  { id: "detail", label: "Surface detail (16x)", zoom: 16 },
+  { id: "inspection", label: "Inspection (64x)", zoom: 64 },
 ] as const;
 const SEMANTIC_ZOOM_LABELS: Readonly<Record<SemanticZoomLevel, string>> = {
+  interstellar: "Interstellar",
+  "oort-cloud": "Oort Cloud",
+  heliosphere: "Heliosphere",
   "solar-system": "Solar System",
   "planetary-system": "Planet system",
   "moon-system": "Moon system",
@@ -137,15 +167,35 @@ const PLANET_FOCUS_ORDER = [
   "neptune",
 ] as const;
 
-const FOCUS_OPTIONS: readonly Readonly<{
+const FOCUS_SYSTEM_KEY = "__solar-system__";
+type FocusOption = Readonly<{
   id: string;
+  key: string;
   label: string;
+  group: string;
+  searchText: string;
   disabled: boolean;
-}>[] = [
-  { id: "", label: "Solar System", disabled: false },
+}>;
+const FOCUS_OPTIONS: readonly FocusOption[] = [
+  {
+    id: "",
+    key: FOCUS_SYSTEM_KEY,
+    label: "Solar System",
+    group: "Overview",
+    searchText: "Solar System overview home all planets",
+    disabled: false,
+  },
   ...majorBodySnapshot.bodies.map((body) => ({
     id: body.id,
+    key: body.id,
     label: body.name,
+    group:
+      body.id === "sun"
+        ? "Star"
+        : PLANET_FOCUS_ORDER.some((id) => id === body.id)
+          ? "Planets"
+          : "Major bodies",
+    searchText: `${body.name} ${body.id}`,
     disabled: false,
   })),
   ...additionalKnownSatellites.map((body) => {
@@ -154,18 +204,51 @@ const FOCUS_OPTIONS: readonly Readonly<{
     )?.name;
     return {
       id: body.id,
+      key: body.id,
       label: `${body.name} (${parentName ?? body.parentId})${
         body.availability === "unavailable" ? " - unavailable at epoch" : ""
       }`,
+      group: `${parentName ?? body.parentId} moons`,
+      searchText: `${body.name} ${body.id} ${parentName ?? body.parentId} moon satellite`,
       disabled: body.availability === "unavailable",
     };
   }),
   {
     id: ISS_BODY_ID,
+    key: ISS_BODY_ID,
     label: "International Space Station (Earth)",
+    group: "Spacecraft",
+    searchText: "International Space Station ISS Earth spacecraft satellite",
     disabled: false,
   },
+  ...voyagerSnapshot.probes.map((probe) => ({
+    id: probe.id,
+    key: probe.id,
+    label: `${probe.name} (interstellar space)`,
+    group: "Spacecraft",
+    searchText: `${probe.name} ${probe.id} probe interstellar spacecraft`,
+    disabled: false,
+  })),
+  ...operationalSpacecraftSnapshot.spacecraft.map((spacecraft) => ({
+    id: spacecraft.id,
+    key: spacecraft.id,
+    label: spacecraft.name,
+    group: "Spacecraft",
+    searchText: `${spacecraft.name} ${spacecraft.id} telescope spacecraft`,
+    disabled: false,
+  })),
 ];
+
+const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
+  (option) => option.id !== "" && !option.disabled,
+);
+
+const FOCUS_GROUPS = Array.from(
+  new Set(FOCUS_OPTIONS.map((option) => option.group)),
+).map((label) => ({
+  label,
+  options: FOCUS_OPTIONS.filter((option) => option.group === label),
+}));
 
 const FocusSelect = memo(function FocusSelect({
   value,
@@ -178,57 +261,125 @@ const FocusSelect = memo(function FocusSelect({
   if (selectedOption === undefined) {
     throw new Error(`Focus option ${value} is unavailable`);
   }
-  const [query, setQuery] = useState(selectedOption.label);
-  useEffect(() => setQuery(selectedOption.label), [selectedOption.label]);
-  const selectExactMatch = (candidate: string): boolean => {
+  const [filteredOptions, setFilteredOptions] = useState<FocusOption[]>([
+    ...FOCUS_OPTIONS,
+  ]);
+  const resetFilteredOptions = (): void => {
+    setFilteredOptions([...FOCUS_OPTIONS]);
+  };
+  const selectTypedOption = (candidate: string): boolean => {
     const normalizedCandidate = candidate.trim().toLocaleLowerCase();
-    const match = FOCUS_OPTIONS.find(
-      (option) =>
-        option.label.toLocaleLowerCase() === normalizedCandidate &&
-        !option.disabled,
+    const option = FOCUS_OPTIONS.find(
+      (focusOption) =>
+        focusOption.label.toLocaleLowerCase() === normalizedCandidate &&
+        !focusOption.disabled,
     );
-    if (match === undefined) {
-      return false;
-    }
-    setQuery(match.label);
-    onSelect(match.id);
+    if (option === undefined) return false;
+    onSelect(option.id);
     return true;
   };
-
+  const {
+    getInputProps,
+    getItemProps,
+    getLabelProps,
+    getMenuProps,
+    getToggleButtonProps,
+    closeMenu,
+    isOpen,
+    openMenu,
+  } = useCombobox<FocusOption>({
+    items: filteredOptions,
+    selectedItem: selectedOption,
+    itemToString: (item) => item?.label ?? "",
+    isItemDisabled: (item) => item.disabled,
+    defaultHighlightedIndex: 0,
+    onInputValueChange: ({ inputValue }) => {
+      const normalizedInput = inputValue.toLocaleLowerCase();
+      setFilteredOptions(
+        FOCUS_OPTIONS.filter((option) =>
+          option.searchText.toLocaleLowerCase().includes(normalizedInput),
+        ),
+      );
+    },
+    onSelectedItemChange: ({ selectedItem }) => {
+      if (selectedItem !== null) {
+        onSelect(selectedItem.id);
+      }
+    },
+  });
   return (
-    <label className="focus-control">
-      Focus
-      <input
-        type="search"
-        list="solar-system-focus-options"
-        value={query}
-        autoComplete="off"
-        spellCheck="false"
-        onChange={(event) => {
-          const nextQuery = event.currentTarget.value;
-          setQuery(nextQuery);
-          selectExactMatch(nextQuery);
-        }}
-        onBlur={() => {
-          if (!selectExactMatch(query)) {
-            setQuery(selectedOption.label);
-          }
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            selectExactMatch(query);
-          }
-        }}
-      />
-      <datalist id="solar-system-focus-options">
-        {FOCUS_OPTIONS.map((option) => (
-          <option key={option.id || "solar-system"} value={option.label}>
-            {option.disabled ? "Unavailable at epoch" : undefined}
-          </option>
-        ))}
-      </datalist>
-    </label>
+    <div className="focus-control">
+      <label {...getLabelProps()}>Focus</label>
+      <div className="focus-input-group">
+        <input
+          {...getInputProps({
+            "aria-label": "Focus",
+            spellCheck: false,
+            onFocus: () => {
+              resetFilteredOptions();
+              openMenu();
+            },
+            onKeyDown: (event) => {
+              if (event.key === "ArrowDown" && !isOpen) {
+                resetFilteredOptions();
+              }
+              if (
+                event.key === "Enter" &&
+                selectTypedOption(event.currentTarget.value)
+              ) {
+                event.preventDefault();
+                (
+                  event.nativeEvent as KeyboardEvent & {
+                    preventDownshiftDefault?: boolean;
+                  }
+                ).preventDownshiftDefault = true;
+                closeMenu();
+              }
+            },
+          })}
+        />
+        <button
+          type="button"
+          aria-label="Open focus list"
+          {...getToggleButtonProps({
+            onClick: resetFilteredOptions,
+          })}
+        >
+          ⌄
+        </button>
+      </div>
+      <ul
+        {...getMenuProps()}
+        className="focus-popover focus-listbox"
+        hidden={!isOpen}
+      >
+        {FOCUS_GROUPS.map((group) => {
+          const visibleOptions = group.options.filter((option) =>
+            filteredOptions.includes(option),
+          );
+          return visibleOptions.length === 0 ? null : (
+            <li className="focus-list-group" key={group.label} role="group">
+              <span className="focus-list-header" role="presentation">
+                {group.label}
+              </span>
+              <ul role="presentation">
+                {visibleOptions.map((option) => (
+                  <li
+                    key={option.key}
+                    {...getItemProps({
+                      item: option,
+                      index: filteredOptions.indexOf(option),
+                    })}
+                  >
+                    {option.label}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 });
 
@@ -303,6 +454,25 @@ function normalizedDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
 }
 
+function formatLocalSolarTime(hours: number): string {
+  const totalMinutes = Math.round(hours * 60) % (24 * 60);
+  const normalizedMinutes = (totalMinutes + 24 * 60) % (24 * 60);
+  const hour = Math.floor(normalizedMinutes / 60);
+  const minute = normalizedMinutes % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatAngularDiameter(degrees: number): string {
+  if (degrees >= 1) {
+    return `${degrees.toLocaleString(undefined, { maximumFractionDigits: 2 })}°`;
+  }
+  const arcminutes = degrees * 60;
+  if (arcminutes >= 1) {
+    return `${arcminutes.toLocaleString(undefined, { maximumFractionDigits: 2 })}′`;
+  }
+  return `${(arcminutes * 60).toLocaleString(undefined, { maximumFractionDigits: 2 })}″`;
+}
+
 function useDisplayedSimulationState(
   frame: SimulationFrame | undefined,
 ): Readonly<{
@@ -333,7 +503,7 @@ function useDisplayedSimulationState(
         1,
         Math.max(0, (now - startedAt) / frame.transitionDurationMs),
       );
-      const nextState = interpolateSimulationFrame(frame, fraction);
+      const nextState = interpolateDisplayedSimulationFrame(frame, fraction);
       displayedStateRef.current = nextState;
       if (now - lastReactPresentationAt >= 100 || fraction === 1) {
         lastReactPresentationAt = now;
@@ -365,6 +535,7 @@ export function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("reality");
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
   const [focusBodyId, setFocusBodyId] = useState("");
+  const [selectedBodyId, setSelectedBodyId] = useState("");
   const [showMoonTrail, setShowMoonTrail] = useState(false);
   const [showPlanetTrails, setShowPlanetTrails] = useState(false);
   const [showMinorBodyTrails, setShowMinorBodyTrails] = useState(false);
@@ -377,12 +548,17 @@ export function App() {
   const [showLabels, setShowLabels] = useState(true);
   const [showTacticalOverlay, setShowTacticalOverlay] = useState(false);
   const [showOrbitGuides, setShowOrbitGuides] = useState(false);
+  const [wayfinderMode, setWayfinderMode] = useState<WayfinderMode>("sun");
   const [gravityWellMode, setGravityWellMode] =
     useState<GravityWellMode>("off");
+  const [gravityWellScale, setGravityWellScale] =
+    useState<GravityWellScale>("local");
   const [semanticZoom, setSemanticZoom] =
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
+  const [viewMagnification, setViewMagnification] =
+    useState(DEFAULT_CAMERA_ZOOM);
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -396,11 +572,26 @@ export function App() {
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
   const [tourTransitionDurationMs, setTourTransitionDurationMs] = useState(0);
+  const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
+  const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
+  const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
+    useState("sun");
+  const [surfaceObserverLatitudeDeg, setSurfaceObserverLatitudeDeg] =
+    useState(51.4779);
+  const [surfaceObserverLongitudeDeg, setSurfaceObserverLongitudeDeg] =
+    useState(0);
+  const [surfaceObserverLookResetToken, setSurfaceObserverLookResetToken] =
+    useState(0);
+  const [visualQuality, setVisualQuality] =
+    useState<VisualQuality>("photographic");
+  const [immersiveMode, setImmersiveMode] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string>();
   const [objectVisibility, setObjectVisibility] = useState<ObjectVisibility>(
     DEFAULT_OBJECT_VISIBILITY,
   );
   const [gpuStatus, setGpuStatus] = useState<SmallBodyGpuStatus>();
   const [gpuError, setGpuError] = useState<string>();
+  const [simulationRunToken, setSimulationRunToken] = useState(0);
   const playingRef = useRef(playing);
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
@@ -411,10 +602,40 @@ export function App() {
   const displayButtonRef = useRef<HTMLButtonElement>(null);
   const displayPanelRef = useRef<HTMLElement>(null);
   const displayPanelWasOpenRef = useRef(false);
+  const appShellRef = useRef<HTMLElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
   directionRef.current = direction;
   timeRateIndexRef.current = timeRateIndex;
   focusBodyIdRef.current = focusBodyId;
+
+  const surfaceObserverConfiguration =
+    useMemo<SurfaceObserverConfiguration | null>(
+      () =>
+        surfaceObserverEnabled
+          ? {
+              bodyId: surfaceObserverBodyId,
+              latitudeDeg: surfaceObserverLatitudeDeg,
+              longitudeDeg: surfaceObserverLongitudeDeg,
+              targetBodyId: surfaceObserverTargetBodyId,
+            }
+          : null,
+      [
+        surfaceObserverBodyId,
+        surfaceObserverEnabled,
+        surfaceObserverLatitudeDeg,
+        surfaceObserverLongitudeDeg,
+        surfaceObserverTargetBodyId,
+      ],
+    );
+  const surfaceObservation = useMemo(
+    () =>
+      state === undefined || surfaceObserverConfiguration === null
+        ? undefined
+        : surfaceObserverFrame(state, surfaceObserverConfiguration),
+    [state, surfaceObserverConfiguration],
+  );
 
   useEffect(() => {
     if (controlPanelOpen) {
@@ -431,6 +652,55 @@ export function App() {
       displayButtonRef.current?.focus();
     }
   }, [controlPanelOpen]);
+
+  useEffect(() => {
+    const handleFullscreenChange = (): void => {
+      const isImmersive = document.fullscreenElement === appShellRef.current;
+      setImmersiveMode(isImmersive);
+      if (isImmersive) {
+        setControlPanelOpen(false);
+        requestAnimationFrame(() => immersiveExitButtonRef.current?.focus());
+        return;
+      }
+      if (document.fullscreenElement === null) {
+        requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const enterImmersiveMode = (): void => {
+    const appShell = appShellRef.current;
+    if (appShell === null) {
+      throw new Error("Application shell is unavailable for fullscreen mode");
+    }
+    setFullscreenError(undefined);
+    void appShell
+      .requestFullscreen({ navigationUI: "hide" })
+      .catch((fullscreenFailure: unknown) => {
+        setFullscreenError(
+          fullscreenFailure instanceof Error
+            ? `Fullscreen failed: ${fullscreenFailure.message}`
+            : "Fullscreen failed for an unknown browser reason",
+        );
+      });
+  };
+
+  const exitImmersiveMode = (): void => {
+    setFullscreenError(undefined);
+    if (document.fullscreenElement !== appShellRef.current) {
+      throw new Error("The Solar System Explorer is not fullscreen");
+    }
+    void document.exitFullscreen().catch((fullscreenFailure: unknown) => {
+      setFullscreenError(
+        fullscreenFailure instanceof Error
+          ? `Leaving fullscreen failed: ${fullscreenFailure.message}`
+          : "Leaving fullscreen failed for an unknown browser reason",
+      );
+    });
+  };
 
   useEffect(() => {
     const client = createPhysicsClient();
@@ -475,7 +745,8 @@ export function App() {
 
     const run = async (): Promise<void> => {
       try {
-        let previousState = await client.api.initialize(majorBodySystem);
+        const rawInitialState = await client.api.initialize(majorBodySystem);
+        let previousState = withKnownSatellites(rawInitialState);
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
         if (isActive()) {
@@ -668,7 +939,7 @@ export function App() {
       controller.abort();
       client.close();
     };
-  }, []);
+  }, [simulationRunToken]);
 
   const issueCameraNavigation = useCallback(
     (action: CameraNavigationAction): void => {
@@ -681,9 +952,18 @@ export function App() {
   );
 
   const requestResetView = useCallback((): void => {
+    setSurfaceObserverEnabled(false);
     setTourPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
-    setCameraOrientation("parent-facing");
+    setCameraOrientation(
+      focusBodyIdRef.current === "" ? "perspective" : "parent-facing",
+    );
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : ORIENTATION_CAMERA_TRANSITION_DURATION_MS,
+    );
+    setTourTransitionSequence((current) => current + 1);
     setResetViewToken((current) => current + 1);
   }, []);
 
@@ -718,6 +998,13 @@ export function App() {
   ): void => {
     setCameraOrientation(preset);
     setOrientationPresetToken((current) => current + 1);
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : ORIENTATION_CAMERA_TRANSITION_DURATION_MS,
+    );
+    setResetViewToken((current) => current + 1);
+    setTourTransitionSequence((current) => current + 1);
   };
 
   const handleSceneOrientationChange = useCallback(
@@ -738,12 +1025,23 @@ export function App() {
         setPlaying(false);
       }
       const currentBodyId = focusBodyIdRef.current;
+      setSelectedBodyId(bodyId);
       if (bodyId === currentBodyId) {
+        setCameraZoom(DEFAULT_CAMERA_ZOOM);
+        setCameraOrientation(bodyId === "" ? "perspective" : "parent-facing");
+        issueCameraNavigation("fit-selection");
         return;
       }
       focusHistoryRef.current.push(currentBodyId);
       focusBodyIdRef.current = bodyId;
       setFocusBodyId(bodyId);
+      setTourTransitionDurationMs(
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? 0
+          : MANUAL_CAMERA_TRANSITION_DURATION_MS,
+      );
+      setResetViewToken((current) => current + 1);
+      setTourTransitionSequence((current) => current + 1);
       if (bodyId === ISS_BODY_ID) {
         const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
         if (!isIssEphemerisWithinValidity(currentTime)) {
@@ -751,6 +1049,17 @@ export function App() {
           setPlaying(false);
           manualDeltaSecondsRef.current = 0;
           directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
+          setSeeking(true);
+        }
+      }
+      if (isOperationalSpacecraftBodyId(bodyId)) {
+        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
+        if (!isOperationalSpacecraftWithinValidity(bodyId, currentTime)) {
+          playingRef.current = false;
+          setPlaying(false);
+          manualDeltaSecondsRef.current = 0;
+          directSeekTimeSecondsRef.current =
+            operationalSpacecraftRecommendedTimeSeconds(bodyId);
           setSeeking(true);
         }
       }
@@ -768,10 +1077,11 @@ export function App() {
         setCameraOrientation("parent-facing");
       }
     },
-    [tourStepIndex],
+    [issueCameraNavigation, tourStepIndex],
   );
 
   const navigateBack = (): void => {
+    setSurfaceObserverEnabled(false);
     setTourPlaying(false);
     setTourStepIndex(null);
     setPlaying(false);
@@ -781,6 +1091,7 @@ export function App() {
     }
     focusBodyIdRef.current = previousBodyId;
     setFocusBodyId(previousBodyId);
+    setSelectedBodyId(previousBodyId);
     setFrame((currentFrame) =>
       currentFrame === undefined
         ? currentFrame
@@ -793,37 +1104,45 @@ export function App() {
   };
 
   const navigateToParent = (): void => {
-    if (focusBodyId === "") {
+    if (selectedBodyId === "") {
       return;
     }
     const parentId =
-      (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
-      knownSatelliteById.get(focusBodyId)?.parentId ??
-      PARENT_BODY_ID[focusBodyId] ??
+      (selectedBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
+      (selectedBodyId === "hubble" ? "earth" : undefined) ??
+      (selectedBodyId === "jwst" || isVoyagerBodyId(selectedBodyId)
+        ? "sun"
+        : undefined) ??
+      knownSatelliteById.get(selectedBodyId)?.parentId ??
+      PARENT_BODY_ID[selectedBodyId] ??
       "";
-    navigateToFocus(parentId);
+    setSelectedBodyId(parentId);
   };
 
-  const navigateToNextPlanet = (): void => {
-    const currentIndex = PLANET_FOCUS_ORDER.findIndex(
-      (bodyId) => bodyId === focusBodyId,
+  const navigateToNextObject = (): void => {
+    const currentIndex = NAVIGABLE_FOCUS_OPTIONS.findIndex(
+      (option) => option.id === selectedBodyId,
     );
-    navigateToFocus(
-      PLANET_FOCUS_ORDER[(currentIndex + 1) % PLANET_FOCUS_ORDER.length] ??
-        "mercury",
-    );
+    const nextIndex = (currentIndex + 1) % NAVIGABLE_FOCUS_OPTIONS.length;
+    setSelectedBodyId(NAVIGABLE_FOCUS_OPTIONS[nextIndex]?.id ?? "sun");
   };
 
   const navigateHome = (): void => {
+    setSurfaceObserverEnabled(false);
     setTourPlaying(false);
     setPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation("perspective");
     if (focusBodyIdRef.current === "") {
       issueCameraNavigation("fit-selection");
+      setSelectedBodyId("");
       return;
     }
     navigateToFocus("");
+  };
+
+  const recenterView = (): void => {
+    requestResetView();
   };
 
   const handleCameraNavigation = (action: CameraNavigationAction): void => {
@@ -837,6 +1156,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    setSurfaceObserverEnabled(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -849,6 +1169,23 @@ export function App() {
     setTourPlaying(false);
     setTourStepIndex(null);
     setPlaying(false);
+  };
+
+  const enterSurfaceObserver = (): void => {
+    setTourPlaying(false);
+    setTourStepIndex(null);
+    setViewMode("reality");
+    setCameraZoom(DEFAULT_CAMERA_ZOOM);
+    setCameraOrientation("custom");
+    navigateToFocus(surfaceObserverBodyId);
+    setSurfaceObserverEnabled(true);
+    setControlPanelOpen(false);
+  };
+
+  const exitSurfaceObserver = (): void => {
+    setSurfaceObserverEnabled(false);
+    setCameraOrientation("parent-facing");
+    setResetViewToken((current) => current + 1);
   };
 
   const advanceScaleTour = (direction: -1 | 1): void => {
@@ -901,9 +1238,15 @@ export function App() {
     setCameraZoom(step.cameraZoom);
     setCameraOrientation(step.orientation);
     setOrientationPresetToken((current) => current + 1);
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : SCALE_TOUR_TRANSITION_DURATION_MS,
+    );
     focusHistoryRef.current = [];
     focusBodyIdRef.current = step.focusBodyId;
     setFocusBodyId(step.focusBodyId);
+    setSelectedBodyId(step.focusBodyId);
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
   }, [tourPresentationToken, tourStepIndex]);
@@ -935,9 +1278,35 @@ export function App() {
       ? activeTourStep.cameraTargetBodyId
       : undefined;
 
+  useEffect(() => {
+    if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
+      audio.clearNarration();
+      return;
+    }
+    audio.loadNarration(activeTourStep.narration.audioSource, tourPlaying);
+  }, [
+    activeTourStep?.id,
+    audio.clearNarration,
+    audio.loadNarration,
+    audio.settings.narrationEnabled,
+  ]);
+
+  useEffect(() => {
+    audio.setNarrationPlaying(tourPlaying);
+  }, [audio.setNarrationPlaying, tourPlaying]);
+
   const activeZoomPreset =
-    CAMERA_ZOOM_PRESETS.find((preset) => preset.zoom === cameraZoom)?.id ??
-    "custom";
+    CAMERA_ZOOM_PRESETS.find(
+      (preset) => Math.abs(Math.log2(preset.zoom / viewMagnification)) < 0.01,
+    )?.id ?? "custom";
+
+  const setRequestedViewMagnification = (requested: number): void => {
+    if (!Number.isFinite(requested) || requested < 1 / 64 || requested > 128) {
+      throw new Error("View magnification must be between 0.015625x and 128x");
+    }
+    setCameraZoom(requested);
+    setViewMagnification(requested);
+  };
 
   const selectedTimeRate = TIME_RATES[timeRateIndex];
   if (selectedTimeRate === undefined) {
@@ -945,18 +1314,31 @@ export function App() {
   }
 
   const selectedBodyDetail = useMemo(() => {
-    if (focusBodyId === "" || state === undefined) {
+    if (selectedBodyId === "" || state === undefined) {
       return undefined;
     }
+    const bodyId = selectedBodyId;
     const definition = majorBodySnapshot.bodies.find(
-      (body) => body.id === focusBodyId,
+      (body) => body.id === bodyId,
     );
-    const bodyState = state.bodies.find((body) => body.id === focusBodyId);
-    const knownSatellite = knownSatelliteById.get(focusBodyId);
-    const isIss = focusBodyId === ISS_BODY_ID;
+    const bodyState = state.bodies.find((body) => body.id === bodyId);
+    const knownSatellite = knownSatelliteById.get(bodyId);
+    const isIss = bodyId === ISS_BODY_ID;
+    const voyager = voyagerById.get(
+      isVoyagerBodyId(bodyId) ? bodyId : "voyager-1",
+    );
+    const isVoyager = isVoyagerBodyId(bodyId);
+    const operationalSpacecraft = operationalSpacecraftSnapshot.spacecraft.find(
+      (spacecraft) => spacecraft.id === bodyId,
+    );
+    const isOperationalSpacecraft = isOperationalSpacecraftBodyId(bodyId);
     if (
       bodyState === undefined ||
-      (definition === undefined && knownSatellite === undefined && !isIss)
+      (definition === undefined &&
+        knownSatellite === undefined &&
+        !isIss &&
+        !isVoyager &&
+        !isOperationalSpacecraft)
     ) {
       return undefined;
     }
@@ -964,23 +1346,90 @@ export function App() {
       definition === undefined
         ? isIss
           ? ISS_PARENT_BODY_ID
-          : knownSatellite?.parentId
-        : PARENT_BODY_ID[focusBodyId];
+          : isVoyager
+            ? "sun"
+            : bodyId === "hubble"
+              ? "earth"
+              : bodyId === "jwst"
+                ? "sun"
+                : knownSatellite?.parentId
+        : PARENT_BODY_ID[bodyId];
     const parentState = state.bodies.find((body) => body.id === parentId);
     const parentDefinition = majorBodySnapshot.bodies.find(
       (body) => body.id === parentId,
     );
-    const composition = BODY_COMPOSITION_BY_ID[focusBodyId];
+    const composition = BODY_COMPOSITION_BY_ID[bodyId];
     const speedLabel =
       parentDefinition === undefined
         ? undefined
         : `Speed relative to ${parentDefinition.name}`;
     if (definition === undefined) {
+      if (isOperationalSpacecraft) {
+        if (operationalSpacecraft === undefined) {
+          throw new Error(`Operational spacecraft ${bodyId} is unavailable`);
+        }
+        return {
+          name: operationalSpacecraft.name,
+          surface: "Official NASA 3D model · physical scale",
+          parentName: parentDefinition?.name,
+          distance:
+            parentState === undefined
+              ? undefined
+              : formatDistance(
+                  bodyDistanceM(bodyState, parentState),
+                  semanticZoom,
+                ),
+          distanceLabel:
+            bodyId === "hubble"
+              ? "Distance from Earth"
+              : "Distance from the Sun",
+          speed:
+            parentState === undefined
+              ? undefined
+              : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
+          speedLabel:
+            parentDefinition === undefined
+              ? undefined
+              : `Speed relative to ${parentDefinition.name}`,
+          mass: formatMassKg(operationalSpacecraft.massKg),
+          composition: BODY_COMPOSITION_BY_ID[bodyId],
+          dimensionsM: `${String(operationalSpacecraft.maximumDimensionM)} m maximum dimension`,
+          ephemerisStatus:
+            "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+        };
+      }
+      if (isVoyager) {
+        if (voyager === undefined) {
+          throw new Error(`Voyager definition ${bodyId} is unavailable`);
+        }
+        return {
+          name: voyager.name,
+          surface: "Official NASA 3D model · physical scale",
+          parentName: parentDefinition?.name,
+          distance:
+            parentState === undefined
+              ? undefined
+              : formatDistance(
+                  bodyDistanceM(bodyState, parentState),
+                  semanticZoom,
+                ),
+          distanceLabel: "Distance from the Sun",
+          speed:
+            parentState === undefined
+              ? undefined
+              : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
+          speedLabel: "Speed relative to the Sun",
+          mass: formatMassKg(voyager.massKg),
+          composition: BODY_COMPOSITION_BY_ID[bodyId],
+          dimensionsM: `${String(voyager.maximumDimensionM)} m span · ${String(voyager.highGainAntennaDiameterM)} m antenna`,
+          ephemerisStatus:
+            "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+        };
+      }
       if (isIss) {
         return {
           name: "International Space Station",
-          surface:
-            "NASA-dimensioned procedural model · SGP4 from CelesTrak OMM",
+          surface: "Official NASA 3D model · physical scale · SGP4 trajectory",
           parentName: parentDefinition?.name,
           distance:
             parentState === undefined
@@ -1010,7 +1459,7 @@ export function App() {
         };
       }
       return {
-        name: knownSatellite?.name ?? focusBodyId,
+        name: knownSatellite?.name ?? bodyId,
         surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
         distance:
@@ -1054,7 +1503,7 @@ export function App() {
           .primeMeridianDeg,
       ),
     };
-  }, [focusBodyId, semanticZoom, state]);
+  }, [selectedBodyId, semanticZoom, state]);
 
   const startPlaying = (nextDirection: -1 | 1): void => {
     setDirection(nextDirection);
@@ -1079,6 +1528,9 @@ export function App() {
     (body) => body.id === focusBodyId,
   );
   const focusedKnownSatellite = knownSatelliteById.get(focusBodyId);
+  const focusedVoyager = isVoyagerBodyId(focusBodyId)
+    ? voyagerById.get(focusBodyId)
+    : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
     focusedKnownSatellite?.parentId ??
@@ -1091,9 +1543,13 @@ export function App() {
 
   return (
     <main
-      className="app-shell"
+      ref={appShellRef}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}`}
+      data-immersive-mode={String(immersiveMode)}
       data-view-mode={viewMode}
       data-audio-state={audio.status}
+      data-narration-state={audio.narrationStatus}
+      data-tour-presentation={activeTourStep?.presentation}
       onClickCapture={(event) => {
         const target = event.target;
         if (
@@ -1149,6 +1605,7 @@ export function App() {
                   onClick={() => {
                     setTourPlaying(false);
                     setTourStepIndex(null);
+                    setSurfaceObserverEnabled(false);
                     setViewMode(mode);
                   }}
                 >
@@ -1165,10 +1622,25 @@ export function App() {
             );
           })}
         </nav>
-        <FocusSelect value={focusBodyId} onSelect={navigateToFocus} />
+        <FocusSelect
+          value={focusBodyId}
+          onSelect={(bodyId) => {
+            setSurfaceObserverEnabled(false);
+            navigateToFocus(bodyId);
+          }}
+        />
         <div className="command-actions">
           <button type="button" onClick={requestResetView}>
             Reset
+          </button>
+          <button
+            ref={fullscreenButtonRef}
+            type="button"
+            className="fullscreen-button"
+            aria-pressed={immersiveMode}
+            onClick={enterImmersiveMode}
+          >
+            Full screen
           </button>
           <button
             ref={displayButtonRef}
@@ -1183,7 +1655,23 @@ export function App() {
         </div>
       </header>
 
+      {immersiveMode ? (
+        <button
+          ref={immersiveExitButtonRef}
+          type="button"
+          className="immersive-exit-button"
+          onClick={exitImmersiveMode}
+        >
+          Exit full screen
+        </button>
+      ) : null}
+
       <section className="workspace">
+        {fullscreenError === undefined ? null : (
+          <p className="fullscreen-error error" role="alert">
+            {fullscreenError}
+          </p>
+        )}
         <nav className="focus-breadcrumb" aria-label="Current focus">
           <button type="button" onClick={navigateHome}>
             Solar System
@@ -1206,6 +1694,7 @@ export function App() {
               <strong>
                 {focusedDefinition?.name ??
                   focusedKnownSatellite?.name ??
+                  focusedVoyager?.name ??
                   focusBodyId}
               </strong>
             </>
@@ -1237,7 +1726,20 @@ export function App() {
 
         {error !== undefined ? (
           <p className="error" role="alert">
-            Physics engine failed: {error}
+            Simulation stopped: {error}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                manualDeltaSecondsRef.current = 0;
+                directSeekTimeSecondsRef.current = undefined;
+                setSeeking(false);
+                setPlaybackBuffered(false);
+                setError(undefined);
+                setSimulationRunToken((current) => current + 1);
+              }}
+            >
+              Restart simulation
+            </button>
           </p>
         ) : viewMode === "schematic" ? (
           <SchematicSystemMap
@@ -1255,6 +1757,7 @@ export function App() {
                 viewMode === "reality" ? 0 : bodyVisibilityPercent / 100
               }
               focusBodyId={focusBodyId === "" ? null : focusBodyId}
+              selectedBodyId={selectedBodyId === "" ? null : selectedBodyId}
               showMoonTrail={showMoonTrail}
               showPlanetTrails={showPlanetTrails}
               showMinorBodyTrails={showMinorBodyTrails}
@@ -1264,12 +1767,19 @@ export function App() {
               clearTrailsToken={clearTrailsToken}
               showEclipticPlane={showEclipticPlane}
               showLabels={showLabels}
+              spacecraftLabelBodyIds={
+                activeTourStep === undefined
+                  ? undefined
+                  : (activeTourStep.spacecraftLabelBodyIds ?? [])
+              }
               showTacticalOverlay={showTacticalOverlay}
               showOrbitGuides={showOrbitGuides}
+              wayfinderMode={wayfinderMode}
               orbitGuideScope={
                 activeTourStep?.overlays.orbitGuideScope ?? "all"
               }
               gravityWellMode={gravityWellMode}
+              gravityWellScale={gravityWellScale}
               resetViewToken={resetViewToken}
               cameraZoom={cameraZoom}
               cameraDistanceOverrideAu={
@@ -1279,23 +1789,35 @@ export function App() {
               }
               cameraTargetBodyId={activeCameraTargetBodyId}
               cameraTransitionSequence={tourTransitionSequence}
-              cameraTransitionDurationMs={
-                activeTourStep === undefined ? 0 : tourTransitionDurationMs
-              }
+              cameraTransitionDurationMs={tourTransitionDurationMs}
+              cameraTransitionAutoFrame={activeTourStep === undefined}
               cameraTransitionOverviewAnchorBodyId={
                 activeTourStep?.transitionOverviewAnchorBodyId
               }
               cameraTransitionOverviewDistanceAu={
-                activeTourStep?.transitionOverviewDistanceAu ?? 90
+                activeTourStep?.transitionOverviewDistanceAu ??
+                (focusBodyId === "" || focusBodyId === "sun"
+                  ? 90
+                  : focusBodyId === ISS_BODY_ID ||
+                      isVoyagerBodyId(focusBodyId) ||
+                      isOperationalSpacecraftBodyId(focusBodyId)
+                    ? 0.000_001
+                    : 0.01)
               }
               cameraNavigationCommand={cameraNavigationCommand}
               orientationPreset={cameraOrientation}
               orientationPresetToken={orientationPresetToken}
               viewMode={viewMode}
               objectVisibility={objectVisibility}
+              surfaceObserver={surfaceObserverConfiguration}
+              surfaceObserverLookResetToken={surfaceObserverLookResetToken}
+              visualQuality={visualQuality}
+              deepSpacePresentation={activeTourStep?.presentation}
+              onSelectBody={setSelectedBodyId}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}
               onSemanticZoomChange={setSemanticZoom}
+              onViewZoomChange={setViewMagnification}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
             />
@@ -1319,7 +1841,7 @@ export function App() {
               type="button"
               aria-label="Zoom out"
               title="Zoom out"
-              disabled={viewMode === "schematic"}
+              disabled={viewMode === "schematic" || surfaceObserverEnabled}
               onClick={() => handleCameraNavigation("zoom-out")}
             >
               −
@@ -1328,17 +1850,18 @@ export function App() {
               type="button"
               aria-label="Zoom in"
               title="Zoom in"
-              disabled={viewMode === "schematic"}
+              disabled={viewMode === "schematic" || surfaceObserverEnabled}
               onClick={() => handleCameraNavigation("zoom-in")}
             >
               +
             </button>
             <button
               type="button"
-              disabled={viewMode === "schematic"}
-              onClick={() => handleCameraNavigation("fit-selection")}
+              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              title="Restore the selected focus to its default framing"
+              onClick={recenterView}
             >
-              Fit
+              Re-centre
             </button>
             <button type="button" onClick={navigateHome}>
               Home
@@ -1353,6 +1876,143 @@ export function App() {
           </div>
         </nav>
 
+        {surfaceObservation === undefined ? null : (
+          <aside
+            className="surface-observer-hud"
+            aria-label="Surface observer measurements"
+            data-surface-observer-body={surfaceObserverBodyId}
+            data-surface-observer-target={surfaceObserverTargetBodyId}
+          >
+            <div className="surface-observer-heading">
+              <div>
+                <span>Surface observer</span>
+                <strong>
+                  {surfaceObservation.observerName} ·{" "}
+                  {surfaceObserverLatitudeDeg.toFixed(4)}°,{" "}
+                  {surfaceObserverLongitudeDeg.toFixed(4)}° E
+                </strong>
+              </div>
+              <button type="button" onClick={exitSurfaceObserver}>
+                Exit
+              </button>
+            </div>
+            <label className="surface-target-control">
+              Look at
+              <select
+                value={surfaceObserverTargetBodyId}
+                onChange={(event) =>
+                  setSurfaceObserverTargetBodyId(event.currentTarget.value)
+                }
+              >
+                {majorBodySnapshot.bodies
+                  .filter((body) => body.id !== surfaceObserverBodyId)
+                  .map((body) => (
+                    <option key={body.id} value={body.id}>
+                      {body.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="surface-centre-target"
+              onClick={() =>
+                setSurfaceObserverLookResetToken((current) => current + 1)
+              }
+            >
+              Centre target
+            </button>
+            <div className="surface-compass" aria-label="Local compass">
+              <span className="surface-compass-target" aria-hidden="true">
+                <i
+                  style={{
+                    left: `${String(surfaceObservation.targetAzimuthDeg / 3.6)}%`,
+                  }}
+                />
+              </span>
+              <span>N</span>
+              <span>E</span>
+              <span>S</span>
+              <span>W</span>
+              <span>N</span>
+            </div>
+            <div className="surface-observer-metrics">
+              <span>
+                <small>{surfaceObservation.targetName} position</small>
+                {surfaceObservation.targetAltitudeDeg.toFixed(2)}° altitude ·{" "}
+                {surfaceObservation.targetAzimuthDeg.toFixed(2)}° azimuth
+              </span>
+              <span>
+                <small>Apparent diameter</small>
+                {formatAngularDiameter(
+                  surfaceObservation.targetAngularDiameterDeg,
+                )}
+              </span>
+              {surfaceObservation.targetIlluminatedFraction ===
+              undefined ? null : (
+                <span>
+                  <small>Illuminated disc</small>
+                  {(surfaceObservation.targetIlluminatedFraction * 100).toFixed(
+                    1,
+                  )}
+                  %
+                </span>
+              )}
+              <span>
+                <small>North-pole position angle</small>
+                {surfaceObservation.targetNorthPolePositionAngleDeg.toFixed(2)}°
+              </span>
+              {surfaceObservation.brightLimbPositionAngleDeg ===
+              undefined ? null : (
+                <span>
+                  <small>Bright-limb position angle</small>
+                  {surfaceObservation.brightLimbPositionAngleDeg.toFixed(2)}°
+                </span>
+              )}
+              <span>
+                <small>Local solar time</small>
+                {formatLocalSolarTime(surfaceObservation.localSolarTimeHours)}
+              </span>
+              <span>
+                <small>Sun</small>
+                {surfaceObservation.sunAltitudeDeg.toFixed(2)}° altitude ·{" "}
+                {formatAngularDiameter(
+                  surfaceObservation.sunAngularDiameterDeg,
+                )}
+              </span>
+              <span>
+                <small>Sunrise and sunset</small>
+                {surfaceObservation.solarHorizonEvents.regime === "normal"
+                  ? `${formatLocalSolarTime(
+                      surfaceObservation.solarHorizonEvents
+                        .sunriseLocalSolarHours,
+                    )} / ${formatLocalSolarTime(
+                      surfaceObservation.solarHorizonEvents
+                        .sunsetLocalSolarHours,
+                    )} local solar time`
+                  : surfaceObservation.solarHorizonEvents.regime === "polar-day"
+                    ? "Sun remains above the geometric horizon"
+                    : "Sun remains below the geometric horizon"}
+              </span>
+              <span>
+                <small>Geometric horizon</small>
+                {surfaceObservation.targetAltitudeDeg >= 0
+                  ? `${surfaceObservation.targetName} is above it`
+                  : `${surfaceObservation.targetName} is below it`}
+                {" · "}
+                {(surfaceObservation.geometricHorizonDistanceM / 1_000).toFixed(
+                  2,
+                )}{" "}
+                km away
+              </span>
+            </div>
+            <small className="surface-observer-disclosure">
+              Mean-radius reference sphere · 2 m eye height · geometric horizon
+              · no terrain, atmosphere or refraction
+            </small>
+          </aside>
+        )}
+
         {activeTourStep === undefined || tourStepIndex === null ? null : (
           <aside
             className="scale-tour"
@@ -1361,6 +2021,7 @@ export function App() {
             aria-label="Scale of the Solar System tour"
             data-tour-step={activeTourStep.id}
             data-tour-playing={String(tourPlaying)}
+            data-tour-narration-state={audio.narrationStatus}
             data-tour-observer={
               activeTourStep.cameraTargetBodyId === undefined
                 ? "none"
@@ -1437,7 +2098,8 @@ export function App() {
         )}
 
         {selectedBodyDetail === undefined ||
-        activeTourStep !== undefined ? null : (
+        activeTourStep !== undefined ||
+        surfaceObserverEnabled ? null : (
           <aside className="selected-body-detail">
             <div className="selected-body-heading">
               <div>
@@ -1445,11 +2107,18 @@ export function App() {
                 <strong>{selectedBodyDetail.name}</strong>
               </div>
               <div className="selected-body-actions">
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => navigateToFocus(selectedBodyId)}
+                >
+                  Focus
+                </button>
                 <button type="button" onClick={navigateToParent}>
                   Parent
                 </button>
-                <button type="button" onClick={navigateToNextPlanet}>
-                  Next planet
+                <button type="button" onClick={navigateToNextObject}>
+                  Next object
                 </button>
               </div>
             </div>
@@ -1586,6 +2255,142 @@ export function App() {
             </p>
           )}
 
+          <details open>
+            <summary>Image quality</summary>
+            <div className="control-section visual-quality-controls">
+              <label>
+                Rendering
+                <select
+                  aria-label="Rendering quality"
+                  value={visualQuality}
+                  onChange={(event) =>
+                    setVisualQuality(event.currentTarget.value as VisualQuality)
+                  }
+                >
+                  {(
+                    Object.entries(VISUAL_QUALITY_PROFILES) as [
+                      VisualQuality,
+                      (typeof VISUAL_QUALITY_PROFILES)[VisualQuality],
+                    ][]
+                  ).map(([quality, profile]) => (
+                    <option key={quality} value={quality}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <small className="visual-quality-note">
+                Photographic uses full display resolution, high texture
+                filtering, inverse-square sunlight and slower exposure
+                adaptation. Balanced and Battery reduce GPU work without
+                changing positions or physics.
+              </small>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Surface observer</summary>
+            <div className="control-section surface-observer-controls">
+              <label>
+                Observer body
+                <select
+                  value={surfaceObserverBodyId}
+                  onChange={(event) => {
+                    const nextBodyId = event.currentTarget.value;
+                    setSurfaceObserverBodyId(nextBodyId);
+                    if (surfaceObserverTargetBodyId === nextBodyId) {
+                      setSurfaceObserverTargetBodyId("sun");
+                    }
+                    if (surfaceObserverEnabled) {
+                      navigateToFocus(nextBodyId);
+                    }
+                  }}
+                >
+                  {surfaceObserverBodies.map((body) => (
+                    <option key={body.id} value={body.id}>
+                      {body.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Look at
+                <select
+                  value={surfaceObserverTargetBodyId}
+                  onChange={(event) =>
+                    setSurfaceObserverTargetBodyId(event.currentTarget.value)
+                  }
+                >
+                  {majorBodySnapshot.bodies
+                    .filter((body) => body.id !== surfaceObserverBodyId)
+                    .map((body) => (
+                      <option key={body.id} value={body.id}>
+                        {body.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Latitude
+                <input
+                  type="number"
+                  min="-90"
+                  max="90"
+                  step="0.0001"
+                  value={surfaceObserverLatitudeDeg}
+                  onChange={(event) => {
+                    const latitudeDeg = event.currentTarget.valueAsNumber;
+                    if (
+                      Number.isFinite(latitudeDeg) &&
+                      latitudeDeg >= -90 &&
+                      latitudeDeg <= 90
+                    ) {
+                      setSurfaceObserverLatitudeDeg(latitudeDeg);
+                    }
+                  }}
+                />
+              </label>
+              <label>
+                Longitude °E
+                <input
+                  type="number"
+                  min="-180"
+                  max="180"
+                  step="0.0001"
+                  value={surfaceObserverLongitudeDeg}
+                  onChange={(event) => {
+                    const longitudeDeg = event.currentTarget.valueAsNumber;
+                    if (
+                      Number.isFinite(longitudeDeg) &&
+                      longitudeDeg >= -180 &&
+                      longitudeDeg <= 180
+                    ) {
+                      setSurfaceObserverLongitudeDeg(longitudeDeg);
+                    }
+                  }}
+                />
+              </label>
+              <small className="surface-observer-control-note">
+                Planetographic coordinates on the sourced mean-radius reference
+                sphere. Giant planets are excluded because they have no solid
+                surface.
+              </small>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={
+                  surfaceObserverEnabled
+                    ? exitSurfaceObserver
+                    : enterSurfaceObserver
+                }
+              >
+                {surfaceObserverEnabled
+                  ? "Exit surface view"
+                  : "Enter surface view"}
+              </button>
+            </div>
+          </details>
+
           <details>
             <summary>Scientific model</summary>
             <div className="model-disclosure">
@@ -1648,6 +2453,19 @@ export function App() {
                 />
                 <span>Interface sounds</span>
               </label>
+              <label className="switch-control">
+                <input
+                  type="checkbox"
+                  checked={audio.settings.narrationEnabled}
+                  onChange={(event) =>
+                    audio.updateSetting(
+                      "narrationEnabled",
+                      event.currentTarget.checked,
+                    )
+                  }
+                />
+                <span>Tour narration</span>
+              </label>
               <label className="range-control">
                 <span>Music volume</span>
                 <input
@@ -1686,12 +2504,36 @@ export function App() {
                   {Math.round(audio.settings.effectsVolume * 100)}%
                 </output>
               </label>
+              <label className="range-control">
+                <span>Narration volume</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={Math.round(audio.settings.narrationVolume * 100)}
+                  disabled={!audio.settings.narrationEnabled}
+                  onChange={(event) =>
+                    audio.updateSetting(
+                      "narrationVolume",
+                      Number(event.currentTarget.value) / 100,
+                    )
+                  }
+                />
+                <output>
+                  {Math.round(audio.settings.narrationVolume * 100)}%
+                </output>
+              </label>
               <span className="audio-status" role="status">
-                {audio.status === "running"
-                  ? "Audio active"
-                  : audio.status === "unavailable"
-                    ? "Audio unavailable in this browser"
-                    : "Starts after your next interaction"}
+                {audio.narrationStatus === "error"
+                  ? "Tour narration could not be loaded"
+                  : audio.narrationStatus === "playing"
+                    ? "Tour narration playing"
+                    : audio.status === "running"
+                      ? "Audio active"
+                      : audio.status === "unavailable"
+                        ? "Audio unavailable in this browser"
+                        : "Starts after your next interaction"}
               </span>
             </div>
           </details>
@@ -1738,7 +2580,7 @@ export function App() {
                         "Selected camera zoom preset is unavailable",
                       );
                     }
-                    setCameraZoom(preset.zoom);
+                    setRequestedViewMagnification(preset.zoom);
                   }}
                 >
                   {CAMERA_ZOOM_PRESETS.map((preset) => (
@@ -1755,16 +2597,26 @@ export function App() {
                 <span>Camera zoom</span>
                 <input
                   type="range"
-                  min="0.5"
-                  max="8"
-                  step="0.25"
-                  value={cameraZoom}
+                  min="-6"
+                  max="7"
+                  step="0.000001"
+                  value={Math.max(
+                    -6,
+                    Math.min(7, Math.log2(viewMagnification)),
+                  )}
                   disabled={viewMode === "schematic"}
                   onChange={(event) =>
-                    setCameraZoom(Number(event.currentTarget.value))
+                    setRequestedViewMagnification(
+                      2 ** Number(event.currentTarget.value),
+                    )
                   }
                 />
-                <output>{cameraZoom.toFixed(2).replace(/\.00$/u, "")}x</output>
+                <output>
+                  {viewMagnification < 0.1
+                    ? viewMagnification.toFixed(3)
+                    : viewMagnification.toFixed(2).replace(/\.00$/u, "")}
+                  x
+                </output>
               </label>
               <label className="range-control">
                 <span>Body size boost</span>
@@ -1785,6 +2637,23 @@ export function App() {
                     : `${String(bodyVisibilityPercent)}%`}
                 </output>
               </label>
+              <label className="wayfinder-control">
+                Wayfinders
+                <select
+                  value={wayfinderMode}
+                  disabled={viewMode === "schematic"}
+                  onChange={(event) =>
+                    setWayfinderMode(event.currentTarget.value as WayfinderMode)
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="sun">Sun</option>
+                  <option value="sun-planet">Sun + nearest planet</option>
+                  <option value="sun-two-planets">
+                    Sun + two nearest planets
+                  </option>
+                </select>
+              </label>
               <label>
                 Gravity field
                 <select
@@ -1799,6 +2668,23 @@ export function App() {
                   <option value="off">Off</option>
                   <option value="contours">Potential contours</option>
                   <option value="surface">3D potential surface</option>
+                </select>
+              </label>
+              <label>
+                Gravity scale
+                <select
+                  value={gravityWellScale}
+                  disabled={
+                    viewMode === "schematic" || gravityWellMode === "off"
+                  }
+                  onChange={(event) =>
+                    setGravityWellScale(
+                      event.currentTarget.value as GravityWellScale,
+                    )
+                  }
+                >
+                  <option value="local">Local detail</option>
+                  <option value="absolute">Absolute comparison</option>
                 </select>
               </label>
               {(

@@ -10,12 +10,14 @@ import {
 
 import {
   gravityPotentialDisplayRange,
+  absoluteGravityPotentialDisplayRange,
   gravityWellDisplayDepthAu,
   MAX_GRAVITY_WELL_BODIES,
   validateGravityPotentialSources,
   type GravityPotentialRange,
   type GravityPotentialSource,
   type GravityWellMode,
+  type GravityWellScale,
 } from "./gravity-potential";
 
 const SUN_GRAVITATIONAL_PARAMETER_M3_S2 = 1.3271244004127942e20;
@@ -32,6 +34,7 @@ type GravityWellUniforms = Readonly<{
 
 export type GravityWellUpdate = Readonly<{
   mode: GravityWellMode;
+  scale: GravityWellScale;
   centerAu: readonly [number, number, number];
   extentAu: number;
   sources: readonly GravityPotentialSource[];
@@ -209,17 +212,24 @@ export class GravityWellLayer {
       this.#uniforms.bodyMuRatio.value[index] =
         source.gravitationalParameterM3S2 / SUN_GRAVITATIONAL_PARAMETER_M3_S2;
     }
-    const range = gravityPotentialDisplayRange(
-      update.centerAu,
-      [this.#planeFirstAxis.x, this.#planeFirstAxis.y, this.#planeFirstAxis.z],
-      [
-        this.#planeSecondAxis.x,
-        this.#planeSecondAxis.y,
-        this.#planeSecondAxis.z,
-      ],
-      update.extentAu,
-      update.sources,
-    );
+    const range =
+      update.scale === "absolute"
+        ? absoluteGravityPotentialDisplayRange()
+        : gravityPotentialDisplayRange(
+            update.centerAu,
+            [
+              this.#planeFirstAxis.x,
+              this.#planeFirstAxis.y,
+              this.#planeFirstAxis.z,
+            ],
+            [
+              this.#planeSecondAxis.x,
+              this.#planeSecondAxis.y,
+              this.#planeSecondAxis.z,
+            ],
+            update.extentAu,
+            update.sources,
+          );
     this.#uniforms.minimumLog2Potential.value = range.minimumLog2SunUnits;
     this.#uniforms.maximumLog2Potential.value = range.maximumLog2SunUnits;
     this.#mesh.visible = true;

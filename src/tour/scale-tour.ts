@@ -1,4 +1,25 @@
 import type { CameraOrientationPreset } from "../scene/camera-view";
+import tourNarrationData from "../data/tour-narration.json";
+
+type TourNarration = Readonly<{
+  audioSource: string;
+  text: string;
+}>;
+
+const tourNarrationById = new Map(
+  tourNarrationData.map((entry) => [
+    entry.id,
+    { audioSource: entry.audioSource, text: entry.text },
+  ]),
+);
+
+function narrationFor(stepId: string): TourNarration {
+  const narration = tourNarrationById.get(stepId);
+  if (narration === undefined) {
+    throw new Error(`Tour narration for ${stepId} is unavailable`);
+  }
+  return narration;
+}
 
 export type ScaleTourStep = Readonly<{
   id: string;
@@ -27,10 +48,14 @@ export type ScaleTourStep = Readonly<{
   scale: string;
   description: string;
   visualKey: string;
+  narration: TourNarration;
+  presentation?:
+    "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale";
+  spacecraftLabelBodyIds?: readonly string[];
 }>;
 
-export const SCALE_TOUR_STEP_DURATION_MS = 16_000;
-export const SCALE_TOUR_TRANSITION_DURATION_MS = 7_500;
+export const SCALE_TOUR_STEP_DURATION_MS = 28_000;
+export const SCALE_TOUR_TRANSITION_DURATION_MS = 12_000;
 
 export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
   {
@@ -58,8 +83,9 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Earth is already enormous",
     scale: "12,742 km across",
     description:
-      "This shot fits Earth itself, not the entire Earth-Moon system. At walking speed, a trip around the planet would take more than a year without stopping.",
+      "This shot fits Earth itself. Its 40,075 km equatorial circumference would take more than a year to walk without stopping, while the one-hour-per-second clock makes the planet's rotation visible.",
     visualKey: "Physical sizes · no guides or trails",
+    narration: narrationFor("earth"),
   },
   {
     id: "moon-gap",
@@ -86,8 +112,9 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Most of the picture is empty space",
     scale: "384,400 km average separation",
     description:
-      "All eight planets could fit side by side between Earth and the Moon at their average distance, with room left over.",
+      "The average centre-to-centre gap is about 30 Earth diameters. All eight planets could fit side by side across it, while the thin curve shows the Moon's modelled orbit rather than a decorative ring.",
     visualKey: "Thin blue curve · the Moon's orbital path around Earth",
+    narration: narrationFor("moon-gap"),
   },
   {
     id: "sun-atmosphere",
@@ -114,9 +141,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "The Sun is more than a yellow ball",
     scale: "1.39 million km across",
     description:
-      "The visible photosphere sits below a thin chromosphere and the much fainter corona. A restrained limb glow is shown, but no invented flare is added without a time-specific observation.",
+      "The Sun contains 99.86% of the Solar System's mass. Its visible photosphere lies beneath a thin chromosphere and an immense, faint corona that streams into space.",
     visualKey:
-      "Procedural photosphere and restrained limb glow · no invented flare state",
+      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
+    narration: narrationFor("sun-atmosphere"),
   },
   {
     id: "sun-from-mars",
@@ -144,9 +172,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "The Sun seen from Mars",
     scale: "About two-thirds its Earth-sky diameter",
     description:
-      "This physical line of sight places the camera at Mars and points it toward the live Sun. The greater distance makes the solar disc look distinctly smaller than it does from Earth.",
+      "Mars is about half again as far from the Sun as Earth. From here the solar disc spans only about two-thirds of the angle it does in Earth's sky, so daylight is weaker and the Sun looks noticeably smaller.",
     visualKey:
       "Physical sizes and separation · 8× optical camera zoom · observer at Mars",
+    narration: narrationFor("sun-from-mars"),
   },
   {
     id: "jupiter",
@@ -173,9 +202,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Jupiter is a system of its own",
     scale: "About 11 Earths wide",
     description:
-      "Jupiter holds most of the planetary mass in the Solar System. Its major moons orbit across millions of kilometres.",
+      "Jupiter holds most of the mass in all the planets and rotates in about ten hours. Its major moons span millions of kilometres, with their physical orbital paths shown as thin curves.",
     visualKey:
       "Thin blue curves · major-moon orbits; all bodies retain physical size",
+    narration: narrationFor("jupiter"),
   },
   {
     id: "jupiter-from-io",
@@ -203,9 +233,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Jupiter fills Io's sky",
     scale: "Roughly 19° across",
     description:
-      "The camera rides at Io's live position and tracks Jupiter. From this close volcanic moon, the giant planet spans dozens of times the apparent width of Earth's Moon in our sky.",
+      "Io circles only 422,000 kilometres from Jupiter's centre. The giant planet spans roughly 19 degrees here, more than thirty times the apparent width of the Moon in Earth's sky.",
     visualKey:
       "Physical sizes and live separation · observer at Io · no display enlargement",
+    narration: narrationFor("jupiter-from-io"),
   },
   {
     id: "earth-from-jupiter",
@@ -233,9 +264,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Earth seen from Jupiter",
     scale: "Only a sub-pixel point at true scale",
     description:
-      "This line of sight starts at Jupiter and follows the live Earth. At true scale, a planet-sized world several astronomical units away is below screen resolution, so its label identifies the physical sub-pixel position.",
+      "Across several astronomical units, Earth shrinks below the resolution of a screen pixel. Its label marks the calculated direction of home; the planet itself has not been enlarged.",
     visualKey:
       "Physical sub-pixel target · 8× optical camera zoom · observer at Jupiter",
+    narration: narrationFor("earth-from-jupiter"),
   },
   {
     id: "saturn",
@@ -262,8 +294,9 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Saturn's rings dwarf Earth",
     scale: "273,560 km across the observed main rings",
     description:
-      "The main rings are broad enough to span more than 21 Earths, but their vertical thickness is tiny compared with their width.",
+      "The observed main rings span more than 21 Earth diameters but are extraordinarily thin. They are countless orbiting particles, rendered from a Cassini radial mosaic rather than as a solid disc.",
     visualKey: "Physical globe and ring dimensions · no guide lines",
+    narration: narrationFor("saturn"),
   },
   {
     id: "saturn-from-titan",
@@ -291,15 +324,16 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Saturn seen from Titan",
     scale: "The rings span several degrees of sky",
     description:
-      "This clear-space viewpoint uses Titan's live orbital position and looks back at Saturn. It omits Titan's opaque atmospheric haze so the scene teaches orbital geometry rather than a fictional surface view.",
+      "Titan orbits about 1.2 million kilometres from Saturn. Above its dense orange atmosphere, Saturn and its rings would stretch across several degrees of sky.",
     visualKey:
       "Physical sizes and live separation · clear-space observer at Titan",
+    narration: narrationFor("saturn-from-titan"),
   },
   {
     id: "neptune",
-    focusBodyId: "sun",
-    orientation: "perspective",
-    cameraDistanceAu: 36,
+    focusBodyId: "neptune",
+    orientation: "parent-facing",
+    cameraDistanceAu: 0.001_2,
     transitionOverviewAnchorBodyId: "sun",
     transitionOverviewDistanceAu: 75,
     cameraZoom: 1,
@@ -309,7 +343,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     bodyVisibilityPercent: 0,
     overlays: {
       labels: true,
-      orbitGuides: true,
+      orbitGuides: false,
       orbitGuideScope: "all",
       tactical: false,
       eclipticGrid: false,
@@ -320,17 +354,82 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     title: "Neptune is thirty times farther out",
     scale: "About 30 AU from the Sun",
     description:
-      "Sunlight takes roughly four hours to reach Neptune. One Neptune year lasts nearly 165 Earth years.",
+      "The camera moves to Neptune's sunward side, where its physical globe remains visible while the Sun wayfinder carries the full distance. Sunlight takes roughly four hours to arrive, and one orbit lasts nearly 165 Earth years.",
     visualKey:
-      "Physical sizes · blue curves are planetary orbital paths · labels mark sub-pixel worlds",
+      "Physical size · sunward view · wayfinder preserves the live Sun distance",
+    narration: narrationFor("neptune"),
+  },
+  {
+    id: "voyager-2",
+    focusBodyId: "voyager-2",
+    orientation: "parent-facing",
+    cameraDistanceAu: 90 / 149_597_870_700,
+    transitionOverviewAnchorBodyId: "sun",
+    transitionOverviewDistanceAu: 165,
+    cameraZoom: 1,
+    timeRateSecondsPerSecond: 2_592_000,
+    timeRateLabel:
+      "30 days per second · the probe continues through interstellar space",
+    viewMode: "reality",
+    bodyVisibilityPercent: 0,
+    overlays: {
+      labels: true,
+      orbitGuides: false,
+      orbitGuideScope: "system",
+      tactical: false,
+      eclipticGrid: false,
+      planetTrails: false,
+      moonTrail: false,
+    },
+    eyebrow: "Beyond the heliosphere",
+    title: "Voyager 2 follows a different road",
+    scale: "More than 140 AU from the Sun at the 2026 epoch",
+    description:
+      "Voyager 2 crossed the heliopause in 2018 and now samples interstellar space. From this distance, a one-way radio signal takes almost 20 hours, so its 3.7 metre dish must remain aimed back at Earth.",
+    visualKey:
+      "Physical 13 m spacecraft · live Earth-pointing antenna · true Sun distance",
+    narration: narrationFor("voyager-2"),
+    spacecraftLabelBodyIds: ["voyager-2"],
+  },
+  {
+    id: "voyager-1",
+    focusBodyId: "voyager-1",
+    orientation: "parent-facing",
+    cameraDistanceAu: 90 / 149_597_870_700,
+    transitionOverviewAnchorBodyId: "sun",
+    transitionOverviewDistanceAu: 190,
+    cameraZoom: 1,
+    timeRateSecondsPerSecond: 2_592_000,
+    timeRateLabel:
+      "30 days per second · humanity's farthest probe keeps receding",
+    viewMode: "reality",
+    bodyVisibilityPercent: 0,
+    overlays: {
+      labels: true,
+      orbitGuides: false,
+      orbitGuideScope: "system",
+      tactical: false,
+      eclipticGrid: false,
+      planetTrails: false,
+      moonTrail: false,
+    },
+    eyebrow: "The human frontier",
+    title: "Voyager 1 is almost lost in the dark",
+    scale: "More than 160 AU from the Sun at the 2026 epoch",
+    description:
+      "A one-way radio signal now takes more than 23 hours to reach Voyager 1. Its 3.7 metre dish points toward a barely distinguishable Earth near the Sun, while the 13 metre spacecraft itself would be far below one screen pixel at true distance.",
+    visualKey:
+      "Physical 13 m spacecraft · live Earth-pointing antenna · no display enlargement",
+    narration: narrationFor("voyager-1"),
+    spacecraftLabelBodyIds: ["voyager-1"],
   },
   {
     id: "solar-system",
-    focusBodyId: "",
+    focusBodyId: "sun",
     orientation: "perspective",
-    cameraDistanceAu: 90,
+    cameraDistanceAu: 320,
     transitionOverviewAnchorBodyId: "sun",
-    transitionOverviewDistanceAu: 90,
+    transitionOverviewDistanceAu: 240,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 2_592_000,
     timeRateLabel: "30 days per second · planetary orbits sweep smoothly",
@@ -345,12 +444,80 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
       planetTrails: false,
       moonTrail: false,
     },
-    eyebrow: "The complete view",
-    title: "At true scale, planets almost disappear",
-    scale: "A 90 AU camera view",
+    eyebrow: "The Sun's wind bubble",
+    title: "The heliosphere is not the edge of the Solar System",
+    scale: "Voyager crossings reveal a boundary around 120 AU",
     description:
-      "The final view keeps positions and sizes physical. Tiny worlds becoming sub-pixel points is not a rendering failure: it is the scale of space.",
+      "The solar wind inflates a magnetised region called the heliosphere. Its outer boundary, the heliopause, separates solar-wind plasma from interstellar space; both Voyagers have crossed it.",
     visualKey:
-      "Physical sizes and positions · labels identify sub-pixel worlds",
+      "Live Solar System · approximate plasma boundaries are not spherical in nature",
+    narration: narrationFor("solar-system"),
+    spacecraftLabelBodyIds: ["voyager-1", "voyager-2"],
+    presentation: "heliosphere-scale",
+  },
+  {
+    id: "oort-cloud",
+    focusBodyId: "sun",
+    orientation: "perspective",
+    cameraDistanceAu: 135_000,
+    transitionOverviewAnchorBodyId: "sun",
+    transitionOverviewDistanceAu: 240,
+    cameraZoom: 1,
+    timeRateSecondsPerSecond: 2_592_000,
+    timeRateLabel:
+      "30 days per second · the planets continue moving at the centre",
+    viewMode: "reality",
+    bodyVisibilityPercent: 0,
+    overlays: {
+      labels: false,
+      orbitGuides: false,
+      orbitGuideScope: "system",
+      tactical: false,
+      eclipticGrid: false,
+      planetTrails: false,
+      moonTrail: false,
+    },
+    eyebrow: "The Sun's distant comet reservoir",
+    title:
+      "The Oort Cloud may reach more than a third of the way to the next star",
+    scale: "Estimated from about 2,000 to as far as 100,000 AU",
+    description:
+      "The Oort Cloud is a predicted spherical shell of icy bodies on extremely long solar orbits. It is not the heliosphere, no spacecraft has reached it, and its individual objects have not been mapped.",
+    visualKey:
+      "Continuous physical scale · points show an estimated population, not mapped objects",
+    narration: narrationFor("oort-cloud"),
+    presentation: "oort-cloud-scale",
+  },
+  {
+    id: "alpha-centauri",
+    focusBodyId: "sun",
+    orientation: "perspective",
+    cameraDistanceAu: 390_000,
+    transitionOverviewAnchorBodyId: "sun",
+    transitionOverviewDistanceAu: 240,
+    cameraZoom: 1,
+    timeRateSecondsPerSecond: 2_592_000,
+    timeRateLabel:
+      "30 days per second · the Solar System remains live but vanishingly small",
+    viewMode: "reality",
+    bodyVisibilityPercent: 0,
+    overlays: {
+      labels: false,
+      orbitGuides: false,
+      orbitGuideScope: "system",
+      tactical: false,
+      eclipticGrid: false,
+      planetTrails: false,
+      moonTrail: false,
+    },
+    eyebrow: "The nearest stellar neighbours",
+    title: "Alpha Centauri is another scale entirely",
+    scale: "About 4.3 light-years · roughly 272,000 AU",
+    description:
+      "Even a possible 100,000 AU outer Oort Cloud reaches only about 37% of this distance. Light needs 4.3 years; Voyager 1 would need about 75,000 years at its present speed and is not heading there.",
+    visualKey:
+      "One continuous 3D scale · Alpha Centauri is a Hipparcos direction marker, not an N-body object",
+    narration: narrationFor("alpha-centauri"),
+    presentation: "interstellar-scale",
   },
 ] as const;

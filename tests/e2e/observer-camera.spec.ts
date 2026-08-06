@@ -97,16 +97,16 @@ test("anchors every observer scene at its origin while centring its look-at targ
       await expect(tour).toHaveAttribute("data-tour-target", step.targetBodyId);
       await expect(scene).toHaveAttribute(
         "data-camera-transition-interpolation",
-        "logarithmic-distance",
+        "depart-coast-arrive",
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-duration-ms",
-        "7500",
+        "12000",
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-phase",
         "overview",
-        { timeout: 5_000 },
+        { timeout: 6_000 },
       );
       const overviewAnchorPosition = {
         x: Number(
@@ -131,7 +131,7 @@ test("anchors every observer scene at its origin while centring its look-at targ
       await expect(scene).toHaveAttribute(
         "data-camera-transition-phase",
         "settled",
-        { timeout: 10_000 },
+        { timeout: 16_000 },
       );
       await expect(scene).toHaveAttribute(
         "data-focus-body",
@@ -139,6 +139,10 @@ test("anchors every observer scene at its origin while centring its look-at targ
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-overview-anchor",
+        "moving-route",
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-destination-anchor",
         step.observerBodyId,
       );
       await expect

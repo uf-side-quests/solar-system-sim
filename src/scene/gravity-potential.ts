@@ -3,6 +3,7 @@ import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
 export const MAX_GRAVITY_WELL_BODIES = 32;
 
 export type GravityWellMode = "off" | "contours" | "surface";
+export type GravityWellScale = "absolute" | "local";
 
 export type GravityPotentialSource = Readonly<{
   id: string;
@@ -27,6 +28,19 @@ const DISPLAY_RANGE_PADDING_LOG2 = 0.06;
 const DISPLAY_RANGE_MINIMUM_LOG2_SPAN = 0.12;
 const DISPLAY_RANGE_SAMPLE_COUNT = 17;
 const GRAVITY_WELL_DEPTH_FRACTION = 0.032;
+const ABSOLUTE_MINIMUM_LOG2_SUN_UNITS = -6;
+const ABSOLUTE_MAXIMUM_LOG2_SUN_UNITS = 8;
+
+export function absoluteGravityPotentialDisplayRange(): GravityPotentialRange {
+  return {
+    minimumLog2SunUnits: ABSOLUTE_MINIMUM_LOG2_SUN_UNITS,
+    maximumLog2SunUnits: ABSOLUTE_MAXIMUM_LOG2_SUN_UNITS,
+    minimumMagnitudeJPerKg:
+      2 ** ABSOLUTE_MINIMUM_LOG2_SUN_UNITS * SUN_POTENTIAL_UNIT_J_PER_KG,
+    maximumMagnitudeJPerKg:
+      2 ** ABSOLUTE_MAXIMUM_LOG2_SUN_UNITS * SUN_POTENTIAL_UNIT_J_PER_KG,
+  };
+}
 
 function assertFiniteVector(name: string, value: Vector3Tuple): void {
   if (!value.every(Number.isFinite)) {

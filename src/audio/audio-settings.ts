@@ -4,15 +4,19 @@ export const AUDIO_SETTINGS_STORAGE_KEY =
 export type AudioSettings = Readonly<{
   musicEnabled: boolean;
   effectsEnabled: boolean;
+  narrationEnabled: boolean;
   musicVolume: number;
   effectsVolume: number;
+  narrationVolume: number;
 }>;
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   musicEnabled: true,
   effectsEnabled: true,
+  narrationEnabled: true,
   musicVolume: 0.22,
   effectsVolume: 0.45,
+  narrationVolume: 0.72,
 };
 
 function normalizedVolume(value: unknown, fallback: number): number {
@@ -40,6 +44,10 @@ export function parseAudioSettings(serialized: string | null): AudioSettings {
         typeof candidate["effectsEnabled"] === "boolean"
           ? candidate["effectsEnabled"]
           : DEFAULT_AUDIO_SETTINGS.effectsEnabled,
+      narrationEnabled:
+        typeof candidate["narrationEnabled"] === "boolean"
+          ? candidate["narrationEnabled"]
+          : DEFAULT_AUDIO_SETTINGS.narrationEnabled,
       musicVolume: normalizedVolume(
         candidate["musicVolume"],
         DEFAULT_AUDIO_SETTINGS.musicVolume,
@@ -47,6 +55,10 @@ export function parseAudioSettings(serialized: string | null): AudioSettings {
       effectsVolume: normalizedVolume(
         candidate["effectsVolume"],
         DEFAULT_AUDIO_SETTINGS.effectsVolume,
+      ),
+      narrationVolume: normalizedVolume(
+        candidate["narrationVolume"],
+        DEFAULT_AUDIO_SETTINGS.narrationVolume,
       ),
     };
   } catch {

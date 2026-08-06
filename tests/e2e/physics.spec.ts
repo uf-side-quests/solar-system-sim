@@ -32,19 +32,11 @@ async function readCanvasPixels(
         const red = pixels[offset] ?? 0;
         const green = pixels[offset + 1] ?? 0;
         const blue = pixels[offset + 2] ?? 0;
-        const isCometPixel =
-          red > 24 &&
-          green / red > 1.7 &&
-          green / red < 1.9 &&
-          blue / green > 1.15 &&
-          blue / green < 1.3;
-        const isAsteroidPixel =
-          blue > 24 &&
-          red / green > 1.05 &&
-          red / green < 1.2 &&
-          green / blue > 1.2 &&
-          green / blue < 1.45;
-        if (isCometPixel || isAsteroidPixel) {
+        const brightestChannel = Math.max(red, green, blue);
+        const darkestChannel = Math.min(red, green, blue);
+        const isSmallBodyPixel =
+          brightestChannel > 24 && brightestChannel - darkestChannel > 20;
+        if (isSmallBodyPixel) {
           litPixels += 1;
           positionHash = Math.imul(positionHash ^ (offset / 4), 16_777_619);
         }
@@ -109,8 +101,8 @@ test("renders solver state and advances time through the physics worker", async 
   const cameraZoom = page.getByRole("slider", { name: "Camera zoom" });
   const zoomPreset = page.getByRole("combobox", { name: "Zoom preset" });
   const orientation = page.getByRole("combobox", { name: "Orientation" });
-  await expect(cameraZoom).toHaveValue("1");
-  await expect(zoomPreset).toHaveValue("normal");
+  await expect(cameraZoom).toHaveValue("0");
+  await expect(zoomPreset).toHaveValue("fit");
   await expect(orientation).toHaveValue("perspective");
   await expect(page.getByText("Physical scale", { exact: true })).toBeVisible();
   const smallBodyCanvas = page.locator("canvas.small-body-layer");
@@ -158,8 +150,21 @@ test("renders solver state and advances time through the physics worker", async 
     });
   }
   const focus = page.getByRole("combobox", { name: "Focus" });
+  const sequenceBeforeSun = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await selectFocus(focus, "Sun");
   await expect(scene).toHaveAttribute("data-focus-body", "sun");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeSun);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
   await expect(scene).toHaveAttribute("data-focus-distance-au", "90.00000000");
   for (const planetId of [
     "mercury",
@@ -175,17 +180,30 @@ test("renders solver state and advances time through the physics worker", async 
     await expect(planetLabel).toBeVisible();
     await expect(planetLabel).toHaveAttribute("data-body-rendered", "false");
   }
+  const sequenceBeforeSolarSystem = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await selectFocus(focus, "Solar System");
   await expect(scene).toHaveAttribute("data-focus-body", "solar-system");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeSolarSystem);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
 
   await expect(scene).toHaveAttribute("data-camera-zoom", "1.00");
   await zoomPreset.selectOption("detail");
   await expect(cameraZoom).toHaveValue("4");
-  await expect(scene).toHaveAttribute("data-camera-zoom", "4.00");
+  await expect(scene).toHaveAttribute("data-camera-zoom", "16.00");
   await cameraZoom.fill("1.25");
   await expect(zoomPreset).toHaveValue("custom");
-  await expect(scene).toHaveAttribute("data-camera-zoom", "1.25");
-  await zoomPreset.selectOption("normal");
+  await expect(scene).toHaveAttribute("data-camera-zoom", "2.38");
+  await zoomPreset.selectOption("fit");
 
   await orientation.selectOption("overhead");
   await expect(scene).toHaveAttribute("data-camera-orientation", "overhead");
@@ -374,10 +392,23 @@ test("renders solver state and advances time through the physics worker", async 
     )
     .toBe(initialPausedTimeSeconds);
 
+  const sequenceBeforeEarth = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await selectFocus(focus, "Earth");
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
+    .not.toBe(sequenceBeforeEarth);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
   await expect(scene).toHaveAttribute("data-focus-distance-au", "0.00204420");
-  await expect(cameraZoom).toHaveValue("1");
+  await expect(cameraZoom).toHaveValue("0");
   await expect(orientation).toHaveValue("parent-facing");
   const earthPrimeMeridianBefore = Number(
     await scene.getAttribute("data-focused-prime-meridian-deg"),
@@ -387,10 +418,15 @@ test("renders solver state and advances time through the physics worker", async 
     "0.050",
   );
   await expect
+    .poll(async () =>
+      Number(await smallBodyCanvas.getAttribute("data-visibility-fraction")),
+    )
+    .toBeGreaterThan(wideVisibilityFraction);
+  await expect
     .poll(async () => (await readCanvasPixels(smallBodyCanvas)).litPixels, {
       timeout: 30_000,
     })
-    .toBeLessThan(initialView.litPixels);
+    .toBeGreaterThan(100);
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-earth-moon-separation-pixels")),
@@ -407,9 +443,21 @@ test("renders solver state and advances time through the physics worker", async 
     });
   }
 
+  const resetTokenBefore = Number(
+    await scene.getAttribute("data-reset-view-token"),
+  );
   await page.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(scene).toHaveAttribute("data-reset-view-token", "1");
-  await expect(cameraZoom).toHaveValue("1");
+  await expect
+    .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
+    .toBe(resetTokenBefore + 1);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(cameraZoom).toHaveValue("0");
   await expect(orientation).toHaveValue("parent-facing");
   await expect(scene).toHaveAttribute("data-visible-body-labels", /[1-9]\d*/u);
 

@@ -37,6 +37,28 @@ sharp 0.35.3 converts authority TIFF and JPEG masters into bounded browser-ready
 - Upstream: <https://github.com/lovell/sharp>
 - Package: <https://www.npmjs.com/package/sharp>
 
+### Downshift
+
+Downshift 9.4.0 supplies the accessible searchable focus combobox and is distributed under the MIT License.
+
+- Upstream: <https://github.com/downshift-js/downshift>
+- Package: <https://www.npmjs.com/package/downshift>
+
+### Three.js Draco decoder
+
+The vendored Draco decoder artifacts under `public/draco/` are distributed with Three.js 0.185.1 under the MIT License.
+
+- Upstream: <https://github.com/mrdoob/three.js/tree/r185/examples/jsm/libs/draco>
+
+## ElevenLabs generated narration
+
+The static MP3 files under `public/audio/tour/` are AI-generated speech from original educational scripts produced through the ElevenLabs text-to-speech API.
+They use the British ElevenLabs voice `Alice - Clear, Engaging Educator`, voice identifier `Xb7hH8MSUJpSbSDYk0k2`, and model `eleven_multilingual_v2`.
+The local manifest records generation settings and cryptographic hashes for the scripts and generated audio.
+The ElevenLabs API key is not included in the application, generated files, or manifest.
+
+- API documentation: <https://elevenlabs.io/docs/api-reference/text-to-speech/convert>
+
 ## NASA and JPL data and imagery
 
 Major-body initial states and the permanent regression reference states are NASA/JPL Horizons data.
@@ -47,6 +69,10 @@ Authority-published gravitational parameters and rotation models are taken from 
 - NAIF DE440 gravitational parameters: <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc>
 - NAIF planetary constants: <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc>
 - NASA 3D Resources: <https://science.nasa.gov/3d-resources/>
+- NASA International Space Station 3D model: <https://science.nasa.gov/3d-resources/international-space-station-iss-d-igoal/>
+- NASA Voyager 3D model: <https://science.nasa.gov/resource/voyager-3d-model/>
+- NASA Hubble Space Telescope 3D model: <https://science.nasa.gov/resource/hubble-space-telescope-3d-model/>
+- NASA James Webb Space Telescope 3D models: <https://science.nasa.gov/mission/webb/multimedia/3d-models/>
 - NASA Blue Marble: <https://visibleearth.nasa.gov/images/74218/december-blue-marble-next-generation/74226l>
 - NASA Blue Marble clouds: <https://visibleearth.nasa.gov/images/57747/blue-marble-clouds>
 - NASA Scientific Visualization Studio Moon kit: <https://svs.gsfc.nasa.gov/4720/>
@@ -57,7 +83,7 @@ Authority-published gravitational parameters and rotation models are taken from 
 - NASA International Space Station facts and dimensions: <https://www.nasa.gov/international-space-station/space-station-facts-and-figures/>
 - CelesTrak ISS current GP data: <https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=JSON-PRETTY>
 
-The local authority asset manifest records every source page, direct asset URL, presentation classification, coverage, projection, limitation, source and output dimension, byte length, content type, and SHA-256 checksum.
+The local authority asset manifests record every image source page, direct asset URL, presentation classification, coverage, projection, limitation, source and output dimension, byte length, content type, and SHA-256 checksum, plus each installed spacecraft model source, checksum, and physical maximum dimension.
 NASA imagery is generally not copyrighted in the United States, but NASA identifiers, people, and third-party material can have additional restrictions.
 Users redistributing these assets should follow the NASA media usage guidelines: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
 
