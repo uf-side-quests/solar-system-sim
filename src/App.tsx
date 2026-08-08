@@ -1545,8 +1545,8 @@ export function App() {
         name: orbiter.name,
         surface:
           orbiter.constructionState === "complete"
-            ? "Original procedural complete battle-station visualization · physical scale"
-            : "Original procedural incomplete battle-station visualization with exposed construction frame · physical scale",
+            ? "Original high-detail complete battle-station visualization · physical scale"
+            : "Original high-detail incomplete battle-station visualization with layered exposed construction · physical scale",
         parentName: parentDefinition?.name,
         distance:
           parentState === undefined
@@ -1585,7 +1585,7 @@ export function App() {
           name: operationalSpacecraft.name,
           surface:
             bodyId === "roadster"
-              ? "Original physical-scale Roadster and Starman reconstruction · Horizons tracks the complete attached payload stack"
+              ? "Detailed MIT-licensed Roadster and Starman model · Horizons tracks the complete attached payload stack"
               : "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
           distance:

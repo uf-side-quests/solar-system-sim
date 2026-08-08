@@ -1,8 +1,15 @@
 import { z } from "zod";
 
 const assetSchema = z.object({
-  bodyId: z.enum(["iss", "voyager-1", "voyager-2", "hubble", "jwst"]),
-  modelUrl: z.string().startsWith("/models/nasa/").endsWith(".glb"),
+  bodyId: z.enum([
+    "iss",
+    "voyager-1",
+    "voyager-2",
+    "hubble",
+    "jwst",
+    "roadster",
+  ]),
+  modelUrl: z.string().startsWith("/models/").endsWith(".glb"),
   pageUrl: z.url(),
   repositoryUrl: z.url(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -53,7 +60,20 @@ export const spacecraftAssets = assetSchema.array().parse([
     maximumDimensionM: 21.197,
     credit: "NASA 3D Resources",
   },
+  {
+    bodyId: "roadster",
+    modelUrl: "/models/community/roadster-starman.glb",
+    pageUrl:
+      "https://spacedock.info/mod/1797/Elon%27s%20Roadster%20%26%20Starman",
+    repositoryUrl: "https://spacedock.info/profile/TheBigElon",
+    sha256: "1f033cb4a8e47fa852494e37927cf3d8008b9fb18e26fdc586bfc5a631392184",
+    maximumDimensionM: 3.946,
+    credit:
+      "TheBigElon Roadster and Oranhunter Starman · MIT-licensed SpaceDock model",
+  },
 ]);
+
+export const ROADSTER_BODY_ID = "roadster" as const;
 
 export const spacecraftAssetByBodyId = new Map(
   spacecraftAssets.map((asset) => [asset.bodyId, asset]),

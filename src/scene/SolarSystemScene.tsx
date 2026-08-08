@@ -182,11 +182,7 @@ import {
   VISUAL_QUALITY_PROFILES,
   type VisualQuality,
 } from "./visual-quality";
-import { spacecraftAssets } from "./spacecraft-assets";
-import {
-  createRoadsterAndStarmanModel,
-  ROADSTER_BODY_ID,
-} from "./roadster-model";
+import { ROADSTER_BODY_ID, spacecraftAssets } from "./spacecraft-assets";
 import {
   eclipticDirection,
   eclipticSkyDirection,
@@ -1237,6 +1233,17 @@ export function SolarSystemScene({
             ? modelMesh.material
             : [modelMesh.material];
           materials.push(...objectMaterials);
+          for (const material of objectMaterials) {
+            for (const propertyName of Object.keys(material)) {
+              const value: unknown = Reflect.get(material, propertyName);
+              if (value instanceof Texture) {
+                const materialTexture = value as Texture;
+                if (!textures.includes(materialTexture)) {
+                  textures.push(materialTexture);
+                }
+              }
+            }
+          }
         }
       });
       const label = document.createElement("button");
@@ -2394,7 +2401,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let modelLoadingActive = true;
     const modelLoadPromises = spacecraftAssets.map(async (asset) => {
       const group = new Group();
-      group.name = `${asset.bodyId} official NASA 3D model`;
+      group.name = `${asset.bodyId} sourced 3D model`;
       group.visible = false;
       spacecraftGroups.set(asset.bodyId, group);
       scene.add(group);
@@ -2464,6 +2471,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         group.add(model);
         container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
           "true";
+        if (asset.bodyId === ROADSTER_BODY_ID) {
+          container.dataset["roadsterModelProvenance"] =
+            "mit-spacedock-community-model";
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         spacecraftModelStatus.hidden = false;
@@ -2475,33 +2486,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
     void Promise.all(modelLoadPromises)
       .then(() => {
         container.dataset["spacecraftModelsLoaded"] = String(
-          spacecraftAssets.length + 1,
+          spacecraftAssets.length,
         );
       })
       .catch(() => undefined);
-    const roadsterGroup = createRoadsterAndStarmanModel();
-    roadsterGroup.visible = false;
-    spacecraftGroups.set(ROADSTER_BODY_ID, roadsterGroup);
-    scene.add(roadsterGroup);
-    const roadsterMaterials = new Set<Material>();
-    roadsterGroup.traverse((object) => {
-      if (object.type !== "Mesh") {
-        return;
-      }
-      const roadsterMesh = object as Mesh;
-      spacecraftSelectableMeshes.push(roadsterMesh);
-      geometries.push(roadsterMesh.geometry);
-      const meshMaterials = Array.isArray(roadsterMesh.material)
-        ? roadsterMesh.material
-        : [roadsterMesh.material];
-      for (const material of meshMaterials) {
-        roadsterMaterials.add(material);
-      }
-    });
-    materials.push(...roadsterMaterials);
-    container.dataset["roadsterModelLoaded"] = "true";
-    container.dataset["roadsterModelProvenance"] =
-      "original-physical-scale-reconstruction";
+    if (!spacecraftGroups.has(ROADSTER_BODY_ID)) {
+      throw new Error("Roadster sourced model group is unavailable");
+    }
     const issGroup = spacecraftGroups.get(ISS_BODY_ID);
     if (issGroup === undefined) {
       throw new Error("ISS official model group is unavailable");

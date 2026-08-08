@@ -59,6 +59,22 @@ The ElevenLabs API key is not included in the application, generated files, or m
 
 - API documentation: <https://elevenlabs.io/docs/api-reference/text-to-speech/convert>
 
+## Tesla Roadster and Starman 3D model
+
+`public/models/community/roadster-starman.glb` is converted from Elon's Roadster & Starman 2.1.1, published on SpaceDock under the MIT License.
+The source archive credits TheBigElon for the Roadster model, Oranhunter for the Starman model, and pr3sidentspence for the pre-2.0 original textures.
+
+- Source: <https://spacedock.info/mod/1797/Elon%27s%20Roadster%20%26%20Starman>
+- Creator profile: <https://spacedock.info/profile/TheBigElon>
+- Installed SHA-256: `1f033cb4a8e47fa852494e37927cf3d8008b9fb18e26fdc586bfc5a631392184`
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## NASA and JPL data and imagery
 
 Major-body initial states and the permanent regression reference states are NASA/JPL Horizons data.

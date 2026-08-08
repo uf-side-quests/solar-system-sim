@@ -28,7 +28,7 @@ test("shows the JPL Roadster and all six Moon-fixed Apollo landing sites", async
   await expect(scene).toHaveAttribute("data-roadster-model-loaded", "true");
   await expect(scene).toHaveAttribute(
     "data-roadster-model-provenance",
-    "original-physical-scale-reconstruction",
+    "mit-spacedock-community-model",
   );
   await expect(scene).toHaveAttribute("data-roadster-geometry-visible", "true");
   const detail = page.getByRole("complementary");

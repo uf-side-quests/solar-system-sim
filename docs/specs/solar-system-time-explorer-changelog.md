@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.7.1] - 2026-08-08
+
+### Changed in 2.7.1
+
+- Replaced the runtime Roadster primitives with the detailed MIT-licensed SpaceDock Roadster and Starman mesh, checksummed and normalized to physical scale.
+- Replaced the flat Death Star hull treatment with an original high-detail industrial texture and physically shaded station details.
+
 ## [2.7.0] - 2026-08-07
 
 ### Added in 2.7.0

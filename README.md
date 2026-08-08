@@ -65,8 +65,9 @@ Their official NASA model attitude continuously points the high-gain antenna's l
 Hubble and JWST use published NASA/JPL Horizons position and velocity samples with cubic Hermite interpolation only inside their installed 2026 coverage windows.
 Hubble and JWST are not passed through the N-body solver because their real operational trajectories include drag, stationkeeping, and manoeuvres that an uncommanded gravity-only model cannot reproduce.
 The Tesla Roadster and Starman use NASA/JPL Horizons solution 11 across its published 2018-2090 interval, including the fitted radial solar-radiation-pressure acceleration, and disappear rather than extrapolate outside that coverage.
-The Roadster visual is an original physical-scale reconstruction because the application has no suitably licensed authority model; Horizons tracks the car, payload fitting, and attached Falcon Heavy upper-stage stack rather than the car alone.
-The other five installed spacecraft, ISS, both Voyagers, Hubble, and JWST, use checksummed official NASA 3D models at sourced physical dimensions.
+The Roadster visual uses the detailed MIT-licensed SpaceDock model by TheBigElon, with the Starman mesh credited to Oranhunter, normalized to the Roadster's 3.946 metre maximum dimension.
+Horizons tracks the car, payload fitting, and attached Falcon Heavy upper-stage stack rather than the car alone.
+ISS, both Voyagers, Hubble, and JWST use checksummed official NASA 3D models at sourced physical dimensions.
 The model loader fails visibly instead of replacing a missing authority asset with procedural geometry.
 
 The Moon carries selectable markers for Apollo 11, 12, 14, 15, 16, and 17 at LRO-derived planetocentric landing coordinates.
@@ -90,7 +91,8 @@ Jupiter's halo, main ring, two gossamer rings and Thebe extension, plus Neptune'
 Reality mode preserves those very low optical depths; Orrery mode applies a declared bounded visibility gain so the dusty systems can be inspected without widening their measured radial structure.
 These dusty systems remain appropriately faint in Reality; Orrery applies a disclosed visibility gain so their measured locations can be studied without widening them.
 
-Two original procedural Death Star references orbit Callisto and Ganymede at physical scale.
+Two original high-detail Death Star references orbit Callisto and Ganymede at physical scale.
+Their original geometry uses a generated industrial PBR hull treatment, recessed superlaser assemblies, equatorial infrastructure, and exposed construction structure for the incomplete second station.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square Sun-position point lighting with smooth focus-distance exposure adaptation, so outer planets receive the correct weaker incident flux without becoming unreadable.
