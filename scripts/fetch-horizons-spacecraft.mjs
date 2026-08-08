@@ -6,6 +6,16 @@ const HORIZONS_URL = "https://ssd.jpl.nasa.gov/api/horizons.api";
 const EPOCH_JD_TDB = 2_461_041.5;
 const missions = [
   {
+    id: "roadster",
+    name: "Tesla Roadster and Starman",
+    command: "-143205",
+    start: "2018-02-07 03:00",
+    stop: "2090-01-01",
+    step: "5 d",
+    maximumDimensionM: 3.946,
+    massKg: 1_250,
+  },
+  {
     id: "hubble",
     name: "Hubble Space Telescope",
     command: "-48",

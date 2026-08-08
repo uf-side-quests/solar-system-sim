@@ -48,7 +48,7 @@ test("focused Earth visibly rotates with simulation time", async ({ page }) => {
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 15_000,
     },
   );
   await expect(page.locator('[data-body-id="earth"]')).toHaveAttribute(

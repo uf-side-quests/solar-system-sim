@@ -33,7 +33,10 @@ const assetSchema = z.object({
   supportingAssetUrls: z.array(z.url()).optional(),
   credit: z.string().min(1),
   limitations: z.string().min(1),
-  sourceContentType: z.string().startsWith("image/"),
+  sourceContentType: z.union([
+    z.string().startsWith("image/"),
+    z.literal("model/gltf-binary"),
+  ]),
   contentType: z.enum(["image/png", "image/webp"]),
   sourceWidth: z.number().int().positive(),
   sourceHeight: z.number().int().positive(),

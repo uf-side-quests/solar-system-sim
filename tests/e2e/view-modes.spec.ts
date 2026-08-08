@@ -107,7 +107,7 @@ test("switches between physical, orrery, and schematic views without changing ph
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 15_000,
     },
   );
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "false");

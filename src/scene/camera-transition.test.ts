@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatViewpointSpeed,
   interpolateLogarithmicDistance,
+  sampleDirectCameraTransition,
   sampleCameraTransition,
 } from "./camera-transition";
 
 describe("camera transition", () => {
+  it("labels camera speed honestly across terrestrial and superluminal scales", () => {
+    expect(formatViewpointSpeed(125)).toBe("125 m/s");
+    expect(formatViewpointSpeed(12_500)).toBe("12.5 km/s");
+    expect(formatViewpointSpeed(299_792_458 * 2.5)).toBe("2.5× light speed");
+    expect(() => formatViewpointSpeed(-1)).toThrow(/non-negative/u);
+  });
+
   it("departs, crosses the overview continuously, and settles into the authored shot", () => {
     expect(sampleCameraTransition(0, 3_000)).toEqual({
       phase: "outbound",
@@ -52,5 +61,37 @@ describe("camera transition", () => {
     expect(() => interpolateLogarithmicDistance(1, 2, Number.NaN)).toThrow(
       /progress/u,
     );
+  });
+
+  it("turns toward a manual destination before travelling directly to it", () => {
+    expect(sampleDirectCameraTransition(0, 12_000)).toEqual({
+      phase: "orienting",
+      segmentProgress: 0,
+    });
+    expect(sampleDirectCameraTransition(4_000, 12_000).phase).toBe("orienting");
+    expect(sampleDirectCameraTransition(6_000, 12_000).phase).toBe(
+      "travelling",
+    );
+    expect(sampleDirectCameraTransition(10_000, 12_000).phase).toBe("arriving");
+    expect(sampleDirectCameraTransition(12_000, 12_000)).toEqual({
+      phase: "settled",
+      segmentProgress: 1,
+    });
+  });
+
+  it("reserves the final third of a direct flight for arrival", () => {
+    const travelling = sampleDirectCameraTransition(8_000, 12_000);
+    const arriving = sampleDirectCameraTransition(10_000, 12_000);
+    expect(travelling.phase).toBe("travelling");
+    expect(arriving.phase).toBe("arriving");
+    expect(arriving.segmentProgress).toBeGreaterThan(
+      travelling.segmentProgress,
+    );
+    expect(arriving.segmentProgress).toBeLessThan(1);
+  });
+
+  it("rejects invalid direct-flight timing", () => {
+    expect(() => sampleDirectCameraTransition(-1, 12_000)).toThrow(/elapsed/u);
+    expect(() => sampleDirectCameraTransition(0, 0)).toThrow(/duration/u);
   });
 });

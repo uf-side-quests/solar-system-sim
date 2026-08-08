@@ -1,4 +1,5 @@
 export const PARENT_BODY_ID: Readonly<Record<string, string>> = {
+  roadster: "sun",
   "voyager-1": "sun",
   "voyager-2": "sun",
   mercury: "sun",

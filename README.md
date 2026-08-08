@@ -38,7 +38,7 @@ The local display reports altitude, azimuth, true angular diameter, illuminated 
 Its calculated horizon and compass use the same oriented reference sphere as the camera, while the interface explicitly discloses that terrain, atmosphere, and refraction are not modelled.
 Every guided scene keeps body radii physical; the tour never inflates moons or planets with Orrery sizing.
 Focusing an object now uses a true 1× fit instead of silently applying additional optical magnification.
-Orientation presets provide perspective, J2000 ecliptic overhead, ecliptic edge-on, parent-facing, velocity-following, and instantaneous orbital-plane views.
+Orientation presets provide perspective, J2000 ecliptic overhead, ecliptic edge-on, Sun-facing, parent-facing, velocity-following, and instantaneous orbital-plane views.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
@@ -64,31 +64,49 @@ Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF states at the com
 Their official NASA model attitude continuously points the high-gain antenna's local boresight toward the live Earth position.
 Hubble and JWST use published NASA/JPL Horizons position and velocity samples with cubic Hermite interpolation only inside their installed 2026 coverage windows.
 Hubble and JWST are not passed through the N-body solver because their real operational trajectories include drag, stationkeeping, and manoeuvres that an uncommanded gravity-only model cannot reproduce.
-All six installed spacecraft, ISS, both Voyagers, Hubble, and JWST, use checksummed official NASA 3D models at sourced physical dimensions.
+The Tesla Roadster and Starman use NASA/JPL Horizons solution 11 across its published 2018-2090 interval, including the fitted radial solar-radiation-pressure acceleration, and disappear rather than extrapolate outside that coverage.
+The Roadster visual is an original physical-scale reconstruction because the application has no suitably licensed authority model; Horizons tracks the car, payload fitting, and attached Falcon Heavy upper-stage stack rather than the car alone.
+The other five installed spacecraft, ISS, both Voyagers, Hubble, and JWST, use checksummed official NASA 3D models at sourced physical dimensions.
 The model loader fails visibly instead of replacing a missing authority asset with procedural geometry.
+
+The Moon carries selectable markers for Apollo 11, 12, 14, 15, 16, and 17 at LRO-derived planetocentric landing coordinates.
+Each site includes physical-scale Lunar Module descent-stage, flag, deployed experiment and retroreflector geometry; Apollo 15, 16 and 17 also include a physical-scale Lunar Roving Vehicle.
+Apollo 11, 12 and 14 additionally render every available CDR and LMP line segment from the current LROC spatio-temporal PDS traverse mapping, converted from each mission's published lunar equirectangular projection into local metre offsets.
+Each marker rotates with the NAIF Moon orientation, hides behind the lunar globe, opens crew, Lunar Module, duration, EVA, traverse, experiment, mapping, and photograph records, and can place the Surface Observer at the installed landing coordinates.
 
 Major-body rotation uses the complete NAIF PCK pole, nutation, and prime-meridian model for each installed body.
 ICRF positions and body axes are transformed into the Three.js y-up scene with a right-handed basis, and the WebGPU small-body path uses the same transform.
-Surface presentation uses 32 locally snapshotted NASA, JPL, and USGS image assets with explicit source URLs, source and output dimensions, coverage, projection, limitations, byte lengths, and SHA-256 hashes.
+Surface presentation uses 32 locally snapshotted NASA, JPL, and USGS texture products with explicit source URLs, source and output dimensions, coverage, projection, limitations, byte lengths, and SHA-256 hashes.
 Twenty-nine colour maps cover every non-stellar major body except Uranus, while separate Earth-cloud and Moon-topography products provide auxiliary detail.
 Mercury uses the USGS 23,040 by 11,520 pixel MESSENGER end-of-mission global colour mosaic, while Pluto uses the 24,888 by 12,444 pixel USGS/New Horizons observational mosaic; both are reduced to 4,096 pixels for a bounded browser GPU footprint.
 The Moon, Ganymede, Enceladus, and Charon also use authority masters reduced to the same browser limit.
+Ariel, Miranda, Titania, Umbriel, and Triton use the higher-resolution global textures embedded in NASA VTAD's official glTF models; their Voyager-observed terrain and authority-reconstructed coverage are distinguished in the manifest.
 Saturn uses the 3,601 by 1,801 pixel Cassini ISS global RGB atmosphere map from NASA's Planetary Data System, with unobserved regions feather-filled from the separately declared NASA visualization rather than left black.
 Its globe preserves the measured equatorial and polar radii, while its main rings use a natural-colour Cassini radial mosaic covering 74,565 to 136,780 kilometres from Saturn's centre instead of generated sine-wave bands.
+The ring plane uses globe depth occlusion and calculates both the planet's shadow on the rings and the rings' shadow on the planet from the live Sun direction.
 Uranus has no solid visible surface and no complete contemporaneous global cloud map, so it uses a Voyager-constrained atmosphere colour instead of fictional terrain.
+Its oblate globe is surrounded by the 13 individually modelled PDS rings at their published radii, widths, and optical depths; the narrow dark main rings retain sub-pixel coverage instead of being widened, while the diffuse Nu and Mu rings retain their published red and blue presentation.
+Jupiter's halo, main ring, two gossamer rings and Thebe extension, plus Neptune's five named main-ring structures, use NASA PDS radii, widths and optical depths.
+Reality mode preserves those very low optical depths; Orrery mode applies a declared bounded visibility gain so the dusty systems can be inspected without widening their measured radial structure.
+These dusty systems remain appropriately faint in Reality; Orrery applies a disclosed visibility gain so their measured locations can be studied without widening them.
+
+Two original procedural Death Star references orbit Callisto and Ganymede at physical scale.
+They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square Sun-position point lighting with smooth focus-distance exposure adaptation, so outer planets receive the correct weaker incident flux without becoming unreadable.
 Atmosphere shells use body-specific Rayleigh and Mie phase approximations driven by the live Sun direction, so the dark hemisphere does not receive a false bright rim.
-Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes the planet's projected shadow, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
+Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes mutual planet-ring shadowing, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
 The command bar includes a native Full screen action that expands the simulation to the display, hides application controls and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
 The Sun combines a granular procedural photosphere, subtle chromosphere rim, and restrained diffuse corona.
 The renderer does not invent prominence or flare geometry because no generic animation can truthfully claim the Sun's actual activity at arbitrary simulation times.
-Uranus uses procedurally banded ring opacity where a comparable installed observation profile is not available.
 The background contains 8,789 stars from the ESA Hipparcos catalogue with Johnson V magnitude below 6.5.
 Catalogue ICRS positions are propagated from J1991.25 to the simulation date using the published proper-motion components where both are available, while missing motion remains explicitly unknown and fixed at the catalogue epoch.
 Point prominence is derived from Johnson V magnitude in CSS pixels so high-density displays do not reduce stars to invisible subpixels, display colour is approximated from the measured B-V index, and the complete star layer can be switched off independently.
+Holding the pointer over a rendered star for one second identifies its Hipparcos number, Johnson V magnitude, right ascension, declination, and B-V colour index where available.
+The optional Zodiac sky overlay draws the familiar twelve equal tropical signs along the J2000 ecliptic as a coordinate reference; it does not claim the labels are IAU constellation boundaries or images of constellation figures.
+The stellar directions are effectively the same from every planet at this display scale because the Solar System baseline is tiny compared with stellar distances, although nearby stars do have real but very small parallax.
 
 The application generates an original ethereal ambient composition locally with the Web Audio API, using slowly changing harmony, filtered pad voices, delay, and sparse chimes rather than a licensed loop.
 Browser autoplay rules keep the application silent until the first interaction.
@@ -160,10 +178,10 @@ The optional Moon and planet trails contain only exact physics endpoint samples.
 Trails can be viewed in heliocentric, Solar System barycentric, or body-parent-relative frames, making inertial motion and local orbital motion directly comparable without decorative orbit curves.
 Trail length and fading are adjustable, and Clear trails removes all accumulated history immediately.
 The optional Orrery minor-body trail uses fading screen-space history of actual GPU-propagated catalogue positions, resets when the camera changes, and applies to whichever asteroid and comet categories are visible.
-Selecting a planet starts with a fitted 1x parent-facing view so its complete body or ring system remains legible; the ordinary zoom and orientation controls remain available.
+Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
-Reset, Re-centre, or the `R` key restores a known parent-facing body view when navigation becomes disorienting.
+Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
 The camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
@@ -207,7 +225,7 @@ Their shared official NASA 3D model uses the published maximum dimension at one 
 
 Hubble and JWST use fixed NASA/JPL Horizons vector snapshots with cubic Hermite interpolation between published position and velocity samples.
 Interpolation stops at the declared coverage boundaries instead of clamping or extrapolating an apparently plausible position.
-The application currently installs six spacecraft and does not claim to contain every active spacecraft or probe in the Solar System.
+The application currently installs six spacecraft and artificial payloads and does not claim to contain every active spacecraft or probe in the Solar System.
 
 Small bodies currently use a declared Sun-centred two-body Kepler model on the GPU.
 They do not yet receive planetary perturbations or perturb the massive REBOUND system.

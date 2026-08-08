@@ -10,7 +10,7 @@ const sampleSchema = z.object({
   velocityMps: vector3Schema,
 });
 const spacecraftSchema = z.object({
-  id: z.enum(["hubble", "jwst"]),
+  id: z.enum(["roadster", "hubble", "jwst"]),
   name: z.string().min(1),
   command: z.string().min(1),
   start: z.string().min(1),
@@ -32,7 +32,7 @@ const snapshotSchema = z.object({
     center: z.literal("Solar System Barycenter (500@0)"),
   }),
   interpolation: z.literal("cubic Hermite position and velocity"),
-  spacecraft: z.array(spacecraftSchema).length(2),
+  spacecraft: z.array(spacecraftSchema).length(3),
 });
 
 export const operationalSpacecraftSnapshot = snapshotSchema.parse(snapshotJson);
@@ -44,7 +44,11 @@ export const operationalSpacecraftById = new Map(
     spacecraft,
   ]),
 );
-export const OPERATIONAL_SPACECRAFT_BODY_IDS = ["hubble", "jwst"] as const;
+export const OPERATIONAL_SPACECRAFT_BODY_IDS = [
+  "roadster",
+  "hubble",
+  "jwst",
+] as const;
 
 export function isOperationalSpacecraftBodyId(
   bodyId: string,

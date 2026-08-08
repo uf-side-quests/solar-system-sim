@@ -2,6 +2,7 @@ export type CameraOrientationPreset =
   | "perspective"
   | "overhead"
   | "edge-on"
+  | "sun-facing"
   | "parent-facing"
   | "velocity"
   | "orbital-plane"

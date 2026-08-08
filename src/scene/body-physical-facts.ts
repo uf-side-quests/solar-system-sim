@@ -208,6 +208,12 @@ export const BODY_COMPOSITION_BY_ID: Readonly<
     authority: "NASA Webb Telescope Overview",
     sourceUrl: "https://science.nasa.gov/mission/webb/spacecraft/",
   },
+  roadster: {
+    summary:
+      "Production electric sports car, spacesuit-wearing mannequin, payload fitting and attached Falcon Heavy upper stage",
+    authority: "NASA/JPL Horizons Tesla Roadster solution 11",
+    sourceUrl: "https://ssd.jpl.nasa.gov/horizons/news.html",
+  },
 };
 
 const SUPERSCRIPT_DIGIT: Readonly<Record<string, string>> = {

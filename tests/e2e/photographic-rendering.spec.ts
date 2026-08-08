@@ -57,7 +57,28 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
   );
   await expect(scene).toHaveAttribute(
     "data-saturn-ring-lighting",
-    "solar-incidence-planet-shadow-and-unresolved-particle-scattering",
+    "cassini-profile-solar-incidence-mutual-shadowing-and-depth-occlusion",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-saturn-ring-exposure",
+    "live-camera-exposure",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-saturn-ring-occlusion",
+    "continuous-sheet-against-opaque-globe-logarithmic-depth-buffer",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-uranus-ring-model",
+    "pds-13-ring-radii-widths-optical-depths",
+  );
+  await expect(scene).toHaveAttribute("data-uranus-ring-count", "13");
+  await expect(scene).toHaveAttribute(
+    "data-uranus-ring-inner-radius-km",
+    "37850",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-uranus-ring-outer-radius-km",
+    "106200",
   );
 
   await page.getByRole("button", { name: "Display" }).click();
@@ -123,6 +144,9 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
     .raw()
     .toBuffer({ resolveWithObject: true });
   let visibleRingPixelCount = 0;
+  let brightRingPixelCount = 0;
+  let neutralRingPixelCount = 0;
+  let brownRingPixelCount = 0;
   for (let y = 0; y < saturnImage.height; y += 1) {
     for (let x = 0; x < saturnImage.width; x += 1) {
       const distance = Math.hypot(x - saturnX, y - saturnY);
@@ -133,8 +157,20 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
       const red = saturnPixels[pixelOffset] ?? 0;
       const green = saturnPixels[pixelOffset + 1] ?? 0;
       const blue = saturnPixels[pixelOffset + 2] ?? 0;
-      if (red > 45 && green > 35 && red > blue * 1.08) {
-        visibleRingPixelCount += 1;
+      const maximumChannel = Math.max(red, green, blue);
+      const minimumChannel = Math.min(red, green, blue);
+      if (maximumChannel <= 35) {
+        continue;
+      }
+      visibleRingPixelCount += 1;
+      if (red + green + blue > 240) {
+        brightRingPixelCount += 1;
+      }
+      if (maximumChannel - minimumChannel < 64) {
+        neutralRingPixelCount += 1;
+      }
+      if (red > green * 1.18 && red > blue * 1.45) {
+        brownRingPixelCount += 1;
       }
     }
   }
@@ -142,7 +178,16 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
     path: testInfo.outputPath("photographic-saturn.png"),
     animations: "disabled",
   });
-  expect(visibleRingPixelCount).toBeGreaterThan(500);
+  expect(visibleRingPixelCount).toBeGreaterThan(5_000);
+  expect(brightRingPixelCount).toBeGreaterThan(1_000);
+  expect(neutralRingPixelCount / visibleRingPixelCount).toBeGreaterThan(0.7);
+  expect(brownRingPixelCount / visibleRingPixelCount).toBeLessThan(0.08);
+
+  await focusBody(page, scene, "Uranus", "uranus");
+  await page.screenshot({
+    path: testInfo.outputPath("photographic-uranus-rings.png"),
+    animations: "disabled",
+  });
 
   await focusBody(page, scene, "Sun", "sun");
   expect(
@@ -167,6 +212,82 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
   expect(sunCanvas.byteLength).toBeGreaterThan(5_000);
   await page.screenshot({
     path: testInfo.outputPath("photographic-sun.png"),
+    animations: "disabled",
+  });
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("keeps both physical ring systems coherent across camera orientations", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const canvas = page.locator("canvas.major-body-layer");
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+
+  for (const [name, bodyId] of [
+    ["Saturn", "saturn"],
+    ["Uranus", "uranus"],
+  ] as const) {
+    await focusBody(page, scene, name, bodyId);
+    for (const orientation of ["sun-facing", "overhead", "edge-on"] as const) {
+      await page.getByRole("button", { name: "Display" }).click();
+      await page
+        .getByRole("combobox", { name: "Orientation" })
+        .selectOption(orientation);
+      await expect(scene).toHaveAttribute(
+        "data-camera-orientation",
+        orientation,
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+      await page.getByRole("button", { name: "Close" }).click();
+      await canvas.screenshot({
+        path: testInfo.outputPath(`${bodyId}-${orientation}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+
+  await focusBody(page, scene, "Saturn", "saturn");
+  await page.getByRole("button", { name: "Display" }).click();
+  await page
+    .getByRole("combobox", { name: "Orientation" })
+    .selectOption("sun-facing");
+  await page.getByRole("button", { name: "Close" }).click();
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await zoomIn.click();
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    {
+      timeout: 30_000,
+    },
+  );
+  await canvas.screenshot({
+    path: testInfo.outputPath("saturn-close-oblique.png"),
     animations: "disabled",
   });
 

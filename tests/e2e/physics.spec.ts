@@ -162,7 +162,7 @@ test("renders solver state and advances time through the physics worker", async 
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 30_000,
     },
   );
   await expect(scene).toHaveAttribute("data-focus-distance-au", "90.00000000");
@@ -192,7 +192,7 @@ test("renders solver state and advances time through the physics worker", async 
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 30_000,
     },
   );
 
@@ -316,6 +316,9 @@ test("renders solver state and advances time through the physics worker", async 
   }
 
   const initialView = await readCanvasPixels(smallBodyCanvas);
+  const initialCameraDirection = await scene.getAttribute(
+    "data-camera-direction",
+  );
   const viewCanvas = page.locator("canvas.major-body-layer");
   await viewCanvas.scrollIntoViewIfNeeded();
   const viewBounds = await viewCanvas.boundingBox();
@@ -328,12 +331,15 @@ test("renders solver state and advances time through the physics worker", async 
   );
   await page.mouse.down();
   await page.mouse.move(
-    viewBounds.x + viewBounds.width / 2 + 120,
-    viewBounds.y + viewBounds.height / 2 + 40,
+    viewBounds.x + viewBounds.width / 2 + 80,
+    viewBounds.y + viewBounds.height / 2 + 160,
     { steps: 10 },
   );
   await page.mouse.up();
   await expect(orientation).toHaveValue("custom");
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-direction"))
+    .not.toBe(initialCameraDirection);
   await expect
     .poll(async () => (await readCanvasPixels(smallBodyCanvas)).positionHash, {
       timeout: 15_000,
@@ -404,12 +410,12 @@ test("renders solver state and advances time through the physics worker", async 
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 15_000,
     },
   );
   await expect(scene).toHaveAttribute("data-focus-distance-au", "0.00204420");
   await expect(cameraZoom).toHaveValue("0");
-  await expect(orientation).toHaveValue("parent-facing");
+  await expect(orientation).toHaveValue("sun-facing");
   const earthPrimeMeridianBefore = Number(
     await scene.getAttribute("data-focused-prime-meridian-deg"),
   );
@@ -458,7 +464,7 @@ test("renders solver state and advances time through the physics worker", async 
     },
   );
   await expect(cameraZoom).toHaveValue("0");
-  await expect(orientation).toHaveValue("parent-facing");
+  await expect(orientation).toHaveValue("sun-facing");
   await expect(scene).toHaveAttribute("data-visible-body-labels", /[1-9]\d*/u);
 
   const trailFrame = page.getByRole("combobox", { name: "Reference frame" });

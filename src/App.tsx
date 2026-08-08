@@ -59,6 +59,23 @@ import type {
 import { type SimulationFrame } from "./scene/interpolation";
 import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
 import {
+  JOVIAN_MONOLITH_BODY_ID,
+  JOVIAN_MONOLITH_DIMENSIONS_M,
+  JOVIAN_MONOLITH_NAME,
+  jovianMonolithState,
+} from "./scene/jovian-monolith";
+import {
+  FICTIONAL_ORBITERS,
+  fictionalOrbiterById,
+  fictionalOrbiterStateById,
+  isFictionalOrbiterId,
+} from "./scene/fictional-orbiters";
+import {
+  APOLLO_COORDINATES_SOURCE_URL,
+  apolloLandingSiteById,
+  isApolloLandingSiteId,
+} from "./scene/lunar-landing-sites";
+import {
   bodyOrientationAngles,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
@@ -104,7 +121,7 @@ const MAXIMUM_SOLVER_KEYFRAME_SECONDS = DAY_SECONDS;
 const MINIMUM_TRANSITION_MS = 16;
 const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
-const MANUAL_CAMERA_TRANSITION_DURATION_MS = 8_000;
+const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
 const CAMERA_ZOOM_PRESETS = [
   { id: "system", label: "System context (0.063x)", zoom: 0.0625 },
@@ -234,7 +251,24 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     key: spacecraft.id,
     label: spacecraft.name,
     group: "Spacecraft",
-    searchText: `${spacecraft.name} ${spacecraft.id} telescope spacecraft`,
+    searchText: `${spacecraft.name} ${spacecraft.id} ${spacecraft.id === "roadster" ? "Tesla Starman Falcon Heavy car" : "telescope"} spacecraft`,
+    disabled: false,
+  })),
+  {
+    id: JOVIAN_MONOLITH_BODY_ID,
+    key: JOVIAN_MONOLITH_BODY_ID,
+    label: JOVIAN_MONOLITH_NAME,
+    group: "Fictional references",
+    searchText:
+      "Jovian Monolith TMA-2 2001 2010 Space Odyssey Jupiter Io L1 fictional",
+    disabled: false,
+  },
+  ...FICTIONAL_ORBITERS.map((orbiter) => ({
+    id: orbiter.id,
+    key: orbiter.id,
+    label: orbiter.name,
+    group: "Fictional references",
+    searchText: `${orbiter.name} Star Wars ${orbiter.parentBodyId} fictional battle station`,
     disabled: false,
   })),
 ];
@@ -545,7 +579,12 @@ export function App() {
   const [trailFadePercent, setTrailFadePercent] = useState(85);
   const [clearTrailsToken, setClearTrailsToken] = useState(0);
   const [showEclipticPlane, setShowEclipticPlane] = useState(false);
+  const [showZodiac, setShowZodiac] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
+  const [showApolloSites, setShowApolloSites] = useState(true);
+  const [apolloInspectionSiteId, setApolloInspectionSiteId] = useState<
+    string | null
+  >(null);
   const [showTacticalOverlay, setShowTacticalOverlay] = useState(false);
   const [showOrbitGuides, setShowOrbitGuides] = useState(false);
   const [wayfinderMode, setWayfinderMode] = useState<WayfinderMode>("sun");
@@ -956,7 +995,7 @@ export function App() {
     setTourPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation(
-      focusBodyIdRef.current === "" ? "perspective" : "parent-facing",
+      focusBodyIdRef.current === "" ? "perspective" : "sun-facing",
     );
     setTourTransitionDurationMs(
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -1017,8 +1056,14 @@ export function App() {
     [],
   );
 
+  const handleSceneBodySelection = useCallback((bodyId: string): void => {
+    setApolloInspectionSiteId(null);
+    setSelectedBodyId(bodyId);
+  }, []);
+
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
+      setApolloInspectionSiteId(null);
       setTourPlaying(false);
       setTourStepIndex(null);
       if (tourStepIndex !== null) {
@@ -1028,7 +1073,7 @@ export function App() {
       setSelectedBodyId(bodyId);
       if (bodyId === currentBodyId) {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
-        setCameraOrientation(bodyId === "" ? "perspective" : "parent-facing");
+        setCameraOrientation(bodyId === "" ? "perspective" : "sun-facing");
         issueCameraNavigation("fit-selection");
         return;
       }
@@ -1050,6 +1095,7 @@ export function App() {
           manualDeltaSecondsRef.current = 0;
           directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
           setSeeking(true);
+          setSimulationRunToken((current) => current + 1);
         }
       }
       if (isOperationalSpacecraftBodyId(bodyId)) {
@@ -1061,6 +1107,7 @@ export function App() {
           directSeekTimeSecondsRef.current =
             operationalSpacecraftRecommendedTimeSeconds(bodyId);
           setSeeking(true);
+          setSimulationRunToken((current) => current + 1);
         }
       }
       setFrame((currentFrame) =>
@@ -1074,7 +1121,7 @@ export function App() {
       );
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
-        setCameraOrientation("parent-facing");
+        setCameraOrientation("sun-facing");
       }
     },
     [issueCameraNavigation, tourStepIndex],
@@ -1107,11 +1154,19 @@ export function App() {
     if (selectedBodyId === "") {
       return;
     }
+    if (isApolloLandingSiteId(selectedBodyId)) {
+      setSelectedBodyId("moon");
+      return;
+    }
     const parentId =
       (selectedBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
       (selectedBodyId === "hubble" ? "earth" : undefined) ??
       (selectedBodyId === "jwst" || isVoyagerBodyId(selectedBodyId)
         ? "sun"
+        : undefined) ??
+      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+      (isFictionalOrbiterId(selectedBodyId)
+        ? fictionalOrbiterById.get(selectedBodyId)?.parentBodyId
         : undefined) ??
       knownSatelliteById.get(selectedBodyId)?.parentId ??
       PARENT_BODY_ID[selectedBodyId] ??
@@ -1182,9 +1237,59 @@ export function App() {
     setControlPanelOpen(false);
   };
 
+  const focusApolloLandingSite = (siteId: string): void => {
+    if (!isApolloLandingSiteId(siteId)) {
+      throw new Error(`Apollo landing site ${siteId} is unavailable`);
+    }
+    setShowApolloSites(true);
+    setSurfaceObserverEnabled(false);
+    setApolloInspectionSiteId(siteId);
+    if (focusBodyIdRef.current !== "moon") {
+      focusHistoryRef.current.push(focusBodyIdRef.current);
+      focusBodyIdRef.current = "moon";
+      setFocusBodyId("moon");
+    }
+    setSelectedBodyId(siteId);
+    setCameraZoom(DEFAULT_CAMERA_ZOOM);
+    setCameraOrientation("sun-facing");
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : ORIENTATION_CAMERA_TRANSITION_DURATION_MS,
+    );
+    setResetViewToken((current) => current + 1);
+    setTourTransitionSequence((current) => current + 1);
+  };
+
+  const enterApolloLandingSiteObserver = (siteId: string): void => {
+    if (!isApolloLandingSiteId(siteId)) {
+      throw new Error(`Apollo landing site ${siteId} is unavailable`);
+    }
+    const site = apolloLandingSiteById.get(siteId);
+    if (site === undefined) {
+      throw new Error(`Apollo landing site ${siteId} has no installed data`);
+    }
+    setTourPlaying(false);
+    setTourStepIndex(null);
+    setShowApolloSites(true);
+    setApolloInspectionSiteId(null);
+    setViewMode("reality");
+    setSurfaceObserverBodyId("moon");
+    setSurfaceObserverTargetBodyId("earth");
+    setSurfaceObserverLatitudeDeg(site.latitudeDeg);
+    setSurfaceObserverLongitudeDeg(site.longitudeDeg);
+    navigateToFocus("moon");
+    setSelectedBodyId(site.id);
+    setCameraZoom(DEFAULT_CAMERA_ZOOM);
+    setCameraOrientation("custom");
+    setSurfaceObserverEnabled(true);
+    setSurfaceObserverLookResetToken((current) => current + 1);
+    setControlPanelOpen(false);
+  };
+
   const exitSurfaceObserver = (): void => {
     setSurfaceObserverEnabled(false);
-    setCameraOrientation("parent-facing");
+    setCameraOrientation("sun-facing");
     setResetViewToken((current) => current + 1);
   };
 
@@ -1301,8 +1406,12 @@ export function App() {
     )?.id ?? "custom";
 
   const setRequestedViewMagnification = (requested: number): void => {
-    if (!Number.isFinite(requested) || requested < 1 / 64 || requested > 128) {
-      throw new Error("View magnification must be between 0.015625x and 128x");
+    if (
+      !Number.isFinite(requested) ||
+      requested < 2 ** -32 ||
+      requested > 128
+    ) {
+      throw new Error("View magnification must be between 2^-32x and 128x");
     }
     setCameraZoom(requested);
     setViewMagnification(requested);
@@ -1314,14 +1423,45 @@ export function App() {
   }
 
   const selectedBodyDetail = useMemo(() => {
-    if (selectedBodyId === "" || state === undefined) {
+    if (selectedBodyId === "") {
       return undefined;
     }
     const bodyId = selectedBodyId;
+    if (isApolloLandingSiteId(bodyId)) {
+      const apolloSite = apolloLandingSiteById.get(bodyId);
+      if (apolloSite === undefined) {
+        throw new Error(`Apollo landing site ${bodyId} has no installed data`);
+      }
+      return {
+        name: `${apolloSite.mission} · ${apolloSite.siteName}`,
+        surface: `${apolloSite.lunarModule} descent stage and deployed equipment remain at the landing site`,
+        parentName: "Moon",
+        distanceLabel: "LRO landing coordinates",
+        distance: `${Math.abs(apolloSite.latitudeDeg).toFixed(5)}° ${apolloSite.latitudeDeg < 0 ? "S" : "N"} · ${Math.abs(apolloSite.longitudeDeg).toFixed(5)}° ${apolloSite.longitudeDeg < 0 ? "W" : "E"}`,
+        mass: "Not represented as a gravitational source",
+        composition: {
+          summary:
+            "Lunar Module descent stage, scientific instruments, tracks and human-made surface artefacts",
+          authority: "NASA Apollo by the Numbers and LROC",
+          sourceUrl: APOLLO_COORDINATES_SOURCE_URL,
+        },
+        ephemerisStatus:
+          "Moon-fixed planetocentric coordinates derived from Lunar Reconnaissance Orbiter imagery",
+      };
+    }
+    if (state === undefined) {
+      return undefined;
+    }
     const definition = majorBodySnapshot.bodies.find(
       (body) => body.id === bodyId,
     );
-    const bodyState = state.bodies.find((body) => body.id === bodyId);
+    const isJovianMonolith = bodyId === JOVIAN_MONOLITH_BODY_ID;
+    const isFictionalOrbiter = isFictionalOrbiterId(bodyId);
+    const bodyState = isJovianMonolith
+      ? jovianMonolithState(state)
+      : isFictionalOrbiter
+        ? fictionalOrbiterStateById(state, bodyId)
+        : state.bodies.find((body) => body.id === bodyId);
     const knownSatellite = knownSatelliteById.get(bodyId);
     const isIss = bodyId === ISS_BODY_ID;
     const voyager = voyagerById.get(
@@ -1338,22 +1478,23 @@ export function App() {
         knownSatellite === undefined &&
         !isIss &&
         !isVoyager &&
-        !isOperationalSpacecraft)
+        !isOperationalSpacecraft &&
+        !isJovianMonolith &&
+        !isFictionalOrbiter)
     ) {
       return undefined;
     }
-    const parentId =
-      definition === undefined
-        ? isIss
-          ? ISS_PARENT_BODY_ID
-          : isVoyager
-            ? "sun"
-            : bodyId === "hubble"
-              ? "earth"
-              : bodyId === "jwst"
-                ? "sun"
-                : knownSatellite?.parentId
-        : PARENT_BODY_ID[bodyId];
+    const parentId = isJovianMonolith
+      ? "jupiter"
+      : isFictionalOrbiter
+        ? fictionalOrbiterById.get(bodyId)?.parentBodyId
+        : definition === undefined
+          ? isIss
+            ? ISS_PARENT_BODY_ID
+            : isVoyager
+              ? "sun"
+              : (PARENT_BODY_ID[bodyId] ?? knownSatellite?.parentId)
+          : PARENT_BODY_ID[bodyId];
     const parentState = state.bodies.find((body) => body.id === parentId);
     const parentDefinition = majorBodySnapshot.bodies.find(
       (body) => body.id === parentId,
@@ -1363,6 +1504,78 @@ export function App() {
       parentDefinition === undefined
         ? undefined
         : `Speed relative to ${parentDefinition.name}`;
+    if (isJovianMonolith) {
+      return {
+        name: JOVIAN_MONOLITH_NAME,
+        surface:
+          "Fictional black rectangular object from 2001 / 2010 · physical scale",
+        parentName: parentDefinition?.name,
+        distance:
+          parentState === undefined
+            ? undefined
+            : formatDistance(
+                bodyDistanceM(bodyState, parentState),
+                semanticZoom,
+              ),
+        distanceLabel: "Distance from Jupiter",
+        speed:
+          parentState === undefined
+            ? undefined
+            : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
+        speedLabel,
+        mass: "Unknown · fictional",
+        composition: {
+          summary:
+            "Unknown fictional material; the story does not provide a physical composition",
+          authority: "NASA History Office - 2001: A Space Odyssey",
+          sourceUrl:
+            "https://www.nasa.gov/history/50-years-ago-1968-welcomed-2001/",
+        },
+        dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString()} m · 1:4:9`,
+        ephemerisStatus:
+          "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+      };
+    }
+    if (isFictionalOrbiter) {
+      const orbiter = fictionalOrbiterById.get(bodyId);
+      if (orbiter === undefined) {
+        throw new Error(`Fictional orbiter ${bodyId} is unavailable`);
+      }
+      return {
+        name: orbiter.name,
+        surface:
+          orbiter.constructionState === "complete"
+            ? "Original procedural complete battle-station visualization · physical scale"
+            : "Original procedural incomplete battle-station visualization with exposed construction frame · physical scale",
+        parentName: parentDefinition?.name,
+        distance:
+          parentState === undefined
+            ? undefined
+            : formatDistance(
+                bodyDistanceM(bodyState, parentState),
+                semanticZoom,
+              ),
+        distanceLabel: `Distance from ${parentDefinition?.name ?? orbiter.parentBodyId}`,
+        speed:
+          parentState === undefined
+            ? undefined
+            : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
+        speedLabel:
+          parentDefinition === undefined
+            ? undefined
+            : `Speed relative to ${parentDefinition.name}`,
+        mass: "Fictional · treated as a massless visualization",
+        composition: {
+          summary:
+            "Fictional armoured space station; no real mass or material properties are assigned",
+          authority: "Star Wars Databank",
+          sourceUrl: orbiter.sourceUrl,
+        },
+        dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString()} km diameter`,
+        ephemerisStatus:
+          "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+      };
+    }
     if (definition === undefined) {
       if (isOperationalSpacecraft) {
         if (operationalSpacecraft === undefined) {
@@ -1370,7 +1583,10 @@ export function App() {
         }
         return {
           name: operationalSpacecraft.name,
-          surface: "Official NASA 3D model · physical scale",
+          surface:
+            bodyId === "roadster"
+              ? "Original physical-scale Roadster and Starman reconstruction · Horizons tracks the complete attached payload stack"
+              : "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
           distance:
             parentState === undefined
@@ -1391,11 +1607,16 @@ export function App() {
             parentDefinition === undefined
               ? undefined
               : `Speed relative to ${parentDefinition.name}`,
-          mass: formatMassKg(operationalSpacecraft.massKg),
+          mass:
+            bodyId === "roadster"
+              ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
+              : formatMassKg(operationalSpacecraft.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(operationalSpacecraft.maximumDimensionM)} m maximum dimension`,
           ephemerisStatus:
-            "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+            bodyId === "roadster"
+              ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+              : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
         };
       }
       if (isVoyager) {
@@ -1505,6 +1726,10 @@ export function App() {
     };
   }, [selectedBodyId, semanticZoom, state]);
 
+  const selectedApolloSite = isApolloLandingSiteId(selectedBodyId)
+    ? apolloLandingSiteById.get(selectedBodyId)
+    : undefined;
+
   const startPlaying = (nextDirection: -1 | 1): void => {
     setDirection(nextDirection);
     setPlaying(true);
@@ -1533,6 +1758,10 @@ export function App() {
     : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
+    (focusBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+    (isFictionalOrbiterId(focusBodyId)
+      ? fictionalOrbiterById.get(focusBodyId)?.parentBodyId
+      : undefined) ??
     focusedKnownSatellite?.parentId ??
     PARENT_BODY_ID[focusBodyId];
   const focusedParentName = majorBodySnapshot.bodies.find(
@@ -1695,6 +1924,12 @@ export function App() {
                 {focusedDefinition?.name ??
                   focusedKnownSatellite?.name ??
                   focusedVoyager?.name ??
+                  (focusBodyId === JOVIAN_MONOLITH_BODY_ID
+                    ? JOVIAN_MONOLITH_NAME
+                    : undefined) ??
+                  (isFictionalOrbiterId(focusBodyId)
+                    ? fictionalOrbiterById.get(focusBodyId)?.name
+                    : undefined) ??
                   focusBodyId}
               </strong>
             </>
@@ -1758,6 +1993,7 @@ export function App() {
               }
               focusBodyId={focusBodyId === "" ? null : focusBodyId}
               selectedBodyId={selectedBodyId === "" ? null : selectedBodyId}
+              apolloInspectionSiteId={apolloInspectionSiteId}
               showMoonTrail={showMoonTrail}
               showPlanetTrails={showPlanetTrails}
               showMinorBodyTrails={showMinorBodyTrails}
@@ -1766,7 +2002,9 @@ export function App() {
               trailFade={trailFadePercent / 100}
               clearTrailsToken={clearTrailsToken}
               showEclipticPlane={showEclipticPlane}
+              showZodiac={showZodiac}
               showLabels={showLabels}
+              showApolloSites={showApolloSites}
               spacecraftLabelBodyIds={
                 activeTourStep === undefined
                   ? undefined
@@ -1813,7 +2051,7 @@ export function App() {
               surfaceObserverLookResetToken={surfaceObserverLookResetToken}
               visualQuality={visualQuality}
               deepSpacePresentation={activeTourStep?.presentation}
-              onSelectBody={setSelectedBodyId}
+              onSelectBody={handleSceneBodySelection}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}
               onSemanticZoomChange={setSemanticZoom}
@@ -2103,23 +2341,44 @@ export function App() {
           <aside className="selected-body-detail">
             <div className="selected-body-heading">
               <div>
-                <span>Selected body</span>
+                <span>
+                  {selectedApolloSite === undefined
+                    ? "Selected body"
+                    : "Apollo landing site"}
+                </span>
                 <strong>{selectedBodyDetail.name}</strong>
               </div>
               <div className="selected-body-actions">
                 <button
                   type="button"
                   className="primary-action"
-                  onClick={() => navigateToFocus(selectedBodyId)}
+                  onClick={() =>
+                    selectedApolloSite === undefined
+                      ? navigateToFocus(selectedBodyId)
+                      : focusApolloLandingSite(selectedApolloSite.id)
+                  }
                 >
-                  Focus
+                  {selectedApolloSite === undefined ? "Focus" : "Show on Moon"}
                 </button>
-                <button type="button" onClick={navigateToParent}>
-                  Parent
-                </button>
-                <button type="button" onClick={navigateToNextObject}>
-                  Next object
-                </button>
+                {selectedApolloSite === undefined ? (
+                  <>
+                    <button type="button" onClick={navigateToParent}>
+                      Parent
+                    </button>
+                    <button type="button" onClick={navigateToNextObject}>
+                      Next object
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      enterApolloLandingSiteObserver(selectedApolloSite.id)
+                    }
+                  >
+                    Stand at site
+                  </button>
+                )}
               </div>
             </div>
             <div className="selected-body-metrics">
@@ -2216,6 +2475,54 @@ export function App() {
                 {selectedBodyDetail.composition?.summary ??
                   "Not provided by the installed authority snapshot"}
               </span>
+              {selectedApolloSite === undefined ? null : (
+                <span className="apollo-mission-detail">
+                  <small>Mission record</small>
+                  <strong>
+                    Landed {selectedApolloSite.landingDateUtc} · Lunar Module{" "}
+                    {selectedApolloSite.lunarModule}
+                  </strong>
+                  <span>
+                    Moonwalkers: {selectedApolloSite.moonwalkers.join(" and ")}
+                  </span>
+                  <span>
+                    Command Module Pilot:{" "}
+                    {selectedApolloSite.commandModulePilot}
+                  </span>
+                  <span>
+                    {selectedApolloSite.surfaceStayHours.toFixed(1)} hours on
+                    the surface · {selectedApolloSite.evaHours.toFixed(1)} EVA
+                    hours · {selectedApolloSite.traverseDistanceKm.toFixed(2)}{" "}
+                    km traversed
+                  </span>
+                  <span>
+                    Experiments: {selectedApolloSite.experiments.join("; ")}
+                  </span>
+                  <span className="apollo-source-links">
+                    <a
+                      href={selectedApolloSite.mappingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      LROC traverse map
+                    </a>
+                    <a
+                      href={selectedApolloSite.photoArchiveUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Surface photographs
+                    </a>
+                    <a
+                      href={selectedApolloSite.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Mission record
+                    </a>
+                  </span>
+                </span>
+              )}
             </div>
           </aside>
         )}
@@ -2391,39 +2698,6 @@ export function App() {
             </div>
           </details>
 
-          <details>
-            <summary>Scientific model</summary>
-            <div className="model-disclosure">
-              <span>
-                <small>Regime</small>
-                Present-day gravitational propagation
-              </span>
-              <span>
-                <small>Ephemeris validation</small>
-                −365 to +365 days from the snapshot epoch
-              </span>
-              <span>
-                <small>Deep time</small>
-                Formation and stellar evolution require separate sourced models
-              </span>
-              <span>
-                <small>Body scale</small>
-                Reality uses sourced physical radii and hides unresolved or
-                unknown-size bodies; Orrery provides scalable position markers
-              </span>
-              <span>
-                <small>ISS</small>
-                CelesTrak OMM propagated with SGP4 and displayed only within ±7
-                days of its source epoch
-              </span>
-              <span>
-                <small>Gravity field</small>
-                Combined Newtonian −ΣGM/r, surface-capped at sourced mean radii;
-                logarithmic compression changes only the display
-              </span>
-            </div>
-          </details>
-
           <details open>
             <summary>Audio</summary>
             <div className="control-section audio-controls">
@@ -2558,6 +2832,7 @@ export function App() {
                   <option value="perspective">Perspective</option>
                   <option value="overhead">Ecliptic overhead</option>
                   <option value="edge-on">Ecliptic edge-on</option>
+                  <option value="sun-facing">Face Sun</option>
                   <option value="parent-facing">Face parent</option>
                   <option value="velocity">Follow velocity</option>
                   <option value="orbital-plane">Orbital plane</option>
@@ -2597,11 +2872,11 @@ export function App() {
                 <span>Camera zoom</span>
                 <input
                   type="range"
-                  min="-6"
+                  min="-32"
                   max="7"
                   step="0.000001"
                   value={Math.max(
-                    -6,
+                    -32,
                     Math.min(7, Math.log2(viewMagnification)),
                   )}
                   disabled={viewMode === "schematic"}
@@ -2612,9 +2887,11 @@ export function App() {
                   }
                 />
                 <output>
-                  {viewMagnification < 0.1
-                    ? viewMagnification.toFixed(3)
-                    : viewMagnification.toFixed(2).replace(/\.00$/u, "")}
+                  {viewMagnification < 0.001
+                    ? viewMagnification.toExponential(2)
+                    : viewMagnification < 0.1
+                      ? viewMagnification.toFixed(3)
+                      : viewMagnification.toFixed(2).replace(/\.00$/u, "")}
                   x
                 </output>
               </label>
@@ -2697,6 +2974,8 @@ export function App() {
                     setShowTacticalOverlay,
                   ],
                   ["Ecliptic grid", showEclipticPlane, setShowEclipticPlane],
+                  ["Zodiac signs", showZodiac, setShowZodiac],
+                  ["Apollo landing sites", showApolloSites, setShowApolloSites],
                 ] as const
               ).map(([label, checked, setter]) => (
                 <label className="switch-control" key={label}>

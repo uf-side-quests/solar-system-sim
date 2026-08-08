@@ -497,6 +497,55 @@ h1 {
   backdrop-filter: blur(12px);
 }
 
+.zodiac-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 7;
+  color: rgb(245 211 132 / 94%);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  pointer-events: none;
+  text-shadow:
+    0 1px 5px #000,
+    0 0 12px #000,
+    0 0 18px rgb(218 172 75 / 35%);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+.zodiac-legend {
+  position: absolute;
+  top: 4.6rem;
+  right: 0.9rem;
+  z-index: 7;
+  width: min(19rem, calc(100% - 1.8rem));
+  padding: 0.5rem 0.62rem 0.58rem;
+  border: 1px solid rgb(219 179 93 / 20%);
+  border-radius: 0.55rem;
+  color: rgb(242 211 142 / 92%);
+  background: rgb(4 9 15 / 74%);
+  box-shadow: 0 0.5rem 1.8rem rgb(0 0 0 / 24%);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.zodiac-legend > strong {
+  display: block;
+  margin-bottom: 0.38rem;
+  color: rgb(224 192 126 / 72%);
+  font-size: 0.54rem;
+  letter-spacing: 0.13em;
+}
+
+.zodiac-legend > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem 0.45rem;
+  font-size: 0.61rem;
+}
+
 .deep-space-label {
   position: absolute;
   z-index: 8;
@@ -699,6 +748,26 @@ h1 {
   content: "";
   transform: rotate(var(--leader-angle));
   transform-origin: 0 50%;
+}
+
+.apollo-site-label {
+  color: #f1d59d;
+  font-weight: 620;
+  translate: 0.72rem -50%;
+}
+
+.apollo-site-label::before {
+  position: absolute;
+  top: 50%;
+  left: -0.5rem;
+  width: 0.34rem;
+  height: 0.34rem;
+  border: 1px solid rgb(255 225 164 / 90%);
+  border-radius: 50%;
+  background: rgb(13 18 23 / 82%);
+  box-shadow: 0 0 0.42rem rgb(255 196 96 / 55%);
+  content: "";
+  translate: 0 -50%;
 }
 
 .surface-compass-label {
@@ -1865,8 +1934,37 @@ h1 {
 }
 
 .selected-body-surface,
-.selected-body-composition {
+.selected-body-composition,
+.apollo-mission-detail {
   grid-column: 1 / -1;
+}
+
+.apollo-mission-detail {
+  gap: 0.35rem !important;
+  padding-top: 0.2rem;
+  border-top: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+.apollo-mission-detail > strong {
+  color: #f1d59d;
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.apollo-source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+}
+
+.apollo-source-links a {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.apollo-source-links a:hover {
+  text-decoration: underline;
 }
 
 .selected-body-composition small {

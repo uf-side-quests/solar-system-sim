@@ -52,13 +52,10 @@ test("keeps escape navigation visible and guides the user through scale", async 
     "data-camera-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 15_000,
     },
   );
-  await expect(scene).toHaveAttribute(
-    "data-camera-orientation",
-    "parent-facing",
-  );
+  await expect(scene).toHaveAttribute("data-camera-orientation", "sun-facing");
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-distance-au")),
@@ -147,10 +144,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
     "settled",
     { timeout: 20_000 },
   );
-  await expect(scene).toHaveAttribute(
-    "data-camera-orientation",
-    "parent-facing",
-  );
+  await expect(scene).toHaveAttribute("data-camera-orientation", "sun-facing");
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-distance-au")),

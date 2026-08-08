@@ -79,13 +79,32 @@ Authority-published gravitational parameters and rotation models are taken from 
 - NASA/JPL Photojournal: <https://photojournal.jpl.nasa.gov/>
 - NASA PDS Cassini ISS global maps: <https://pds.nasa.gov/ds-view/pds/viewBundle.jsp?identifier=urn:nasa:pds:co_iss_global-maps&version=1.0>
 - NASA Cassini panoramic rings: <https://science.nasa.gov/resource/panoramic-rings/>
+- NASA PDS Ring-Moon Systems Node Uranus ring dimensions and optical depths: <https://pds-rings.seti.org/uranus/uranus_rings_table.html>
+- NASA PDS Ring-Moon Systems Node Jupiter ring dimensions and optical depths: <https://pds-rings.seti.org/jupiter/jupiter_rings_table.html>
+- NASA PDS Ring-Moon Systems Node Neptune ring dimensions, optical depths, and arcs: <https://pds-rings.seti.org/neptune/neptune_rings_table.html>
+- NASA Uranus ring colours and ordering: <https://science.nasa.gov/uranus/facts/>
 - USGS Astrogeology planetary maps: <https://astrogeology.usgs.gov/>
 - NASA International Space Station facts and dimensions: <https://www.nasa.gov/international-space-station/space-station-facts-and-figures/>
 - CelesTrak ISS current GP data: <https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=JSON-PRETTY>
+- NASA/JPL Horizons Tesla Roadster solution `-143205`: <https://ssd.jpl.nasa.gov/horizons/>
+- NASA Apollo by the Numbers landing coordinates: <https://www.nasa.gov/wp-content/uploads/static/history/afj/pdf/abtn-202402.pdf>
+- LROC Apollo spatio-temporal mapping datasets: <https://data.lroc.im-ldi.com/lroc/rdr_product_select>
+- LROC Apollo PDS traverse CSV snapshots: <https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/EXTRAS/SHAPEFILE/>
+- NASA Apollo Lunar Surface Journal: <https://www.nasa.gov/history/alsj/>
 
 The local authority asset manifests record every image source page, direct asset URL, presentation classification, coverage, projection, limitation, source and output dimension, byte length, content type, and SHA-256 checksum, plus each installed spacecraft model source, checksum, and physical maximum dimension.
 NASA imagery is generally not copyrighted in the United States, but NASA identifiers, people, and third-party material can have additional restrictions.
 Users redistributing these assets should follow the NASA media usage guidelines: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
+
+## Fictional references
+
+The Jovian Monolith and two Death Star visualizations are original procedural fan-reference models.
+No Lucasfilm, Disney, MGM, or Warner Bros model or texture asset is included.
+The Death Star names and designs remain the property of Lucasfilm Ltd.; their official descriptive references are the Star Wars Databank pages.
+The installed stations are clearly labelled fictional, use hypothetical massless two-body paths, and do not affect the physical Solar System simulation.
+
+- Death Star: <https://www.starwars.com/databank/death-star>
+- Death Star II: <https://www.starwars.com/databank/death-star-ii>
 
 ## ESA Hipparcos catalogue
 

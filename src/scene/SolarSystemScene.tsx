@@ -5,6 +5,7 @@ import {
   AdditiveBlending,
   AmbientLight,
   Box3,
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
@@ -16,6 +17,7 @@ import {
   Line,
   LineBasicMaterial,
   LineLoop,
+  LineSegments,
   Matrix4,
   Material,
   Mesh,
@@ -73,7 +75,7 @@ import {
   isOperationalSpacecraftBodyId,
   operationalSpacecraftSnapshot,
 } from "../physics/operational-spacecraft";
-import { focusDistanceAu } from "./camera-focus";
+import { focusDistanceAu, focusNearPlaneAu } from "./camera-focus";
 import { GravityWellLayer } from "./GravityWellLayer";
 import type {
   GravityPotentialSource,
@@ -85,17 +87,58 @@ import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
 } from "./orientation";
+import {
+  apolloLandingSites,
+  isApolloLandingSiteId,
+  moonFixedSurfaceUnitVector,
+} from "./lunar-landing-sites";
+import {
+  createApolloSurfaceSiteModel,
+  MOON_SURFACE_RADIUS_M,
+} from "./apollo-surface-model";
 import type {
   CameraNavigationCommand,
   CameraOrientationPreset,
 } from "./camera-view";
 import { PARENT_BODY_ID } from "./body-facts";
 import {
+  formatViewpointSpeed,
   interpolateLogarithmicDistance,
+  sampleDirectCameraTransition,
   sampleCameraTransition,
 } from "./camera-transition";
+import {
+  JOVIAN_MONOLITH_BODY_ID,
+  JOVIAN_MONOLITH_BOUNDING_RADIUS_M,
+  JOVIAN_MONOLITH_DIMENSIONS_M,
+  JOVIAN_MONOLITH_NAME,
+  jovianMonolithState,
+} from "./jovian-monolith";
+import { createDeathStarModel } from "./death-star-model";
+import {
+  FICTIONAL_ORBITERS,
+  fictionalOrbiterById,
+  fictionalOrbiterStateById,
+  isFictionalOrbiterId,
+} from "./fictional-orbiters";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import { surfaceObserverViewpoint } from "./observer-camera";
+import {
+  DISCRETE_RING_SYSTEMS,
+  discreteRingSystemExtent,
+  isDiscreteRingBodyId,
+  JUPITER_EQUATORIAL_RADIUS_KM,
+  JUPITER_POLAR_RADIUS_KM,
+  NEPTUNE_EQUATORIAL_RADIUS_KM,
+  NEPTUNE_POLAR_RADIUS_KM,
+  ringRadiusRatio,
+  SATURN_EQUATORIAL_RADIUS_KM,
+  SATURN_MAIN_RING_INNER_RADIUS_KM,
+  SATURN_MAIN_RING_OUTER_RADIUS_KM,
+  SATURN_POLAR_RADIUS_KM,
+  URANUS_EQUATORIAL_RADIUS_KM,
+  URANUS_POLAR_RADIUS_KM,
+} from "./ring-system";
 import { icrfToScene, j2000EclipticToScene } from "./reference-frames";
 import {
   surfaceHorizonPoint,
@@ -117,6 +160,7 @@ import {
   starDisplayOpacity,
   starDisplaySizeCssPixels,
 } from "./star-catalogue";
+import type { HipparcosStar } from "./star-catalogue";
 import type { ObjectVisibility } from "./visibility";
 import { isMajorBodyVisible } from "./visibility";
 import {
@@ -139,6 +183,15 @@ import {
   type VisualQuality,
 } from "./visual-quality";
 import { spacecraftAssets } from "./spacecraft-assets";
+import {
+  createRoadsterAndStarmanModel,
+  ROADSTER_BODY_ID,
+} from "./roadster-model";
+import {
+  eclipticDirection,
+  eclipticSkyDirection,
+  TROPICAL_ZODIAC_SIGNS,
+} from "./zodiac";
 
 const ECLIPTIC_NORTH = j2000EclipticToScene({ x: 0, y: 0, z: 1 }).normalize();
 const ECLIPTIC_FORWARD = j2000EclipticToScene({ x: 0, y: 1, z: 0 }).normalize();
@@ -234,10 +287,27 @@ const PREVIOUS_SOLAR_SYSTEM_VIEW_AU = 220;
 const SMALL_BODY_GPU_UPDATE_INTERVAL_MS = 200;
 const SUN_GUIDE_UPDATE_INTERVAL_MS = 100;
 const STAR_SPHERE_RADIUS_AU = 1_500;
-const SATURN_EQUATORIAL_RADIUS_KM = 60_268;
-const SATURN_POLAR_RADIUS_KM = 54_364;
-const SATURN_RING_PROFILE_INNER_RADIUS_KM = 74_565;
-const SATURN_RING_PROFILE_OUTER_RADIUS_KM = 136_780;
+const ZODIAC_SPHERE_RADIUS_AU = STAR_SPHERE_RADIUS_AU * 0.985;
+const STAR_TOOLTIP_DELAY_MS = 1_000;
+const STAR_TOOLTIP_PICK_RADIUS_CSS_PIXELS = 7;
+const STAR_COMMON_NAMES = new Map<number, string>([
+  [32_349, "Sirius"],
+  [71_683, "Alpha Centauri"],
+  [91_262, "Vega"],
+]);
+
+function starTooltipText(star: HipparcosStar): string {
+  const commonName = STAR_COMMON_NAMES.get(star.hipId);
+  const title =
+    commonName === undefined
+      ? `HIP ${String(star.hipId)}`
+      : `${commonName} · HIP ${String(star.hipId)}`;
+  const colourIndex =
+    star.colorIndexBv === null
+      ? "B−V unavailable"
+      : `B−V ${star.colorIndexBv.toFixed(2)}`;
+  return `${title} · V ${star.visualMagnitude.toFixed(2)} · RA ${star.raDeg.toFixed(2)}° · Dec ${star.decDeg.toFixed(2)}° · ${colourIndex}`;
+}
 const JULIAN_YEAR_SECONDS = 365.25 * 86_400;
 const SOLAR_SYSTEM_EPOCH_JULIAN_YEAR =
   2000 + (majorBodySnapshot.epoch.value - 2_451_545) / 365.25;
@@ -246,10 +316,29 @@ const majorBodyById = new Map(
 );
 
 function spacecraftBoundingRadiusM(bodyId: string): number | undefined {
+  if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
+    return JOVIAN_MONOLITH_BOUNDING_RADIUS_M;
+  }
+  const fictionalOrbiter = fictionalOrbiterById.get(
+    isFictionalOrbiterId(bodyId) ? bodyId : "death-star-1",
+  );
+  if (isFictionalOrbiterId(bodyId)) {
+    if (fictionalOrbiter === undefined) {
+      throw new Error(`Fictional orbiter ${bodyId} is unavailable`);
+    }
+    return fictionalOrbiter.diameterM / 2;
+  }
   const asset = spacecraftAssets.find(
     (candidate) => candidate.bodyId === bodyId,
   );
-  return asset === undefined ? undefined : asset.maximumDimensionM / 2;
+  const operationalSpacecraft = operationalSpacecraftSnapshot.spacecraft.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  return asset?.maximumDimensionM === undefined
+    ? operationalSpacecraft?.maximumDimensionM === undefined
+      ? undefined
+      : operationalSpacecraft.maximumDimensionM / 2
+    : asset.maximumDimensionM / 2;
 }
 
 function spacecraftFocusDistanceAu(bodyId: string): number {
@@ -367,6 +456,12 @@ function bodyStateById(
   state: SimulationState,
   bodyId: string,
 ): BodyState | undefined {
+  if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
+    return jovianMonolithState(state);
+  }
+  if (isFictionalOrbiterId(bodyId)) {
+    return fictionalOrbiterStateById(state, bodyId);
+  }
   return state.bodies.find((body) => body.id === bodyId);
 }
 
@@ -382,7 +477,9 @@ function gravityFieldExtentAu(
   }
   if (
     isVoyagerBodyId(focusBodyId) ||
-    isOperationalSpacecraftBodyId(focusBodyId)
+    isOperationalSpacecraftBodyId(focusBodyId) ||
+    focusBodyId === JOVIAN_MONOLITH_BODY_ID ||
+    isFictionalOrbiterId(focusBodyId)
   ) {
     return 0.000_001;
   }
@@ -413,9 +510,14 @@ function parentBodyId(bodyId: string): string | undefined {
     ? ISS_PARENT_BODY_ID
     : bodyId === "hubble"
       ? "earth"
-      : bodyId === "jwst" || isVoyagerBodyId(bodyId)
-        ? "sun"
-        : (knownSatelliteById.get(bodyId)?.parentId ?? PARENT_BODY_ID[bodyId]);
+      : bodyId === JOVIAN_MONOLITH_BODY_ID
+        ? "jupiter"
+        : isFictionalOrbiterId(bodyId)
+          ? fictionalOrbiterById.get(bodyId)?.parentBodyId
+          : bodyId === "jwst" || isVoyagerBodyId(bodyId)
+            ? "sun"
+            : (knownSatelliteById.get(bodyId)?.parentId ??
+              PARENT_BODY_ID[bodyId]);
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -435,6 +537,7 @@ type SolarSystemSceneProps = Readonly<{
   bodyVisibility: number;
   focusBodyId: string | null;
   selectedBodyId: string | null;
+  apolloInspectionSiteId: string | null;
   showMoonTrail: boolean;
   showPlanetTrails: boolean;
   showMinorBodyTrails: boolean;
@@ -443,7 +546,9 @@ type SolarSystemSceneProps = Readonly<{
   trailFade: number;
   clearTrailsToken: number;
   showEclipticPlane: boolean;
+  showZodiac: boolean;
   showLabels: boolean;
+  showApolloSites: boolean;
   spacecraftLabelBodyIds: readonly string[] | undefined;
   resetViewToken: number;
   cameraZoom: number;
@@ -485,6 +590,7 @@ export function SolarSystemScene({
   bodyVisibility,
   focusBodyId,
   selectedBodyId,
+  apolloInspectionSiteId,
   showMoonTrail,
   showPlanetTrails,
   showMinorBodyTrails,
@@ -493,7 +599,9 @@ export function SolarSystemScene({
   trailFade,
   clearTrailsToken,
   showEclipticPlane,
+  showZodiac,
   showLabels,
+  showApolloSites,
   spacecraftLabelBodyIds,
   resetViewToken,
   cameraZoom,
@@ -532,6 +640,7 @@ export function SolarSystemScene({
   const bodyVisibilityRef = useRef(bodyVisibility);
   const focusBodyIdRef = useRef(focusBodyId);
   const selectedBodyIdRef = useRef(selectedBodyId);
+  const apolloInspectionSiteIdRef = useRef(apolloInspectionSiteId);
   const showMoonTrailRef = useRef(showMoonTrail);
   const showPlanetTrailsRef = useRef(showPlanetTrails);
   const showMinorBodyTrailsRef = useRef(showMinorBodyTrails);
@@ -540,7 +649,9 @@ export function SolarSystemScene({
   const trailFadeRef = useRef(trailFade);
   const clearTrailsTokenRef = useRef(clearTrailsToken);
   const showEclipticPlaneRef = useRef(showEclipticPlane);
+  const showZodiacRef = useRef(showZodiac);
   const showLabelsRef = useRef(showLabels);
+  const showApolloSitesRef = useRef(showApolloSites);
   const spacecraftLabelBodyIdsRef = useRef(spacecraftLabelBodyIds);
   const resetViewTokenRef = useRef(resetViewToken);
   const cameraZoomRef = useRef(cameraZoom);
@@ -577,6 +688,7 @@ export function SolarSystemScene({
   bodyVisibilityRef.current = bodyVisibility;
   focusBodyIdRef.current = focusBodyId;
   selectedBodyIdRef.current = selectedBodyId;
+  apolloInspectionSiteIdRef.current = apolloInspectionSiteId;
   showMoonTrailRef.current = showMoonTrail;
   showPlanetTrailsRef.current = showPlanetTrails;
   showMinorBodyTrailsRef.current = showMinorBodyTrails;
@@ -585,7 +697,9 @@ export function SolarSystemScene({
   trailFadeRef.current = trailFade;
   clearTrailsTokenRef.current = clearTrailsToken;
   showEclipticPlaneRef.current = showEclipticPlane;
+  showZodiacRef.current = showZodiac;
   showLabelsRef.current = showLabels;
+  showApolloSitesRef.current = showApolloSites;
   spacecraftLabelBodyIdsRef.current = spacecraftLabelBodyIds;
   resetViewTokenRef.current = resetViewToken;
   cameraZoomRef.current = cameraZoom;
@@ -746,6 +860,23 @@ export function SolarSystemScene({
       marker.hidden = true;
       markerLayer.append(marker);
       operationalSpacecraftMarkers.set(spacecraft.id, marker);
+    }
+    const apolloSiteLabels = new Map<string, HTMLButtonElement>();
+    for (const site of apolloLandingSites) {
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "body-label apollo-site-label";
+      label.textContent = site.mission;
+      label.dataset["bodyId"] = site.id;
+      label.setAttribute(
+        "aria-label",
+        `Select ${site.mission} landing site at ${site.siteName}`,
+      );
+      label.title = `${site.siteName} · click for mission details`;
+      label.addEventListener("click", () => onSelectBody(site.id));
+      label.hidden = true;
+      labelLayer.append(label);
+      apolloSiteLabels.set(site.id, label);
     }
     const tacticalOverlay = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -1014,6 +1145,11 @@ export function SolarSystemScene({
       container.dataset["starEpochJulianYear"] = julianYear.toFixed(6);
     };
     updateStarPositions(0);
+    const brightStarCandidateIndexes = hipparcosStarSnapshot.stars
+      .map((star, index) => ({ index, magnitude: star.visualMagnitude }))
+      .sort((left, right) => left.magnitude - right.magnitude)
+      .slice(0, 96)
+      .map(({ index }) => index);
 
     const unitSphere = new SphereGeometry(1, 256, 192);
     const bodyMeshes = new Map<string, Mesh>();
@@ -1022,12 +1158,215 @@ export function SolarSystemScene({
     const surfaceMaterials = new Map<string, MeshStandardMaterial>();
     const ringVisuals = new Map<
       string,
-      Readonly<{ mesh: Mesh; material: ShaderMaterial }>
+      Readonly<{
+        referenceMesh: Mesh;
+        materials: readonly ShaderMaterial[];
+        surfaceShadowSunDirectionLocal?: IUniform<Vector3>;
+      }>
     >();
     const bodyLabels = new Map<string, HTMLButtonElement>();
+    const additionalSelectableMeshes: Mesh[] = [];
     const materials: Material[] = [starMaterial];
     const geometries: BufferGeometry[] = [unitSphere, starGeometry];
     const textures: Texture[] = [];
+
+    const monolithGeometry = new BoxGeometry(
+      JOVIAN_MONOLITH_DIMENSIONS_M.thickness / ASTRONOMICAL_UNIT_M,
+      JOVIAN_MONOLITH_DIMENSIONS_M.length / ASTRONOMICAL_UNIT_M,
+      JOVIAN_MONOLITH_DIMENSIONS_M.width / ASTRONOMICAL_UNIT_M,
+    );
+    const monolithMaterial = new MeshStandardMaterial({
+      color: 0x020303,
+      roughness: 0.28,
+      metalness: 0.16,
+    });
+    const monolithMesh = new Mesh(monolithGeometry, monolithMaterial);
+    monolithMesh.name = JOVIAN_MONOLITH_NAME;
+    monolithMesh.userData["bodyId"] = JOVIAN_MONOLITH_BODY_ID;
+    monolithMesh.visible = false;
+    bodyMeshes.set(JOVIAN_MONOLITH_BODY_ID, monolithMesh);
+    scene.add(monolithMesh);
+    geometries.push(monolithGeometry);
+    materials.push(monolithMaterial);
+
+    const monolithLabel = document.createElement("button");
+    monolithLabel.type = "button";
+    monolithLabel.className = "body-label";
+    monolithLabel.textContent = JOVIAN_MONOLITH_NAME;
+    monolithLabel.dataset["bodyId"] = JOVIAN_MONOLITH_BODY_ID;
+    monolithLabel.setAttribute("aria-label", `Focus ${JOVIAN_MONOLITH_NAME}`);
+    monolithLabel.title = "Click to select; double-click to focus";
+    monolithLabel.addEventListener("click", () =>
+      onSelectBody(JOVIAN_MONOLITH_BODY_ID),
+    );
+    monolithLabel.addEventListener("dblclick", () =>
+      onFocusBody(JOVIAN_MONOLITH_BODY_ID),
+    );
+    monolithLabel.hidden = true;
+    labelLayer.append(monolithLabel);
+    bodyLabels.set(JOVIAN_MONOLITH_BODY_ID, monolithLabel);
+    const monolithMarker = document.createElement("span");
+    monolithMarker.className = "orrery-marker";
+    monolithMarker.hidden = true;
+    markerLayer.append(monolithMarker);
+    bodyMarkers.set(JOVIAN_MONOLITH_BODY_ID, monolithMarker);
+    container.dataset["jovianMonolithPhysics"] =
+      "display-only-jupiter-io-l1-no-gravity";
+    container.dataset["jovianMonolithDimensionsM"] = [
+      JOVIAN_MONOLITH_DIMENSIONS_M.thickness,
+      JOVIAN_MONOLITH_DIMENSIONS_M.width,
+      JOVIAN_MONOLITH_DIMENSIONS_M.length,
+    ]
+      .map((value) => value.toFixed(3))
+      .join(",");
+
+    const fictionalOrbiterGroups = new Map<string, Group>();
+    const fictionalOrbiterLabels = new Map<string, HTMLButtonElement>();
+    const fictionalOrbiterMarkers = new Map<string, HTMLSpanElement>();
+    for (const orbiter of FICTIONAL_ORBITERS) {
+      const group = createDeathStarModel(orbiter);
+      group.visible = false;
+      scene.add(group);
+      fictionalOrbiterGroups.set(orbiter.id, group);
+      group.traverse((object) => {
+        if (object.type === "Mesh") {
+          const modelMesh = object as Mesh;
+          additionalSelectableMeshes.push(modelMesh);
+          geometries.push(modelMesh.geometry);
+          const objectMaterials = Array.isArray(modelMesh.material)
+            ? modelMesh.material
+            : [modelMesh.material];
+          materials.push(...objectMaterials);
+        }
+      });
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "body-label fictional-object-label";
+      label.textContent = orbiter.name;
+      label.dataset["bodyId"] = orbiter.id;
+      label.setAttribute("aria-label", `Focus ${orbiter.name}`);
+      label.title = "Click to select; double-click to focus";
+      label.addEventListener("click", () => onSelectBody(orbiter.id));
+      label.addEventListener("dblclick", () => onFocusBody(orbiter.id));
+      label.hidden = true;
+      labelLayer.append(label);
+      fictionalOrbiterLabels.set(orbiter.id, label);
+      const marker = document.createElement("span");
+      marker.className = "orrery-marker";
+      marker.hidden = true;
+      markerLayer.append(marker);
+      fictionalOrbiterMarkers.set(orbiter.id, marker);
+    }
+    container.dataset["fictionalOrbiterPhysics"] =
+      "hypothetical-massless-two-body-no-gravity-backreaction";
+    container.dataset["fictionalOrbiterCount"] = String(
+      FICTIONAL_ORBITERS.length,
+    );
+
+    const zodiacGroup = new Group();
+    zodiacGroup.name = "Tropical zodiac reference on the J2000 ecliptic";
+    zodiacGroup.visible = false;
+    scene.add(zodiacGroup);
+    const zodiacCirclePositions = new Float32Array(360 * 3);
+    for (let longitudeDeg = 0; longitudeDeg < 360; longitudeDeg += 1) {
+      const [x, y, z] = eclipticDirection(longitudeDeg);
+      const direction = j2000EclipticToScene({ x, y, z }).multiplyScalar(
+        ZODIAC_SPHERE_RADIUS_AU,
+      );
+      const offset = longitudeDeg * 3;
+      zodiacCirclePositions[offset] = direction.x;
+      zodiacCirclePositions[offset + 1] = direction.y;
+      zodiacCirclePositions[offset + 2] = direction.z;
+    }
+    const zodiacCircleGeometry = new BufferGeometry();
+    zodiacCircleGeometry.setAttribute(
+      "position",
+      new BufferAttribute(zodiacCirclePositions, 3),
+    );
+    const zodiacMaterial = new LineBasicMaterial({
+      color: 0xd8b770,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const zodiacCircle = new LineLoop(zodiacCircleGeometry, zodiacMaterial);
+    zodiacCircle.name = "Twelve-sign tropical zodiac ecliptic circle";
+    zodiacGroup.add(zodiacCircle);
+
+    const zodiacTickPositions = new Float32Array(
+      TROPICAL_ZODIAC_SIGNS.length * 2 * 3,
+    );
+    for (const [index, sign] of TROPICAL_ZODIAC_SIGNS.entries()) {
+      const [innerX, innerY, innerZ] = eclipticSkyDirection(
+        sign.startLongitudeDeg,
+        -10,
+      );
+      const [outerX, outerY, outerZ] = eclipticSkyDirection(
+        sign.startLongitudeDeg,
+        10,
+      );
+      const inner = j2000EclipticToScene({
+        x: innerX,
+        y: innerY,
+        z: innerZ,
+      }).multiplyScalar(ZODIAC_SPHERE_RADIUS_AU);
+      const outer = j2000EclipticToScene({
+        x: outerX,
+        y: outerY,
+        z: outerZ,
+      }).multiplyScalar(ZODIAC_SPHERE_RADIUS_AU);
+      const offset = index * 6;
+      zodiacTickPositions.set([inner.x, inner.y, inner.z], offset);
+      zodiacTickPositions.set([outer.x, outer.y, outer.z], offset + 3);
+    }
+    const zodiacTickGeometry = new BufferGeometry();
+    zodiacTickGeometry.setAttribute(
+      "position",
+      new BufferAttribute(zodiacTickPositions, 3),
+    );
+    const zodiacTicks = new LineSegments(zodiacTickGeometry, zodiacMaterial);
+    zodiacTicks.name = "Tropical zodiac thirty-degree boundaries";
+    zodiacGroup.add(zodiacTicks);
+    const zodiacLabels = TROPICAL_ZODIAC_SIGNS.map((sign, index) => {
+      const [x, y, z] = eclipticSkyDirection(
+        sign.centreLongitudeDeg,
+        index % 2 === 0 ? 14 : -14,
+      );
+      const label = document.createElement("span");
+      label.className = "zodiac-label";
+      label.textContent = `${sign.glyph}\uFE0E ${sign.name}`;
+      label.dataset["zodiacSign"] = sign.name;
+      label.setAttribute("aria-hidden", "true");
+      label.hidden = true;
+      container.append(label);
+      return {
+        element: label,
+        direction: j2000EclipticToScene({ x, y, z }).normalize(),
+      };
+    });
+    const zodiacLegend = document.createElement("div");
+    zodiacLegend.className = "zodiac-legend";
+    zodiacLegend.setAttribute("aria-label", "Twelve tropical zodiac signs");
+    const zodiacLegendTitle = document.createElement("strong");
+    zodiacLegendTitle.textContent = "ZODIAC SKY REFERENCE";
+    zodiacLegend.append(zodiacLegendTitle);
+    const zodiacLegendSigns = document.createElement("div");
+    for (const sign of TROPICAL_ZODIAC_SIGNS) {
+      const item = document.createElement("span");
+      item.textContent = `${sign.glyph}\uFE0E ${sign.name}`;
+      zodiacLegendSigns.append(item);
+    }
+    zodiacLegend.append(zodiacLegendSigns);
+    zodiacLegend.hidden = true;
+    container.append(zodiacLegend);
+    geometries.push(zodiacCircleGeometry, zodiacTickGeometry);
+    materials.push(zodiacMaterial);
+    container.dataset["zodiacReference"] =
+      "tropical-twelve-equal-signs-on-j2000-ecliptic";
+    container.dataset["zodiacSignCount"] = String(TROPICAL_ZODIAC_SIGNS.length);
+    container.dataset["zodiacSolarSystemParallax"] =
+      "negligible-at-display-scale";
 
     const alphaCentauri = hipparcosStarSnapshot.stars.find(
       (star) => star.hipId === 71_683,
@@ -1573,21 +1912,53 @@ export function SolarSystemScene({
           "sunlit-single-scattering-approximation";
       }
 
-      if (body.id === "saturn" || body.id === "uranus") {
+      if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
         if (body.id === "saturn" && nasaSaturnRingAsset === undefined) {
           throw new Error("Cassini Saturn ring profile is missing");
         }
         const observedRingProfile =
           body.id === "saturn" ? nasaSaturnRingAsset : undefined;
+        const discreteRingSystem = isDiscreteRingBodyId(body.id)
+          ? DISCRETE_RING_SYSTEMS[body.id]
+          : undefined;
+        const discreteRingExtent =
+          discreteRingSystem === undefined
+            ? undefined
+            : discreteRingSystemExtent(discreteRingSystem);
         const innerRadius =
           body.id === "saturn"
-            ? SATURN_RING_PROFILE_INNER_RADIUS_KM / SATURN_EQUATORIAL_RADIUS_KM
-            : 1.45;
+            ? ringRadiusRatio(
+                SATURN_MAIN_RING_INNER_RADIUS_KM,
+                SATURN_EQUATORIAL_RADIUS_KM,
+              )
+            : ringRadiusRatio(
+                discreteRingExtent?.innerRadiusKm ??
+                  (() => {
+                    throw new Error(`${body.name} ring extent is missing`);
+                  })(),
+                discreteRingSystem?.equatorialRadiusKm ??
+                  (() => {
+                    throw new Error(`${body.name} ring scale is missing`);
+                  })(),
+              );
         const outerRadius =
           body.id === "saturn"
-            ? SATURN_RING_PROFILE_OUTER_RADIUS_KM / SATURN_EQUATORIAL_RADIUS_KM
-            : 2.05;
+            ? ringRadiusRatio(
+                SATURN_MAIN_RING_OUTER_RADIUS_KM,
+                SATURN_EQUATORIAL_RADIUS_KM,
+              )
+            : ringRadiusRatio(
+                discreteRingExtent?.outerRadiusKm ??
+                  (() => {
+                    throw new Error(`${body.name} ring extent is missing`);
+                  })(),
+                discreteRingSystem?.equatorialRadiusKm ??
+                  (() => {
+                    throw new Error(`${body.name} ring scale is missing`);
+                  })(),
+              );
         const ringGeometry = new RingGeometry(innerRadius, outerRadius, 192);
+        ringGeometry.rotateX(Math.PI / 2);
         geometries.push(ringGeometry);
         let observedRingTexture: Texture | undefined;
         if (observedRingProfile !== undefined) {
@@ -1614,43 +1985,94 @@ export function SolarSystemScene({
             },
             innerRadius: { value: innerRadius },
             outerRadius: { value: outerRadius },
-            baseOpacity: { value: body.id === "saturn" ? 0.7 : 0.36 },
             observedRingProfile: { value: observedRingTexture ?? null },
             useObservedRingProfile: {
               value: observedRingTexture === undefined ? 0 : 1,
             },
             sunDirectionLocal: { value: new Vector3(0, 0, 1) },
+            cameraPositionLocal: { value: new Vector3(0, 1, 4) },
             solarFlux: { value: 1 },
+            displayExposure: { value: 1 },
+            visibilityGain: { value: 1 },
+            discreteRingCount: {
+              value: discreteRingSystem?.rings.length ?? 0,
+            },
+            discreteRingCenters: {
+              value: new Float32Array(
+                Array.from({ length: 13 }, (_, index) => {
+                  const ring = discreteRingSystem?.rings[index];
+                  return ring === undefined || discreteRingSystem === undefined
+                    ? 0
+                    : ringRadiusRatio(
+                        ring.radiusKm,
+                        discreteRingSystem.equatorialRadiusKm,
+                      );
+                }),
+              ),
+            },
+            discreteRingWidths: {
+              value: new Float32Array(
+                Array.from({ length: 13 }, (_, index) => {
+                  const ring = discreteRingSystem?.rings[index];
+                  return ring === undefined || discreteRingSystem === undefined
+                    ? 0
+                    : ringRadiusRatio(
+                        ring.widthKm,
+                        discreteRingSystem.equatorialRadiusKm,
+                      );
+                }),
+              ),
+            },
+            discreteRingOpticalDepths: {
+              value: new Float32Array(
+                Array.from(
+                  { length: 13 },
+                  (_, index) =>
+                    discreteRingSystem?.rings[index]?.opticalDepth ?? 0,
+                ),
+              ),
+            },
           },
           vertexShader: `
+            #include <common>
+            #include <logdepthbuf_pars_vertex>
             varying float vRadius;
             varying vec3 vLocalPosition;
             void main() {
-              vRadius = length(position.xy);
+              vRadius = length(position.xz);
               vLocalPosition = position;
               gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              #include <logdepthbuf_vertex>
             }
           `,
           fragmentShader: `
-            const float SCENE_LIGHT_SCALE = 12.0;
-            const float SOURCE_PROFILE_EXPOSURE = 6.0;
+            #include <common>
+            #include <logdepthbuf_pars_fragment>
+            const float OBSERVED_ICE_LIGHT_NORMALIZATION = 1.2;
             uniform vec3 ringColor;
             uniform float innerRadius;
             uniform float outerRadius;
-            uniform float baseOpacity;
             uniform sampler2D observedRingProfile;
             uniform float useObservedRingProfile;
             uniform vec3 sunDirectionLocal;
+            uniform vec3 cameraPositionLocal;
             uniform float solarFlux;
+            uniform float displayExposure;
+            uniform float visibilityGain;
+            uniform int discreteRingCount;
+            uniform float discreteRingCenters[13];
+            uniform float discreteRingWidths[13];
+            uniform float discreteRingOpticalDepths[13];
             varying float vRadius;
             varying vec3 vLocalPosition;
             void main() {
+              #include <logdepthbuf_fragment>
               float normalizedRadius = (vRadius - innerRadius) / (outerRadius - innerRadius);
               float edge = smoothstep(0.0, 0.025, normalizedRadius) * (1.0 - smoothstep(0.975, 1.0, normalizedRadius));
-              vec3 ringNormal = vec3(0.0, 0.0, gl_FrontFacing ? 1.0 : -1.0);
+              vec3 ringNormal = vec3(0.0, gl_FrontFacing ? 1.0 : -1.0, 0.0);
               float incidence = abs(dot(ringNormal, normalize(sunDirectionLocal)));
-              float directLight = 0.12 + 0.88 * sqrt(incidence);
-              vec3 rayOrigin = vec3(vLocalPosition.xy, 0.0);
+              float directLight = 0.08 + 0.92 * sqrt(incidence);
+              vec3 rayOrigin = vec3(vLocalPosition.x, 0.0, vLocalPosition.z);
               vec3 rayDirection = normalize(sunDirectionLocal);
               float rayProjection = dot(rayOrigin, rayDirection);
               float discriminant =
@@ -1659,46 +2081,121 @@ export function SolarSystemScene({
               if (discriminant > 0.0) {
                 float nearestHit = -rayProjection - sqrt(discriminant);
                 if (nearestHit > 0.0) {
-                  planetShadow = 0.12;
+                  planetShadow = 0.045;
                 }
               }
-              // A ring pixel represents an unresolved column of icy particles,
-              // not a solid sheet. Keep the direct beam and planet shadow,
-              // then add bounded light scattered between particles. This avoids
-              // falsely black rings at low solar elevation while preserving the
-              // observed radial brightness profile and the planet's shadow.
-              float particleScattering = 0.17 + 0.10 * (1.0 - incidence);
-              float illumination =
-                (directLight * planetShadow + particleScattering) * solarFlux;
               if (useObservedRingProfile > 0.5) {
                 vec3 observed = texture2D(
                   observedRingProfile,
                   vec2(clamp(normalizedRadius, 0.0, 1.0), 0.5)
                 ).rgb;
                 float luminance = dot(observed, vec3(0.2126, 0.7152, 0.0722));
-                float opticalDensity = smoothstep(0.006, 0.16, luminance);
-                vec3 observedChromaticity =
-                  observed / max(luminance, 0.012);
-                vec3 iceColor =
-                  ringColor * mix(vec3(1.0), observedChromaticity, 0.22);
-                float profileBrightness =
-                  0.32 + 0.68 * sqrt(opticalDensity);
+                float opticalDensity = clamp(
+                  pow(max(luminance, 0.0), 0.42) * 1.05,
+                  0.0,
+                  1.0
+                );
+                vec3 observedChromaticity = clamp(
+                  observed / max(luminance, 0.004),
+                  vec3(0.65),
+                  vec3(1.35)
+                );
+                float measuredReflectance =
+                  0.12 + 0.88 * opticalDensity;
+                // The Cassini mosaic supplies the radial natural-colour
+                // structure. Slightly reduce its photographic colour cast,
+                // while retaining the measured warm ice and fine banding.
+                vec3 iceAlbedo = clamp(
+                  vec3(measuredReflectance) *
+                    mix(vec3(1.0), observedChromaticity, 0.18) *
+                    vec3(1.04, 1.015, 0.96),
+                  vec3(0.0),
+                  vec3(1.0)
+                );
+                // A rendered texel is an unresolved column of separate ice
+                // particles. Dense bands scatter more light between particles;
+                // sparse divisions transmit the background instead of becoming
+                // opaque black paint.
+                float particleScattering =
+                  (0.08 + 0.18 * (1.0 - incidence)) *
+                  (0.20 + 0.80 * opticalDensity);
+                float illumination =
+                  (directLight * planetShadow + particleScattering) *
+                  solarFlux * displayExposure *
+                  OBSERVED_ICE_LIGHT_NORMALIZATION;
+                float viewSine = max(
+                  abs(normalize(cameraPositionLocal - vLocalPosition).y),
+                  0.06
+                );
+                float slantOpticalDepth =
+                  opticalDensity / viewSine;
+                float alpha =
+                  smoothstep(0.001, 0.012, luminance) *
+                  (1.0 - exp(-slantOpticalDepth * 1.2)) * edge;
                 gl_FragColor = vec4(
-                  iceColor * profileBrightness * illumination *
-                    SCENE_LIGHT_SCALE * SOURCE_PROFILE_EXPOSURE,
-                  opticalDensity * 0.9 * edge
+                  iceAlbedo * illumination,
+                  clamp(alpha, 0.0, 0.995)
                 );
               } else {
-                float bands = 0.62 + 0.28 * sin(normalizedRadius * 84.0) + 0.10 * sin(normalizedRadius * 233.0);
+                float radialPixelFootprint = max(fwidth(vRadius), 0.000001);
+                float accumulatedAlpha = 0.0;
+                vec3 accumulatedColor = vec3(0.0);
+                for (int ringIndex = 0; ringIndex < 13; ringIndex++) {
+                  if (ringIndex >= discreteRingCount) {
+                    continue;
+                  }
+                  float ringWidth = discreteRingWidths[ringIndex];
+                  float distanceFromCenter = abs(
+                    vRadius - discreteRingCenters[ringIndex]
+                  );
+                  float radialEnvelope = 1.0 - smoothstep(
+                    ringWidth * 0.5,
+                    ringWidth * 0.5 + radialPixelFootprint,
+                    distanceFromCenter
+                  );
+                  float subpixelCoverage = min(
+                    1.0,
+                    ringWidth / radialPixelFootprint
+                  );
+                  float opticalAlpha = 1.0 - exp(
+                    -discreteRingOpticalDepths[ringIndex]
+                  );
+                  float presentationAlpha = 1.0 - exp(
+                    -opticalAlpha * visibilityGain
+                  );
+                  float ringAlpha =
+                    radialEnvelope * subpixelCoverage * presentationAlpha;
+                  vec3 particleColor =
+                    ${body.id === "uranus" ? "ringIndex == 11" : "false"}
+                      ? vec3(0.46, 0.20, 0.16)
+                      : ${body.id === "uranus" ? "ringIndex == 12" : "false"}
+                        ? vec3(0.16, 0.34, 0.50)
+                        : ${body.id === "uranus" ? "vec3(0.34, 0.36, 0.35)" : "vec3(0.27, 0.23, 0.19)"};
+                  accumulatedColor += particleColor * ringAlpha;
+                  accumulatedAlpha = 1.0 -
+                    (1.0 - accumulatedAlpha) * (1.0 - ringAlpha);
+                }
+                if (accumulatedAlpha < 0.0000001) {
+                  discard;
+                }
+                float particleScattering = 0.08 + 0.07 * (1.0 - incidence);
+                float physicalIllumination =
+                  (directLight * planetShadow + particleScattering) *
+                  solarFlux * displayExposure;
+                float illumination = visibilityGain > 1.0
+                  ? 0.65 + 0.35 * directLight * planetShadow
+                  : physicalIllumination;
                 gl_FragColor = vec4(
-                  ringColor * (0.72 + bands * 0.28) * illumination,
-                  baseOpacity * bands * edge
+                  accumulatedColor /
+                    max(accumulatedAlpha, 0.0000001) * illumination,
+                  accumulatedAlpha * edge
                 );
               }
             }
           `,
           side: DoubleSide,
           transparent: true,
+          depthTest: true,
           depthWrite: false,
           toneMapped: true,
         });
@@ -1706,17 +2203,181 @@ export function SolarSystemScene({
         const rings = new Mesh(ringGeometry, ringMaterial);
         rings.name =
           body.id === "saturn"
-            ? "Saturn Cassini-observed ring radial profile"
-            : `${body.name} ring-plane visualization`;
-        rings.rotation.x = Math.PI / 2;
+            ? "Saturn continuous Cassini-observed ring sheet"
+            : `${body.name} continuous physical ring sheet`;
+        rings.renderOrder = 0;
         mesh.add(rings);
-        ringVisuals.set(body.id, { mesh: rings, material: ringMaterial });
+        let surfaceShadowSunDirectionLocal: IUniform<Vector3> | undefined;
+        if (body.id === "saturn") {
+          const saturnSurfaceMaterial = surfaceMaterials.get(body.id);
+          if (
+            saturnSurfaceMaterial === undefined ||
+            observedRingTexture === undefined
+          ) {
+            throw new Error(
+              "Saturn ring shadow requires its surface and ring profile",
+            );
+          }
+          surfaceShadowSunDirectionLocal = { value: new Vector3(0, 1, 0) };
+          const shadowSunUniform = surfaceShadowSunDirectionLocal;
+          saturnSurfaceMaterial.onBeforeCompile = (shader) => {
+            shader.uniforms["ringShadowProfile"] = {
+              value: observedRingTexture,
+            };
+            shader.uniforms["ringShadowSunDirectionLocal"] = shadowSunUniform;
+            shader.vertexShader = shader.vertexShader
+              .replace(
+                "#include <common>",
+                "#include <common>\nvarying vec3 vRingShadowLocalPosition;",
+              )
+              .replace(
+                "#include <begin_vertex>",
+                "#include <begin_vertex>\nvRingShadowLocalPosition = position;",
+              );
+            shader.fragmentShader = shader.fragmentShader
+              .replace(
+                "#include <common>",
+                `#include <common>
+uniform sampler2D ringShadowProfile;
+uniform vec3 ringShadowSunDirectionLocal;
+varying vec3 vRingShadowLocalPosition;
+
+float saturnRingTransmission(vec3 surfacePosition) {
+  vec3 sunDirection = normalize(ringShadowSunDirectionLocal);
+  if (abs(sunDirection.y) < 0.00001) {
+    return 1.0;
+  }
+  float rayDistance = -surfacePosition.y / sunDirection.y;
+  if (rayDistance <= 0.0) {
+    return 1.0;
+  }
+  vec3 ringPlaneIntersection =
+    surfacePosition + sunDirection * rayDistance;
+  float ringRadius = length(ringPlaneIntersection.xz);
+  float normalizedRadius =
+    (ringRadius - ${innerRadius.toFixed(9)}) /
+    ${String(outerRadius - innerRadius)};
+  if (normalizedRadius <= 0.0 || normalizedRadius >= 1.0) {
+    return 1.0;
+  }
+  vec3 observed = texture2D(
+    ringShadowProfile,
+    vec2(clamp(normalizedRadius, 0.0, 1.0), 0.5)
+  ).rgb;
+  float luminance = dot(observed, vec3(0.2126, 0.7152, 0.0722));
+  float opticalDensity = clamp(
+    pow(max(luminance, 0.0), 0.42) * 1.05,
+    0.0,
+    1.0
+  );
+  float slantPath = 1.0 / max(abs(sunDirection.y), 0.08);
+  float directTransmission = exp(
+    -opticalDensity * min(slantPath, 8.0) * 0.82
+  );
+  return 0.38 + 0.62 * directTransmission;
+}`,
+              )
+              .replace(
+                "#include <opaque_fragment>",
+                `outgoingLight *= saturnRingTransmission(
+  vRingShadowLocalPosition
+);
+#include <opaque_fragment>`,
+              );
+          };
+          saturnSurfaceMaterial.customProgramCacheKey = () =>
+            "saturn-cassini-ring-shadow-v3";
+          saturnSurfaceMaterial.needsUpdate = true;
+        }
+        ringVisuals.set(body.id, {
+          referenceMesh: rings,
+          materials: [ringMaterial],
+          ...(surfaceShadowSunDirectionLocal === undefined
+            ? {}
+            : { surfaceShadowSunDirectionLocal }),
+        });
         if (body.id === "saturn") {
           container.dataset["saturnRingLighting"] =
-            "solar-incidence-planet-shadow-and-unresolved-particle-scattering";
+            "cassini-profile-solar-incidence-mutual-shadowing-and-depth-occlusion";
+          container.dataset["saturnRingExposure"] = "live-camera-exposure";
+          container.dataset["saturnRingOcclusion"] =
+            "continuous-sheet-against-opaque-globe-logarithmic-depth-buffer";
+        } else if (
+          discreteRingSystem !== undefined &&
+          discreteRingExtent !== undefined
+        ) {
+          container.dataset[`${body.id}RingModel`] =
+            body.id === "uranus"
+              ? "pds-13-ring-radii-widths-optical-depths"
+              : "pds-radii-widths-optical-depths";
+          container.dataset[`${body.id}RingCount`] = String(
+            discreteRingSystem.rings.length,
+          );
+          container.dataset[`${body.id}RingInnerRadiusKm`] = String(
+            discreteRingExtent.innerRadiusKm,
+          );
+          container.dataset[`${body.id}RingOuterRadiusKm`] = String(
+            discreteRingExtent.outerRadiusKm,
+          );
         }
       }
     }
+
+    const apolloSiteGroups = new Map<string, Group>();
+    const moonSurfaceMesh = bodyMeshes.get("moon");
+    if (moonSurfaceMesh === undefined) {
+      throw new Error("Apollo surface assets require the Moon mesh");
+    }
+    for (const site of apolloLandingSites) {
+      const siteGroup = createApolloSurfaceSiteModel(site);
+      const [localX, localY, localZ] = moonFixedSurfaceUnitVector(
+        site.latitudeDeg,
+        site.longitudeDeg,
+      );
+      const surfaceNormal = new Vector3(localX, localY, localZ).normalize();
+      const longitudeRad = (site.longitudeDeg * Math.PI) / 180;
+      const latitudeRad = (site.latitudeDeg * Math.PI) / 180;
+      const east = new Vector3(
+        -Math.sin(longitudeRad),
+        0,
+        -Math.cos(longitudeRad),
+      ).normalize();
+      const north = new Vector3(
+        -Math.sin(latitudeRad) * Math.cos(longitudeRad),
+        Math.cos(latitudeRad),
+        Math.sin(latitudeRad) * Math.sin(longitudeRad),
+      ).normalize();
+      siteGroup.position.copy(
+        surfaceNormal.clone().multiplyScalar(1 + 0.04 / MOON_SURFACE_RADIUS_M),
+      );
+      siteGroup.quaternion.setFromRotationMatrix(
+        new Matrix4().makeBasis(east, surfaceNormal, north.multiplyScalar(-1)),
+      );
+      siteGroup.visible = false;
+      moonSurfaceMesh.add(siteGroup);
+      apolloSiteGroups.set(site.id, siteGroup);
+      siteGroup.traverse((object) => {
+        if (object.type === "Mesh") {
+          const modelMesh = object as Mesh;
+          additionalSelectableMeshes.push(modelMesh);
+          geometries.push(modelMesh.geometry);
+          const objectMaterials = Array.isArray(modelMesh.material)
+            ? modelMesh.material
+            : [modelMesh.material];
+          materials.push(...objectMaterials);
+        } else if (object.type === "Line" || object.type === "LineSegments") {
+          const line = object as Line;
+          geometries.push(line.geometry);
+          const lineMaterials = Array.isArray(line.material)
+            ? line.material
+            : [line.material];
+          materials.push(...lineMaterials);
+        }
+      });
+    }
+    container.dataset["apolloSurfaceAssets"] =
+      "physical-lm-flags-alsep-retroreflectors-lrv";
+    container.dataset["apolloTraverseAuthority"] = "NASA-LROC-PDS";
 
     const spacecraftGroups = new Map<string, Group>();
     const spacecraftSelectableMeshes: Mesh[] = [];
@@ -1814,10 +2475,33 @@ export function SolarSystemScene({
     void Promise.all(modelLoadPromises)
       .then(() => {
         container.dataset["spacecraftModelsLoaded"] = String(
-          spacecraftAssets.length,
+          spacecraftAssets.length + 1,
         );
       })
       .catch(() => undefined);
+    const roadsterGroup = createRoadsterAndStarmanModel();
+    roadsterGroup.visible = false;
+    spacecraftGroups.set(ROADSTER_BODY_ID, roadsterGroup);
+    scene.add(roadsterGroup);
+    const roadsterMaterials = new Set<Material>();
+    roadsterGroup.traverse((object) => {
+      if (object.type !== "Mesh") {
+        return;
+      }
+      const roadsterMesh = object as Mesh;
+      spacecraftSelectableMeshes.push(roadsterMesh);
+      geometries.push(roadsterMesh.geometry);
+      const meshMaterials = Array.isArray(roadsterMesh.material)
+        ? roadsterMesh.material
+        : [roadsterMesh.material];
+      for (const material of meshMaterials) {
+        roadsterMaterials.add(material);
+      }
+    });
+    materials.push(...roadsterMaterials);
+    container.dataset["roadsterModelLoaded"] = "true";
+    container.dataset["roadsterModelProvenance"] =
+      "original-physical-scale-reconstruction";
     const issGroup = spacecraftGroups.get(ISS_BODY_ID);
     if (issGroup === undefined) {
       throw new Error("ISS official model group is unavailable");
@@ -1930,6 +2614,9 @@ export function SolarSystemScene({
       if (bodyId === ISS_BODY_ID) {
         return "International Space Station · spacecraft orbiting Earth";
       }
+      if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
+        return "Jovian Monolith · fictional 2001 / 2010 object near Jupiter-Io L1";
+      }
       const voyager = isVoyagerBodyId(bodyId)
         ? voyagerById.get(bodyId)
         : undefined;
@@ -1941,6 +2628,16 @@ export function SolarSystemScene({
       );
       if (operational !== undefined) {
         return `${operational.name} · spacecraft`;
+      }
+      const fictionalOrbiter = isFictionalOrbiterId(bodyId)
+        ? fictionalOrbiterById.get(bodyId)
+        : undefined;
+      if (fictionalOrbiter !== undefined) {
+        return `${fictionalOrbiter.name} · fictional massless visualization`;
+      }
+      const apolloSite = apolloLandingSites.find((site) => site.id === bodyId);
+      if (apolloSite !== undefined) {
+        return `${apolloSite.mission} · ${apolloSite.siteName} · NASA/LROC surface artefacts`;
       }
       throw new Error(`Hover target ${bodyId} has no display definition`);
     };
@@ -1960,7 +2657,11 @@ export function SolarSystemScene({
       raycaster.setFromCamera(pointer, camera);
       const intersection = raycaster
         .intersectObjects(
-          [...bodyMeshes.values(), ...spacecraftSelectableMeshes],
+          [
+            ...bodyMeshes.values(),
+            ...spacecraftSelectableMeshes,
+            ...additionalSelectableMeshes,
+          ],
           true,
         )
         .find((candidate) => candidate.object.visible);
@@ -1969,9 +2670,72 @@ export function SolarSystemScene({
         : bodyIdFromIntersection(intersection);
     };
 
+    const starIndexAtPointer = (
+      event: MouseEvent | PointerEvent,
+    ): number | undefined => {
+      if (!stars.visible) {
+        return undefined;
+      }
+      updatePointer(event);
+      raycaster.setFromCamera(pointer, camera);
+      const worldHeight =
+        (2 * STAR_SPHERE_RADIUS_AU * Math.tan((camera.fov * Math.PI) / 360)) /
+        camera.zoom;
+      raycaster.params.Points = {
+        threshold:
+          (worldHeight / Math.max(1, renderer.domElement.clientHeight)) *
+          STAR_TOOLTIP_PICK_RADIUS_CSS_PIXELS,
+      };
+      return raycaster.intersectObject(stars, false)[0]?.index;
+    };
+
+    let hoveredStarIndex: number | undefined;
+    let starTooltipTimer: number | undefined;
+    let latestTooltipClientX = 0;
+    let latestTooltipClientY = 0;
+
+    const positionHoverTooltip = (clientX: number, clientY: number): void => {
+      const bounds = renderer.domElement.getBoundingClientRect();
+      const margin = 10;
+      const pointerGap = 14;
+      const pointerX = clientX - bounds.left;
+      const pointerY = clientY - bounds.top;
+      const tooltipWidth = bodyHoverTooltip.offsetWidth;
+      const tooltipHeight = bodyHoverTooltip.offsetHeight;
+      const fitsRight =
+        pointerX + pointerGap + tooltipWidth <= container.clientWidth - margin;
+      const fitsAbove = pointerY - pointerGap - tooltipHeight >= margin;
+      const preferredLeft = fitsRight
+        ? pointerX + pointerGap
+        : pointerX - pointerGap - tooltipWidth;
+      const preferredTop = fitsAbove
+        ? pointerY - pointerGap - tooltipHeight
+        : pointerY + pointerGap;
+      const left = Math.min(
+        container.clientWidth - tooltipWidth - margin,
+        Math.max(margin, preferredLeft),
+      );
+      const top = Math.min(
+        container.clientHeight - tooltipHeight - margin,
+        Math.max(margin, preferredTop),
+      );
+      bodyHoverTooltip.dataset["placement"] =
+        `${fitsAbove ? "above" : "below"}-${fitsRight ? "right" : "left"}`;
+      bodyHoverTooltip.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
+    };
+
+    const cancelStarTooltip = (): void => {
+      if (starTooltipTimer !== undefined) {
+        window.clearTimeout(starTooltipTimer);
+        starTooltipTimer = undefined;
+      }
+      hoveredStarIndex = undefined;
+    };
+
     const hideBodyHoverTooltip = (): void => {
       bodyHoverTooltip.hidden = true;
       delete bodyHoverTooltip.dataset["bodyId"];
+      delete bodyHoverTooltip.dataset["starHipId"];
     };
 
     const updateBodyHoverTooltip = (event: PointerEvent): void => {
@@ -1980,23 +2744,49 @@ export function SolarSystemScene({
         return;
       }
       const bodyId = bodyIdAtPointer(event);
-      if (bodyId === undefined) {
+      if (bodyId !== undefined) {
+        cancelStarTooltip();
+        bodyHoverTooltip.textContent = bodyTooltipText(bodyId);
+        bodyHoverTooltip.dataset["bodyId"] = bodyId;
+        delete bodyHoverTooltip.dataset["starHipId"];
+        bodyHoverTooltip.hidden = false;
+        positionHoverTooltip(event.clientX, event.clientY);
+        return;
+      }
+      const starIndex = starIndexAtPointer(event);
+      if (starIndex === undefined) {
+        cancelStarTooltip();
         hideBodyHoverTooltip();
         return;
       }
-      bodyHoverTooltip.textContent = bodyTooltipText(bodyId);
-      bodyHoverTooltip.dataset["bodyId"] = bodyId;
-      bodyHoverTooltip.hidden = false;
-      const bounds = renderer.domElement.getBoundingClientRect();
-      const left = Math.min(
-        container.clientWidth - bodyHoverTooltip.offsetWidth - 10,
-        Math.max(10, event.clientX - bounds.left + 14),
-      );
-      const top = Math.min(
-        container.clientHeight - bodyHoverTooltip.offsetHeight - 10,
-        Math.max(10, event.clientY - bounds.top + 14),
-      );
-      bodyHoverTooltip.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
+      latestTooltipClientX = event.clientX;
+      latestTooltipClientY = event.clientY;
+      const star = hipparcosStarSnapshot.stars[starIndex];
+      if (star === undefined) {
+        throw new Error(
+          `Hipparcos hover index ${String(starIndex)} is invalid`,
+        );
+      }
+      if (hoveredStarIndex === starIndex) {
+        if (!bodyHoverTooltip.hidden) {
+          positionHoverTooltip(event.clientX, event.clientY);
+        }
+        return;
+      }
+      cancelStarTooltip();
+      hideBodyHoverTooltip();
+      hoveredStarIndex = starIndex;
+      starTooltipTimer = window.setTimeout(() => {
+        starTooltipTimer = undefined;
+        if (!active || hoveredStarIndex !== starIndex || !stars.visible) {
+          return;
+        }
+        bodyHoverTooltip.textContent = starTooltipText(star);
+        bodyHoverTooltip.dataset["starHipId"] = String(star.hipId);
+        delete bodyHoverTooltip.dataset["bodyId"];
+        bodyHoverTooltip.hidden = false;
+        positionHoverTooltip(latestTooltipClientX, latestTooltipClientY);
+      }, STAR_TOOLTIP_DELAY_MS);
     };
 
     const handleSurfacePointerDown = (event: PointerEvent): void => {
@@ -2015,6 +2805,7 @@ export function SolarSystemScene({
       surfacePointerY = event.clientY;
       renderer.domElement.setPointerCapture(event.pointerId);
       renderer.domElement.dataset["surfaceLookDragging"] = "true";
+      cancelStarTooltip();
       hideBodyHoverTooltip();
       event.preventDefault();
     };
@@ -2028,6 +2819,7 @@ export function SolarSystemScene({
             event.clientY - selectionPointerStartY,
           ) > 5;
         if (selectionPointerMoved) {
+          cancelStarTooltip();
           hideBodyHoverTooltip();
           return;
         }
@@ -2080,6 +2872,8 @@ export function SolarSystemScene({
     };
 
     const handlePointerCancel = (event: PointerEvent): void => {
+      cancelStarTooltip();
+      hideBodyHoverTooltip();
       if (selectionPointerId === event.pointerId) {
         selectionPointerId = undefined;
         selectionPointerMoved = false;
@@ -2104,6 +2898,10 @@ export function SolarSystemScene({
         onFocusBody(bodyId);
       }
     };
+    const handlePointerLeave = (): void => {
+      cancelStarTooltip();
+      hideBodyHoverTooltip();
+    };
     renderer.domElement.addEventListener(
       "pointerdown",
       handleSurfacePointerDown,
@@ -2114,7 +2912,7 @@ export function SolarSystemScene({
     );
     renderer.domElement.addEventListener("pointerup", handleSurfacePointerUp);
     renderer.domElement.addEventListener("pointercancel", handlePointerCancel);
-    renderer.domElement.addEventListener("pointerleave", hideBodyHoverTooltip);
+    renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
     const knownMoonPointMaterial = new PointsMaterial({
@@ -2403,6 +3201,7 @@ export function SolarSystemScene({
     let lastCameraTransitionSequence = cameraTransitionSequenceRef.current;
     let activeCameraTransition:
       | {
+          style: "direct" | "authored";
           sequence: number;
           startedAtMs: number;
           durationMs: number;
@@ -2431,6 +3230,8 @@ export function SolarSystemScene({
           endFar: number;
           endMinimumDistance: number;
           endMaximumDistance: number;
+          lastSpeedSampleAtMs: number;
+          smoothedSpeedMps: number;
         }
       | undefined;
     let lastCameraZoom = Number.NaN;
@@ -2765,6 +3566,54 @@ export function SolarSystemScene({
         .normalize();
     };
 
+    const apolloInspectionPose = (): Readonly<{
+      siteId: string;
+      position: Vector3;
+      target: Vector3;
+      up: Vector3;
+    }> | null => {
+      const siteId = apolloInspectionSiteIdRef.current;
+      if (siteId === null || focusBodyIdRef.current !== "moon") {
+        return null;
+      }
+      const siteGroup = apolloSiteGroups.get(siteId);
+      if (siteGroup === undefined) {
+        throw new Error(`Apollo inspection site ${siteId} is unavailable`);
+      }
+      siteGroup.updateWorldMatrix(true, false);
+      const origin = siteGroup.localToWorld(new Vector3(0, 0, 0));
+      const target = siteGroup.localToWorld(new Vector3(0, 1.1, 0));
+      const position = siteGroup.localToWorld(new Vector3(24, 11, 22));
+      const up = siteGroup
+        .localToWorld(new Vector3(0, 1, 0))
+        .sub(origin)
+        .normalize();
+      return { siteId, position, target, up };
+    };
+
+    const applyApolloInspectionCamera = (): boolean => {
+      const pose = apolloInspectionPose();
+      if (pose === null) {
+        delete container.dataset["apolloInspectionSite"];
+        return false;
+      }
+      camera.near = 0.01 / ASTRONOMICAL_UNIT_M;
+      camera.far = DEFAULT_CAMERA_FAR_AU;
+      camera.updateProjectionMatrix();
+      camera.position.copy(pose.position);
+      camera.up.copy(pose.up);
+      controls.target.copy(pose.target);
+      controls.minDistance = 0.25 / ASTRONOMICAL_UNIT_M;
+      controls.maxDistance = 500 / ASTRONOMICAL_UNIT_M;
+      camera.lookAt(pose.target);
+      viewZoomReferenceDistanceAu = camera.position.distanceTo(pose.target);
+      container.dataset["focusDistanceAu"] =
+        viewZoomReferenceDistanceAu.toFixed(12);
+      container.dataset["apolloInspectionSite"] = pose.siteId;
+      container.dataset["cameraOrientation"] = "apollo-site-inspection";
+      return true;
+    };
+
     const resetCamera = (
       requestedFocusBodyId: string | null,
       current: SimulationState | undefined,
@@ -2784,6 +3633,9 @@ export function SolarSystemScene({
         delete container.dataset["cameraObserverAltitudeKm"];
         return;
       }
+      if (applyApolloInspectionCamera()) {
+        return;
+      }
       const focusDefinition = majorBodySnapshot.bodies.find(
         (body) => body.id === requestedFocusBodyId,
       );
@@ -2792,15 +3644,25 @@ export function SolarSystemScene({
       const isVoyagerFocus = isVoyagerBodyId(requestedFocusBodyId);
       const isOperationalSpacecraftFocus =
         isOperationalSpacecraftBodyId(requestedFocusBodyId);
+      const isJovianMonolithFocus =
+        requestedFocusBodyId === JOVIAN_MONOLITH_BODY_ID;
+      const isFictionalOrbiterFocus =
+        isFictionalOrbiterId(requestedFocusBodyId);
       const isSpacecraftFocus =
-        isIssFocus || isVoyagerFocus || isOperationalSpacecraftFocus;
+        isIssFocus ||
+        isVoyagerFocus ||
+        isOperationalSpacecraftFocus ||
+        isJovianMonolithFocus ||
+        isFictionalOrbiterFocus;
       const focusState = bodyStateById(current, requestedFocusBodyId);
       if (
         (focusDefinition === undefined &&
           knownFocusDefinition === undefined &&
           !isIssFocus &&
           !isVoyagerFocus &&
-          !isOperationalSpacecraftFocus) ||
+          !isOperationalSpacecraftFocus &&
+          !isJovianMonolithFocus &&
+          !isFictionalOrbiterFocus) ||
         focusState === undefined
       ) {
         throw new Error(`Focus body ${requestedFocusBodyId} is unavailable`);
@@ -2819,7 +3681,7 @@ export function SolarSystemScene({
       camera.near = isSpacecraftFocus
         ? 0.05 / ASTRONOMICAL_UNIT_M
         : DEFAULT_CAMERA_NEAR_AU;
-      camera.far = isSpacecraftFocus ? 500 : DEFAULT_CAMERA_FAR_AU;
+      camera.far = DEFAULT_CAMERA_FAR_AU;
       camera.updateProjectionMatrix();
       if (targetState !== undefined && requestedTargetBodyId !== undefined) {
         const targetPosition = scenePosition(targetState.positionM);
@@ -2838,7 +3700,7 @@ export function SolarSystemScene({
         camera.up.copy(ECLIPTIC_NORTH);
         controls.target.copy(targetPosition);
         controls.minDistance = camera.near * 2;
-        controls.maxDistance = Math.max(1, observerDistance * 100);
+        controls.maxDistance = DEFAULT_CAMERA_FAR_AU * 0.9;
         viewZoomReferenceDistanceAu = observerDistance;
         camera.lookAt(targetPosition);
         container.dataset["cameraObserverBody"] = requestedFocusBodyId;
@@ -2860,6 +3722,10 @@ export function SolarSystemScene({
               : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
       if (!Number.isFinite(focusDistance) || focusDistance <= 0) {
         throw new Error("Camera focus distance must be positive and finite");
+      }
+      if (!isSpacecraftFocus) {
+        camera.near = focusNearPlaneAu(focusDistance, DEFAULT_CAMERA_NEAR_AU);
+        camera.updateProjectionMatrix();
       }
       const sunState = bodyStateById(current, "sun");
       const cameraDirection =
@@ -2905,10 +3771,7 @@ export function SolarSystemScene({
             : focusDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M / 2,
         camera.near * 2,
       );
-      controls.maxDistance =
-        requestedFocusBodyId === "sun"
-          ? 900_000
-          : Math.max(1, focusDistance * 100);
+      controls.maxDistance = DEFAULT_CAMERA_FAR_AU * 0.9;
       viewZoomReferenceDistanceAu = camera.position.distanceTo(controls.target);
       container.dataset["focusDistanceAu"] = focusDistance.toFixed(
         isSpacecraftFocus ? 12 : 8,
@@ -2920,6 +3783,10 @@ export function SolarSystemScene({
       requestedFocusBodyId: string | null,
       current: SimulationState | undefined,
     ): void => {
+      if (applyApolloInspectionCamera()) {
+        controls.update();
+        return;
+      }
       const requestedTargetBodyId = cameraTargetBodyIdRef.current;
       if (
         requestedTargetBodyId !== undefined &&
@@ -2983,12 +3850,26 @@ export function SolarSystemScene({
         current === undefined || parentId === undefined
           ? undefined
           : bodyStateById(current, parentId);
+      const sunState =
+        current === undefined ? undefined : bodyStateById(current, "sun");
       let direction: Vector3;
       if (preset === "overhead") {
         direction = ECLIPTIC_NORTH.clone();
         camera.up.copy(ECLIPTIC_FORWARD);
       } else if (preset === "edge-on") {
         direction = ECLIPTIC_FORWARD.clone();
+        camera.up.copy(ECLIPTIC_NORTH);
+      } else if (
+        preset === "sun-facing" &&
+        focusState !== undefined &&
+        sunState !== undefined
+      ) {
+        direction = parentFacingCameraDirection(
+          requestedFocusBodyId ?? "sun",
+          target,
+          scenePosition(sunState.positionM),
+          current?.timeSeconds ?? 0,
+        );
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (preset === "parent-facing" && focusState !== undefined) {
         direction = parentFacingCameraDirection(
@@ -3063,7 +3944,8 @@ export function SolarSystemScene({
       container.dataset["cameraTracking"] =
         transition.destinationTargetBodyId !== undefined
           ? "observer-and-target"
-          : settledPreset === "parent-facing" ||
+          : settledPreset === "sun-facing" ||
+              settledPreset === "parent-facing" ||
               settledPreset === "velocity" ||
               settledPreset === "orbital-plane"
             ? "continuous"
@@ -3071,6 +3953,7 @@ export function SolarSystemScene({
       activeCameraTransition = undefined;
       cameraJourney.hidden = true;
       container.dataset["cameraTransitionPhase"] = "settled";
+      container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionSequence"] = String(
         transition.sequence,
       );
@@ -3085,6 +3968,7 @@ export function SolarSystemScene({
       controls.enabled = true;
       cameraJourney.hidden = true;
       container.dataset["cameraTransitionPhase"] = "settled";
+      container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterrupted"] = String(sequence);
     };
 
@@ -3113,7 +3997,7 @@ export function SolarSystemScene({
         requestedPreset === "custom"
           ? requestedFocusBodyId === null
             ? "perspective"
-            : "parent-facing"
+            : "sun-facing"
           : requestedPreset,
         requestedFocusBodyId,
         current,
@@ -3193,9 +4077,11 @@ export function SolarSystemScene({
           (bodyId === ISS_BODY_ID ? "the ISS" : bodyId)
         );
       };
+      const transitionStartedAtMs = performance.now();
       activeCameraTransition = {
+        style: cameraTransitionAutoFrameRef.current ? "direct" : "authored",
         sequence,
-        startedAtMs: performance.now(),
+        startedAtMs: transitionStartedAtMs,
         durationMs,
         startPosition,
         startTarget,
@@ -3232,6 +4118,8 @@ export function SolarSystemScene({
         endFar: camera.far,
         endMinimumDistance: controls.minDistance,
         endMaximumDistance: controls.maxDistance,
+        lastSpeedSampleAtMs: transitionStartedAtMs,
+        smoothedSpeedMps: 0,
       };
       lastCameraTransitionSequence = sequence;
       camera.position.copy(startPosition);
@@ -3243,16 +4131,30 @@ export function SolarSystemScene({
       controls.minDistance = 0;
       controls.maxDistance = Number.POSITIVE_INFINITY;
       controls.enabled = true;
-      container.dataset["cameraTransitionPhase"] = "outbound";
+      container.dataset["cameraTransitionPhase"] =
+        activeCameraTransition.style === "direct" ? "orienting" : "outbound";
       container.dataset["cameraTransitionSequence"] = String(sequence);
-      container.dataset["cameraTransitionOverviewAnchor"] = "moving-route";
+      container.dataset["cameraTransitionOverviewAnchor"] =
+        activeCameraTransition.style === "direct"
+          ? "not-used-direct-flight"
+          : "moving-route";
       container.dataset["cameraTransitionDestinationAnchor"] =
         destinationOverviewAnchorBodyId ?? "camera-target";
       container.dataset["cameraTransitionDurationMs"] = String(durationMs);
+      container.dataset["cameraTransitionSpeedDefinition"] =
+        "camera-displacement-per-real-second";
+      container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterpolation"] =
-        "depart-coast-arrive";
+        activeCameraTransition.style === "direct"
+          ? "orient-then-logarithmic-approach"
+          : "depart-coast-arrive";
       cameraJourney.hidden = false;
-      cameraJourney.textContent = `Departing ${activeCameraTransition.departureName}`;
+      cameraJourney.title =
+        "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
+      cameraJourney.textContent =
+        activeCameraTransition.style === "direct"
+          ? `Turning toward ${activeCameraTransition.destinationName}`
+          : `Departing ${activeCameraTransition.departureName}`;
       return true;
     };
 
@@ -3264,10 +4166,59 @@ export function SolarSystemScene({
       if (transition === undefined) {
         return;
       }
+      const previousCameraPosition = camera.position.clone();
+      const updateJourneyStatus = (
+        status: string,
+        displaySpeed: boolean,
+      ): void => {
+        const sampleIntervalSeconds = Math.max(
+          (nowMs - transition.lastSpeedSampleAtMs) / 1_000,
+          1 / 240,
+        );
+        const instantaneousSpeedMps =
+          (camera.position.distanceTo(previousCameraPosition) *
+            ASTRONOMICAL_UNIT_M) /
+          sampleIntervalSeconds;
+        if (!Number.isFinite(instantaneousSpeedMps)) {
+          throw new Error("Camera transition speed is not finite");
+        }
+        if (displaySpeed) {
+          const smoothingFactor = 1 - Math.exp(-sampleIntervalSeconds / 0.18);
+          transition.smoothedSpeedMps +=
+            (instantaneousSpeedMps - transition.smoothedSpeedMps) *
+            smoothingFactor;
+        } else {
+          transition.smoothedSpeedMps = 0;
+        }
+        transition.lastSpeedSampleAtMs = nowMs;
+        container.dataset["cameraTransitionSpeedMps"] =
+          transition.smoothedSpeedMps.toFixed(3);
+        cameraJourney.textContent = displaySpeed
+          ? `${status} · Viewpoint speed ${formatViewpointSpeed(
+              transition.smoothedSpeedMps,
+            )}`
+          : status;
+      };
       const elapsedMs = Math.max(0, nowMs - transition.startedAtMs);
-      const sample = sampleCameraTransition(elapsedMs, transition.durationMs);
       container.dataset["cameraTransitionElapsedMs"] = elapsedMs.toFixed(1);
-      if (current !== undefined && transition.destinationFocusBodyId !== null) {
+      const inspectionPose = apolloInspectionPose();
+      if (
+        inspectionPose !== null &&
+        transition.destinationFocusBodyId === "moon"
+      ) {
+        transition.endPosition.copy(inspectionPose.position);
+        transition.endTarget.copy(inspectionPose.target);
+        transition.endUp.copy(inspectionPose.up);
+        transition.destinationAnchor.copy(inspectionPose.target);
+        transition.overviewEndTarget.copy(inspectionPose.target);
+        transition.overviewEndPosition.copy(inspectionPose.position);
+        transition.endOffset.copy(
+          inspectionPose.position.clone().sub(inspectionPose.target),
+        );
+      } else if (
+        current !== undefined &&
+        transition.destinationFocusBodyId !== null
+      ) {
         const focusState = bodyStateById(
           current,
           transition.destinationFocusBodyId,
@@ -3328,11 +4279,67 @@ export function SolarSystemScene({
             );
         }
       }
+      if (transition.style === "direct") {
+        const directSample = sampleDirectCameraTransition(
+          elapsedMs,
+          transition.durationMs,
+        );
+        container.dataset["cameraTransitionPhase"] = directSample.phase;
+        if (directSample.phase === "settled") {
+          completeCameraTransition();
+          return;
+        }
+        if (directSample.phase === "orienting") {
+          camera.position.copy(transition.startPosition);
+          controls.target.lerpVectors(
+            transition.startTarget,
+            transition.endTarget,
+            directSample.segmentProgress,
+          );
+          camera.up
+            .lerpVectors(
+              transition.startUp,
+              ECLIPTIC_NORTH,
+              directSample.segmentProgress,
+            )
+            .normalize();
+          updateJourneyStatus(
+            `Turning toward ${transition.destinationName}`,
+            false,
+          );
+        } else {
+          interpolateCameraPositionAroundAnchor(
+            camera.position,
+            transition.startPosition,
+            transition.endPosition,
+            transition.endTarget,
+            directSample.segmentProgress,
+          );
+          controls.target.copy(transition.endTarget);
+          camera.up
+            .lerpVectors(
+              ECLIPTIC_NORTH,
+              transition.endUp,
+              directSample.segmentProgress,
+            )
+            .normalize();
+          updateJourneyStatus(
+            directSample.phase === "arriving"
+              ? `Approaching ${transition.destinationName}`
+              : `Travelling to ${transition.destinationName}`,
+            true,
+          );
+        }
+        camera.lookAt(controls.target);
+        return;
+      }
+      const sample = sampleCameraTransition(elapsedMs, transition.durationMs);
       container.dataset["cameraTransitionPhase"] = sample.phase;
       if (sample.phase === "settled") {
         completeCameraTransition();
         return;
       }
+      let journeyStatus = `Departing ${transition.departureName}`;
       if (sample.phase === "outbound") {
         interpolateCameraPositionAroundAnchor(
           camera.position,
@@ -3368,7 +4375,7 @@ export function SolarSystemScene({
           transition.overviewStartPosition
             .distanceTo(transition.overviewStartTarget)
             .toFixed(6);
-        cameraJourney.textContent = `Crossing ${formatTacticalDistance(
+        journeyStatus = `Crossing ${formatTacticalDistance(
           transition.journeyDistanceAu,
         )} toward ${transition.destinationName}`;
       } else {
@@ -3387,8 +4394,9 @@ export function SolarSystemScene({
         camera.up
           .lerpVectors(ECLIPTIC_NORTH, transition.endUp, sample.segmentProgress)
           .normalize();
-        cameraJourney.textContent = `Arriving at ${transition.destinationName}`;
+        journeyStatus = `Arriving at ${transition.destinationName}`;
       }
+      updateJourneyStatus(journeyStatus, true);
       camera.lookAt(controls.target);
     };
 
@@ -3412,7 +4420,7 @@ export function SolarSystemScene({
           requestedPreset === "custom"
             ? requestedFocusBodyId === null
               ? "perspective"
-              : "parent-facing"
+              : "sun-facing"
             : requestedPreset,
           requestedFocusBodyId,
           current,
@@ -3464,6 +4472,9 @@ export function SolarSystemScene({
       const currentVisibility = objectVisibilityRef.current;
       stars.visible = currentVisibility.stars;
       container.dataset["starsVisible"] = String(stars.visible);
+      zodiacGroup.visible = showZodiacRef.current;
+      zodiacLegend.hidden = !zodiacGroup.visible;
+      container.dataset["zodiacVisible"] = String(zodiacGroup.visible);
       const smallBodiesVisible =
         viewModeRef.current === "orrery" &&
         (currentVisibility.asteroids || currentVisibility.comets);
@@ -3559,6 +4570,15 @@ export function SolarSystemScene({
         activeVisualProfile.exposureHalfLifeSeconds,
       );
       renderer.toneMappingExposure = currentExposure;
+      for (const ringVisual of ringVisuals.values()) {
+        for (const material of ringVisual.materials) {
+          setRequiredNumberUniform(
+            material,
+            "displayExposure",
+            currentExposure,
+          );
+        }
+      }
       ambientLight.intensity = 0.045 / currentExposure;
       container.dataset["cameraExposure"] = currentExposure.toFixed(5);
       container.dataset["cameraExposureTarget"] = targetExposure.toFixed(5);
@@ -3619,6 +4639,13 @@ export function SolarSystemScene({
             scenePosition(body.positionM),
           ]),
         );
+        for (const orbiter of FICTIONAL_ORBITERS) {
+          const orbiterState = fictionalOrbiterStateById(current, orbiter.id);
+          sceneBodyPositions.set(
+            orbiter.id,
+            scenePosition(orbiterState.positionM),
+          );
+        }
         const gravityMode = gravityWellModeRef.current;
         const gravityFocusId = focusBodyIdRef.current;
         const gravityCenterState = bodyStateById(
@@ -3769,15 +4796,31 @@ export function SolarSystemScene({
               bodyVisibilityRef.current,
               nearestBodyDistanceAu,
             );
-            if (body.id === "saturn") {
+            if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
               const meanRadiusKm = body.meanRadiusM / 1_000;
+              const equatorialRadiusKm =
+                body.id === "saturn"
+                  ? SATURN_EQUATORIAL_RADIUS_KM
+                  : body.id === "jupiter"
+                    ? JUPITER_EQUATORIAL_RADIUS_KM
+                    : body.id === "uranus"
+                      ? URANUS_EQUATORIAL_RADIUS_KM
+                      : NEPTUNE_EQUATORIAL_RADIUS_KM;
+              const polarRadiusKm =
+                body.id === "saturn"
+                  ? SATURN_POLAR_RADIUS_KM
+                  : body.id === "jupiter"
+                    ? JUPITER_POLAR_RADIUS_KM
+                    : body.id === "uranus"
+                      ? URANUS_POLAR_RADIUS_KM
+                      : NEPTUNE_POLAR_RADIUS_KM;
               mesh.scale.set(
-                (radius * SATURN_EQUATORIAL_RADIUS_KM) / meanRadiusKm,
-                (radius * SATURN_POLAR_RADIUS_KM) / meanRadiusKm,
-                (radius * SATURN_EQUATORIAL_RADIUS_KM) / meanRadiusKm,
+                (radius * equatorialRadiusKm) / meanRadiusKm,
+                (radius * polarRadiusKm) / meanRadiusKm,
+                (radius * equatorialRadiusKm) / meanRadiusKm,
               );
-              container.dataset["saturnEquatorialToPolarRatio"] = (
-                SATURN_EQUATORIAL_RADIUS_KM / SATURN_POLAR_RADIUS_KM
+              container.dataset[`${body.id}EquatorialToPolarRatio`] = (
+                equatorialRadiusKm / polarRadiusKm
               ).toFixed(6);
             } else {
               mesh.scale.setScalar(radius);
@@ -3800,6 +4843,76 @@ export function SolarSystemScene({
               ).toFixed(6);
             }
           }
+        }
+
+        const monolithState = jovianMonolithState(current);
+        const jupiterStateForMonolith = bodyStateById(current, "jupiter");
+        const ioStateForMonolith = bodyStateById(current, "io");
+        if (
+          jupiterStateForMonolith === undefined ||
+          ioStateForMonolith === undefined
+        ) {
+          throw new Error("Jovian monolith requires Jupiter and Io state");
+        }
+        const jupiterPositionForMonolith = scenePosition(
+          jupiterStateForMonolith.positionM,
+        );
+        const ioPositionForMonolith = scenePosition(
+          ioStateForMonolith.positionM,
+        );
+        const radialDirection = ioPositionForMonolith
+          .clone()
+          .sub(jupiterPositionForMonolith)
+          .normalize();
+        const relativeVelocityDirection = icrfToScene({
+          x:
+            ioStateForMonolith.velocityMps[0] -
+            jupiterStateForMonolith.velocityMps[0],
+          y:
+            ioStateForMonolith.velocityMps[1] -
+            jupiterStateForMonolith.velocityMps[1],
+          z:
+            ioStateForMonolith.velocityMps[2] -
+            jupiterStateForMonolith.velocityMps[2],
+        }).normalize();
+        const longAxis = radialDirection
+          .clone()
+          .cross(relativeVelocityDirection)
+          .normalize();
+        if (longAxis.lengthSq() < 0.5) {
+          throw new Error("Jupiter-Io orbital plane is unavailable");
+        }
+        const thinAxis = longAxis.clone().cross(radialDirection).normalize();
+        monolithMesh.position.copy(scenePosition(monolithState.positionM));
+        monolithMesh.quaternion.setFromRotationMatrix(
+          new Matrix4().makeBasis(thinAxis, longAxis, radialDirection),
+        );
+        container.dataset["jovianMonolithDistanceFromIoKm"] = (
+          Math.hypot(
+            monolithState.positionM[0] - ioStateForMonolith.positionM[0],
+            monolithState.positionM[1] - ioStateForMonolith.positionM[1],
+            monolithState.positionM[2] - ioStateForMonolith.positionM[2],
+          ) / 1_000
+        ).toFixed(3);
+
+        for (const orbiter of FICTIONAL_ORBITERS) {
+          const group = fictionalOrbiterGroups.get(orbiter.id);
+          const position = sceneBodyPositions.get(orbiter.id);
+          const parentPosition = sceneBodyPositions.get(orbiter.parentBodyId);
+          if (
+            group === undefined ||
+            position === undefined ||
+            parentPosition === undefined
+          ) {
+            throw new Error(`${orbiter.name} scene state is unavailable`);
+          }
+          group.position.copy(position);
+          group.lookAt(parentPosition);
+          const distanceFromParentKm =
+            (position.distanceTo(parentPosition) * ASTRONOMICAL_UNIT_M) / 1_000;
+          container.dataset[
+            `${orbiter.id.replaceAll("-", "")}DistanceFromParentKm`
+          ] = distanceFromParentKm.toFixed(3);
         }
 
         const issState = bodyStateById(current, ISS_BODY_ID);
@@ -3885,7 +4998,15 @@ export function SolarSystemScene({
             continue;
           }
           group.position.copy(spacecraftPosition);
-          group.lookAt(sunPositionForSpacecraft);
+          if (spacecraft.id === ROADSTER_BODY_ID) {
+            group.lookAt(camera.position);
+            group.rotateY(Math.PI * 0.62);
+            group.rotateX(-0.16);
+            container.dataset["roadsterAttitude"] =
+              "camera-relative-presentation-only-no-physical-attitude-claim";
+          } else {
+            group.lookAt(sunPositionForSpacecraft);
+          }
         }
 
         let visibleOrbitGuideCount = 0;
@@ -3943,19 +5064,41 @@ export function SolarSystemScene({
             }
             const bodyPosition = scenePosition(bodyState.positionM);
             const distanceFromSunAu = bodyPosition.distanceTo(sunScenePosition);
-            ringVisual.mesh.updateWorldMatrix(true, false);
-            const localSun = ringVisual.mesh.worldToLocal(
+            ringVisual.referenceMesh.updateWorldMatrix(true, false);
+            const localSun = ringVisual.referenceMesh.worldToLocal(
               sunScenePosition.clone(),
             );
-            const localCenter = ringVisual.mesh.worldToLocal(bodyPosition);
-            requiredVectorUniform(ringVisual.material, "sunDirectionLocal")
-              .value.copy(localSun.sub(localCenter))
-              .normalize();
-            setRequiredNumberUniform(
-              ringVisual.material,
-              "solarFlux",
-              1 / Math.max(distanceFromSunAu * distanceFromSunAu, 0.0016),
+            const localCenter =
+              ringVisual.referenceMesh.worldToLocal(bodyPosition);
+            const localSunDirection = localSun.sub(localCenter).normalize();
+            const localCameraPosition = ringVisual.referenceMesh.worldToLocal(
+              camera.position.clone(),
             );
+            for (const material of ringVisual.materials) {
+              requiredVectorUniform(material, "sunDirectionLocal").value.copy(
+                localSunDirection,
+              );
+              requiredVectorUniform(material, "cameraPositionLocal").value.copy(
+                localCameraPosition,
+              );
+            }
+            ringVisual.surfaceShadowSunDirectionLocal?.value.copy(
+              localSunDirection,
+            );
+            for (const material of ringVisual.materials) {
+              setRequiredNumberUniform(
+                material,
+                "solarFlux",
+                1 / Math.max(distanceFromSunAu * distanceFromSunAu, 0.0016),
+              );
+              const orreryGain =
+                bodyId === "jupiter" ? 12_000 : bodyId === "neptune" ? 250 : 1;
+              setRequiredNumberUniform(
+                material,
+                "visibilityGain",
+                viewModeRef.current === "orrery" ? orreryGain : 1,
+              );
+            }
           }
           const moonOrigin = referenceOrigin(
             current,
@@ -4049,7 +5192,7 @@ export function SolarSystemScene({
               requestedPreset === "custom"
                 ? requestedFocusBodyId === null
                   ? "perspective"
-                  : "parent-facing"
+                  : "sun-facing"
                 : requestedPreset,
               requestedFocusBodyId,
               current,
@@ -4067,14 +5210,12 @@ export function SolarSystemScene({
               resetCamera(requestedFocusBodyId, current);
               const requestedPreset = orientationPresetRef.current;
               applyOrientationPreset(
-                requestedPreset === "custom"
-                  ? "parent-facing"
-                  : requestedPreset,
+                requestedPreset === "custom" ? "sun-facing" : requestedPreset,
                 requestedFocusBodyId,
                 current,
               );
               if (requestedPreset === "custom") {
-                onOrientationChange("parent-facing");
+                onOrientationChange("sun-facing");
               }
             } else {
               const requestedPreset = orientationPresetRef.current;
@@ -4084,6 +5225,7 @@ export function SolarSystemScene({
                   ? undefined
                   : bodyStateById(current, requestedTargetBodyId);
               const presetContinuouslyTracked =
+                requestedPreset === "sun-facing" ||
                 requestedPreset === "parent-facing" ||
                 requestedPreset === "velocity" ||
                 requestedPreset === "orbital-plane";
@@ -4178,10 +5320,10 @@ export function SolarSystemScene({
       if (cameraZoomRef.current !== lastCameraZoom) {
         if (
           !Number.isFinite(cameraZoomRef.current) ||
-          cameraZoomRef.current < 1 / 64 ||
+          cameraZoomRef.current < 2 ** -32 ||
           cameraZoomRef.current > 128
         ) {
-          throw new Error("Camera zoom must be between 0.015625x and 128x");
+          throw new Error("Camera zoom must be between 2^-32x and 128x");
         }
         lastCameraZoom = cameraZoomRef.current;
         camera.zoom = lastCameraZoom;
@@ -4387,7 +5529,80 @@ export function SolarSystemScene({
         onViewZoomChangeRef.current(reportedViewZoom);
       }
       stars.position.copy(camera.position);
+      zodiacGroup.position.copy(camera.position);
       camera.updateMatrixWorld();
+      for (const { element, direction } of zodiacLabels) {
+        if (!zodiacGroup.visible) {
+          element.hidden = true;
+          continue;
+        }
+        const projected = camera.position
+          .clone()
+          .add(direction.clone().multiplyScalar(ZODIAC_SPHERE_RADIUS_AU))
+          .project(camera);
+        const visible =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 0.94 &&
+          Math.abs(projected.y) <= 0.94;
+        element.hidden = !visible;
+        if (visible) {
+          element.style.transform = `translate(${String(
+            ((projected.x + 1) * container.clientWidth) / 2,
+          )}px, ${String(
+            ((-projected.y + 1) * container.clientHeight) / 2,
+          )}px)`;
+        }
+      }
+      container.dataset["zodiacVisibleLabelCount"] = String(
+        zodiacLabels.filter(({ element }) => !element.hidden).length,
+      );
+      let brightVisibleStarFound = false;
+      if (stars.visible) {
+        for (const starIndex of brightStarCandidateIndexes) {
+          const offset = starIndex * 3;
+          const projected = camera.position
+            .clone()
+            .add(
+              new Vector3(
+                starPositions[offset],
+                starPositions[offset + 1],
+                starPositions[offset + 2],
+              ),
+            )
+            .project(camera);
+          if (
+            projected.z < -1 ||
+            projected.z > 1 ||
+            Math.abs(projected.x) > 0.8 ||
+            Math.abs(projected.y) > 0.8
+          ) {
+            continue;
+          }
+          const star = hipparcosStarSnapshot.stars[starIndex];
+          if (star === undefined) {
+            throw new Error(
+              `Bright Hipparcos diagnostic index ${String(starIndex)} is invalid`,
+            );
+          }
+          container.dataset["brightVisibleStarHipId"] = String(star.hipId);
+          container.dataset["brightVisibleStarScreenX"] = (
+            ((projected.x + 1) * container.clientWidth) /
+            2
+          ).toFixed(3);
+          container.dataset["brightVisibleStarScreenY"] = (
+            ((-projected.y + 1) * container.clientHeight) /
+            2
+          ).toFixed(3);
+          brightVisibleStarFound = true;
+          break;
+        }
+      }
+      if (!brightVisibleStarFound) {
+        delete container.dataset["brightVisibleStarHipId"];
+        delete container.dataset["brightVisibleStarScreenX"];
+        delete container.dataset["brightVisibleStarScreenY"];
+      }
       const liveSunPosition =
         bodyMeshes.get("sun")?.position.clone() ?? new Vector3();
       deepSpaceGroup.position.copy(liveSunPosition);
@@ -4718,6 +5933,16 @@ export function SolarSystemScene({
               ? "sun"
               : wayfinderFocusId;
           const originPosition = focusPosition ?? sunPosition;
+          const wayfinderState = current.bodies.some(
+            (body) => body.id === originBodyId,
+          )
+            ? current
+            : wayfinderFocusState === undefined
+              ? current
+              : {
+                  ...current,
+                  bodies: [...current.bodies, wayfinderFocusState],
+                };
           const focusScreen =
             focusPosition === undefined ||
             cameraTargetBodyIdRef.current !== undefined
@@ -4749,7 +5974,7 @@ export function SolarSystemScene({
             ),
           };
           const planetTargets = nearestPlanetWayfinders(
-            current,
+            wayfinderState,
             originBodyId,
             wayfinderPlanetCount(activeWayfinderMode),
           );
@@ -5302,6 +6527,167 @@ export function SolarSystemScene({
           }
         }
       }
+      if (current !== undefined) {
+        const monolithPosition = monolithMesh.position;
+        const projected = monolithPosition.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(monolithPosition),
+          1e-15,
+        );
+        const radiusAu =
+          JOVIAN_MONOLITH_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        monolithMesh.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          (focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
+            selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID);
+        monolithLabel.hidden = !labelVisible;
+        monolithLabel.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID,
+        );
+        monolithLabel.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID,
+        );
+        monolithLabel.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID),
+        );
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          monolithLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        const markerVisible =
+          viewModeRef.current === "orrery" &&
+          layerVisible &&
+          inCameraFrustum &&
+          !geometryVisible;
+        monolithMarker.hidden = !markerVisible;
+        if (markerVisible) {
+          monolithMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        container.dataset["jovianMonolithRadiusPixels"] =
+          radiusPixels.toFixed(3);
+        container.dataset["jovianMonolithGeometryVisible"] =
+          String(geometryVisible);
+      } else {
+        monolithMesh.visible = false;
+        monolithLabel.hidden = true;
+        monolithMarker.hidden = true;
+      }
+      for (const orbiter of FICTIONAL_ORBITERS) {
+        const group = fictionalOrbiterGroups.get(orbiter.id);
+        const label = fictionalOrbiterLabels.get(orbiter.id);
+        const marker = fictionalOrbiterMarkers.get(orbiter.id);
+        if (
+          group === undefined ||
+          label === undefined ||
+          marker === undefined
+        ) {
+          throw new Error(`${orbiter.name} scene objects are unavailable`);
+        }
+        const orbiterState =
+          current === undefined
+            ? undefined
+            : fictionalOrbiterStateById(current, orbiter.id);
+        if (orbiterState === undefined) {
+          group.visible = false;
+          label.hidden = true;
+          marker.hidden = true;
+          continue;
+        }
+        if (
+          focusBodyIdRef.current === orbiter.id ||
+          selectedBodyIdRef.current === orbiter.id
+        ) {
+          group.lookAt(camera.position);
+          container.dataset[
+            orbiter.constructionState === "incomplete"
+              ? "deathstar2Attitude"
+              : "deathstar1Attitude"
+          ] = "camera-relative-fictional-presentation";
+        }
+        const position = scenePosition(orbiterState.positionM);
+        const projected = position.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(position),
+          1e-15,
+        );
+        const radiusAu = orbiter.diameterM / 2 / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        group.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          (focusBodyIdRef.current === orbiter.id ||
+            selectedBodyIdRef.current === orbiter.id);
+        label.hidden = !labelVisible;
+        label.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === orbiter.id,
+        );
+        label.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === orbiter.id,
+        );
+        label.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === orbiter.id),
+        );
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        const markerVisible =
+          viewModeRef.current === "orrery" &&
+          layerVisible &&
+          inCameraFrustum &&
+          !geometryVisible;
+        marker.hidden = !markerVisible;
+        if (markerVisible) {
+          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        const datasetPrefix = orbiter.id.replaceAll("-", "");
+        container.dataset[`${datasetPrefix}RadiusPixels`] =
+          radiusPixels.toFixed(3);
+        container.dataset[`${datasetPrefix}GeometryVisible`] =
+          String(geometryVisible);
+      }
       const issState =
         current === undefined ? undefined : bodyStateById(current, ISS_BODY_ID);
       if (issState !== undefined && current !== undefined) {
@@ -5522,6 +6908,9 @@ export function SolarSystemScene({
           layerVisible &&
           inCameraFrustum &&
           surfaceObserverRef.current === null &&
+          (geometryVisible ||
+            selectedBodyIdRef.current === spacecraft.id ||
+            focusBodyIdRef.current === spacecraft.id) &&
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(spacecraft.id));
         label.hidden = !labelVisible;
@@ -5555,6 +6944,83 @@ export function SolarSystemScene({
         container.dataset[`${spacecraft.id}GeometryVisible`] =
           String(geometryVisible);
       }
+      let visibleApolloSiteCount = 0;
+      const moonMesh = bodyMeshes.get("moon");
+      const moonState =
+        current === undefined ? undefined : bodyStateById(current, "moon");
+      const apolloContextVisible =
+        focusBodyIdRef.current === "moon" ||
+        (selectedBodyIdRef.current !== null &&
+          isApolloLandingSiteId(selectedBodyIdRef.current)) ||
+        surfaceObserverRef.current?.bodyId === "moon";
+      for (const site of apolloLandingSites) {
+        const label = apolloSiteLabels.get(site.id);
+        const siteGroup = apolloSiteGroups.get(site.id);
+        if (label === undefined || siteGroup === undefined) {
+          throw new Error(`${site.mission} scene assets are unavailable`);
+        }
+        siteGroup.visible =
+          current !== undefined &&
+          showApolloSitesRef.current &&
+          currentVisibility.moons &&
+          apolloContextVisible;
+        if (
+          current === undefined ||
+          moonMesh === undefined ||
+          moonState === undefined ||
+          !showApolloSitesRef.current ||
+          !showLabelsRef.current ||
+          !currentVisibility.moons ||
+          !apolloContextVisible ||
+          surfaceObserverRef.current !== null
+        ) {
+          label.hidden = true;
+          continue;
+        }
+        const [localX, localY, localZ] = moonFixedSurfaceUnitVector(
+          site.latitudeDeg,
+          site.longitudeDeg,
+        );
+        const surfaceNormal = new Vector3(localX, localY, localZ)
+          .applyQuaternion(
+            bodyOrientationQuaternion("moon", current.timeSeconds),
+          )
+          .normalize();
+        const sitePosition = moonMesh.position
+          .clone()
+          .add(surfaceNormal.clone().multiplyScalar(moonMesh.scale.x * 1.012));
+        const projected = sitePosition.clone().project(camera);
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const facingCamera =
+          surfaceNormal.dot(
+            camera.position.clone().sub(sitePosition).normalize(),
+          ) > 0;
+        const visible = inCameraFrustum && facingCamera;
+        label.hidden = !visible;
+        label.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === site.id,
+        );
+        label.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === site.id),
+        );
+        if (visible) {
+          label.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
+          visibleLabelCount += 1;
+          visibleApolloSiteCount += 1;
+        }
+      }
+      container.dataset["apolloSiteCount"] = String(apolloLandingSites.length);
+      container.dataset["apolloSiteLabelsVisible"] = String(
+        visibleApolloSiteCount,
+      );
+      container.dataset["apolloSiteCoordinates"] =
+        "LRO-derived-ME-planetocentric";
       container.dataset["operationalSpacecraftPhysics"] =
         "NASA-JPL-Horizons-cubic-Hermite";
       container.dataset["visibleBodyLabels"] = String(visibleLabelCount);
@@ -5681,6 +7147,7 @@ export function SolarSystemScene({
 
     return () => {
       active = false;
+      cancelStarTooltip();
       modelLoadingActive = false;
       snapshotAbortController.abort();
       window.clearTimeout(startupTimer);
@@ -5707,7 +7174,7 @@ export function SolarSystemScene({
       );
       renderer.domElement.removeEventListener(
         "pointerleave",
-        hideBodyHoverTooltip,
+        handlePointerLeave,
       );
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       gpuLayer?.dispose();
@@ -5727,6 +7194,10 @@ export function SolarSystemScene({
       container.removeChild(spacecraftModelStatus);
       container.removeChild(cameraJourney);
       container.removeChild(bodyHoverTooltip);
+      for (const { element } of zodiacLabels) {
+        container.removeChild(element);
+      }
+      container.removeChild(zodiacLegend);
       for (const label of deepSpaceLabels) {
         container.removeChild(label);
       }
@@ -5749,6 +7220,7 @@ export function SolarSystemScene({
     onGpuError,
     onGpuStatus,
     onOrientationChange,
+    onSelectBody,
     onSemanticZoomChange,
   ]);
 
@@ -5762,10 +7234,12 @@ export function SolarSystemScene({
       data-planets-visible={String(objectVisibility.planets)}
       data-moons-visible={String(objectVisibility.moons)}
       data-spacecraft-visible={String(objectVisibility.spacecraft)}
+      data-apollo-sites-visible={String(showApolloSites)}
       data-wayfinder-mode={wayfinderMode}
       data-star-field-count={hipparcosStarSnapshot.stars.length}
       data-star-catalogue="ESA Hipparcos I/239"
       data-star-reference-frame="ICRS"
+      data-star-tooltip-delay-ms={STAR_TOOLTIP_DELAY_MS}
       data-surface-lighting="inverse-square-solar-point-light-auto-exposure"
       data-atmosphere-rendering="sunlit-single-scattering-phase-functions"
       data-heliopause-voyager-1-au={VOYAGER_1_HELIOPAUSE_AU}

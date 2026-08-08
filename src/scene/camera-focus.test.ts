@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { majorBodySnapshot } from "../physics/solar-system";
-import { focusDistanceAu } from "./camera-focus";
+import { focusDistanceAu, focusNearPlaneAu } from "./camera-focus";
 
 function bodyById(id: string) {
   const body = majorBodySnapshot.bodies.find(
@@ -40,5 +40,25 @@ describe("camera focus distance", () => {
     const saturn = bodyById("saturn");
     const globeOnlyDistance = (saturn.meanRadiusM / 149_597_870_700) * 4;
     expect(focusDistanceAu(saturn, 0)).toBeGreaterThan(globeOnlyDistance * 2.3);
+  });
+
+  it("frames Uranus's resolvable main rings without shrinking it for diffuse Mu", () => {
+    const uranus = bodyById("uranus");
+    const globeOnlyDistance = (uranus.meanRadiusM / 149_597_870_700) * 4;
+    expect(focusDistanceAu(uranus, 0)).toBeGreaterThan(globeOnlyDistance * 2);
+    expect(focusDistanceAu(uranus, 0)).toBeLessThan(globeOnlyDistance * 2.1);
+  });
+
+  it("places the near plane inside the fit distance for small moons", () => {
+    const phobosDistance = focusDistanceAu(bodyById("phobos"), 0);
+    const nearPlane = focusNearPlaneAu(phobosDistance, 0.000_001);
+    expect(nearPlane).toBe(phobosDistance / 64);
+    expect(phobosDistance).toBeGreaterThan(nearPlane * 2);
+  });
+
+  it("retains the default near plane for planetary views", () => {
+    expect(
+      focusNearPlaneAu(focusDistanceAu(bodyById("earth"), 0), 0.000_001),
+    ).toBe(0.000_001);
   });
 });

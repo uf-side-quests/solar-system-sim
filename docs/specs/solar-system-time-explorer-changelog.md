@@ -10,6 +10,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.7.0] - 2026-08-07
+
+### Added in 2.7.0
+
+- Added the Tesla Roadster and Starman from NASA/JPL Horizons solution 11 with 2018-2090 coverage, an original physical-scale reconstruction, searchable focus, selection statistics, and explicit payload-stack provenance.
+- Added all six crewed Apollo lunar landing sites at LRO-derived Moon-fixed coordinates, selectable surface markers, full mission records, authoritative traverse and photograph links, and exact surface-observer viewpoints.
+- Added REQ-178 through REQ-181 for the Roadster ephemeris, honest model provenance, Apollo surface registration, and landing-site interaction.
+
+## [2.6.0] - 2026-08-07
+
+### Added in 2.6.0
+
+- Added one-second delayed identification of rendered Hipparcos stars with catalogue coordinates, magnitude, and colour-index metadata.
+- Added an optional twelve-sign tropical zodiac reference on the J2000 ecliptic with explicit distinction from IAU constellation boundaries.
+- Added REQ-176 and REQ-177 for delayed star identification and scientifically bounded zodiac presentation.
+
+### Fixed in 2.6.0
+
+- Replaced the seam-prone split ring compositor with one continuous physical sheet tested against the opaque globe depth buffer, so the far side is hidden by the planet and the near side correctly remains in front.
+- Softened the approximate Saturn ring shadow so it no longer reads as an artificial black cut through the globe.
+
+## [2.5.1] - 2026-08-07
+
+### Changed in 2.5.1
+
+- Made ordinary body focus and Re-centre use a continuously tracked Sun-facing view while retaining Parent-facing as an explicit orientation.
+- Replaced five black-backed Voyager moon mosaics with the higher-resolution reconstructed global textures embedded in NASA VTAD's official Ariel, Miranda, Titania, Umbriel, and Triton models.
+- Expanded the persistent browser capture audit to every installed planet, moon, observation-constrained material, and spacecraft presentation.
+
+### Fixed in 2.5.1
+
+- Replaced Saturn's opaque brown ring treatment with the Cassini radial colour and optical-density profile, sparse-division transmission, inverse-square illumination, adaptive exposure, body-aligned depth occlusion, and mutual planet-ring shadowing.
+- Replaced Uranus's invented continuous procedural annulus with all 13 PDS rings at their sourced radii, widths, optical depths, and inner-grey, Nu-red, and Mu-blue colours without widening sub-pixel rings.
+- Preserved Uranus's measured oblateness and made default focus frame the resolvable Epsilon ring while leaving the very diffuse Nu and Mu rings available by zooming out.
+- Derived the focused camera near plane from body fit distance so Phobos-scale close views no longer fall behind the clip plane.
+
 ## [2.5.0] - 2026-08-06
 
 ### Added in 2.5.0
@@ -262,6 +298,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Initial target requirements draft for implementation.
 
 ### Added
+
+- Added Jupiter's five PDS dust-ring components and Neptune's five named ring structures with measured radii, widths and optical depths, plus an Orrery-only visibility gain for the exceptionally faint dust.
+- Added original physical-scale Death Star I and incomplete Death Star II models on disclosed hypothetical massless circular paths around Callisto and Ganymede.
+- Added physical-scale Apollo descent stages, flags, ALSEP equipment, retroreflectors and applicable lunar rovers at all six landing sites.
+- Added a reproducible NASA LROC PDS traverse snapshot for every available Apollo 11, 12 and 14 CDR/LMP path segment, projected into local metre offsets without invented route geometry.
 
 - Physics-derived motion with no scripted trajectory substitution.
 - Authoritative catalogue, ephemeris, provenance, and uncertainty boundaries.

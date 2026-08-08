@@ -70,6 +70,11 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   await expect(scene).toHaveAttribute("data-focus-body", "iss");
   await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 16_000 },
+  );
   await expect(scene).toHaveAttribute("data-iss-geometry-visible", "false");
   await expect
     .poll(async () =>

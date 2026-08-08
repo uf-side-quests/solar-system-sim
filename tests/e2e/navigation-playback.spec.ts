@@ -67,10 +67,7 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
   }
   await expect(scene).toHaveAttribute("data-camera-orientation", "custom");
   await page.getByRole("button", { name: "Re-centre", exact: true }).click();
-  await expect(scene).toHaveAttribute(
-    "data-camera-orientation",
-    "parent-facing",
-  );
+  await expect(scene).toHaveAttribute("data-camera-orientation", "sun-facing");
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
     "settled",
@@ -146,6 +143,15 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await page.getByRole("button", { name: "Next object" }).click();
   await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("James Webb Space Telescope");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Jovian Monolith (fictional)");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Death Star I (fictional)");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Death Star II (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
   await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("Sun");

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 import { majorBodySnapshot } from "../physics/solar-system";
 import {
@@ -14,6 +16,14 @@ const AUTHORITY_ASSET_HOSTS = new Set([
   "svs.gsfc.nasa.gov",
   "atmos.nmsu.edu",
 ]);
+
+const NASA_VTAD_RECONSTRUCTED_MOONS = [
+  "ariel",
+  "umbriel",
+  "titania",
+  "miranda",
+  "triton",
+] as const;
 
 describe("authority visual assets", () => {
   it("provides an explicit surface representation for every non-stellar major body", () => {
@@ -41,6 +51,55 @@ describe("authority visual assets", () => {
     expect(pluto?.coverage).toBe("global-with-unobserved-region");
     expect(pluto?.projection).toBe("simple-cylindrical");
   });
+
+  it("uses NASA VTAD reconstruction without presenting it as measured Voyager detail", async () => {
+    for (const bodyId of NASA_VTAD_RECONSTRUCTED_MOONS) {
+      const asset = nasaTextureByBodyId.get(bodyId);
+      expect(asset?.coverage).toBe("global-with-reconstruction");
+      expect(asset?.sourceContentType).toBe("model/gltf-binary");
+      expect(asset?.assetUrl).toMatch(/\.glb$/u);
+      expect(asset?.credit).toContain(
+        "NASA Visualization Technology Applications and Development",
+      );
+      expect(asset?.limitations).toContain("authority model");
+      expect(asset?.limitations).toContain(
+        "no independently measured surface detail",
+      );
+      const imagePath = fileURLToPath(
+        new URL(`../../public${asset?.file ?? ""}`, import.meta.url),
+      );
+      const decoded = await sharp(imagePath)
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      let maximumNearBlackRun = 0;
+      let currentNearBlackRun = 0;
+      const colors = new Set<string>();
+      for (
+        let offset = 0;
+        offset < decoded.data.length;
+        offset += decoded.info.channels
+      ) {
+        const red = decoded.data.readUInt8(offset);
+        const green = decoded.data.readUInt8(offset + 1);
+        const blue = decoded.data.readUInt8(offset + 2);
+        if (Math.max(red, green, blue) <= 4) {
+          const pixelIndex = offset / decoded.info.channels;
+          const column = pixelIndex % decoded.info.width;
+          currentNearBlackRun = column === 0 ? 1 : currentNearBlackRun + 1;
+          maximumNearBlackRun = Math.max(
+            maximumNearBlackRun,
+            currentNearBlackRun,
+          );
+        } else {
+          currentNearBlackRun = 0;
+        }
+        colors.add(`${String(red)},${String(green)},${String(blue)}`);
+      }
+      expect(maximumNearBlackRun / decoded.info.width).toBeLessThan(0.01);
+      expect(colors.size).toBeGreaterThan(32);
+    }
+  }, 20_000);
 
   it("pins unique authority URLs, provenance, dimensions, and checksums", () => {
     const ids = nasaTextureSnapshot.assets.map((asset) => asset.id);
@@ -76,16 +135,49 @@ describe("authority visual assets", () => {
     }
   });
 
-  it("installs the Cassini radial observation instead of procedural Saturn bands", () => {
+  it("keeps Saturn's globe ring-free and its Cassini rings separate", async () => {
     const saturn = nasaTextureByBodyId.get("saturn");
     const rings = nasaTextureSnapshot.assets.find(
       (asset) => asset.id === "saturn-rings",
     );
-    expect(saturn?.sourceWidth).toBe(3_601);
-    expect(saturn?.sourceHeight).toBe(1_801);
-    expect(saturn?.classification).toBe("observational-composite");
+    expect(saturn?.sourceWidth).toBe(4_096);
+    expect(saturn?.sourceHeight).toBe(3_072);
+    expect(saturn?.width).toBe(4_096);
+    expect(saturn?.height).toBe(2_048);
+    expect(saturn?.classification).toBe("visualization");
+    expect(saturn?.sourceContentType).toBe("model/gltf-binary");
+    expect(saturn?.limitations).toContain("contains no rings");
     expect(rings?.role).toBe("ring-color-opacity");
     expect(rings?.coverage).toBe("radial-observation");
     expect(rings?.width).toBe(4_096);
+
+    const imagePath = fileURLToPath(
+      new URL(`../../public${saturn?.file ?? ""}`, import.meta.url),
+    );
+    const decoded = await sharp(imagePath)
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let maximumNearBlackRowFraction = 0;
+    for (let y = 0; y < decoded.info.height; y += 1) {
+      let nearBlackPixels = 0;
+      for (let x = 0; x < decoded.info.width; x += 1) {
+        const offset = (y * decoded.info.width + x) * decoded.info.channels;
+        if (
+          Math.max(
+            decoded.data.readUInt8(offset),
+            decoded.data.readUInt8(offset + 1),
+            decoded.data.readUInt8(offset + 2),
+          ) < 48
+        ) {
+          nearBlackPixels += 1;
+        }
+      }
+      maximumNearBlackRowFraction = Math.max(
+        maximumNearBlackRowFraction,
+        nearBlackPixels / decoded.info.width,
+      );
+    }
+    expect(maximumNearBlackRowFraction).toBeLessThan(0.001);
   });
 });
