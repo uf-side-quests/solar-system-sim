@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.7.2] - 2026-08-08
+
+### Changed in 2.7.2
+
+- Rebuilt both fictional Death Stars with a continuous 2:1 PBR hull atlas, an integrated narrow equatorial trench, a recessed concave superlaser assembly, and a dense textured machinery interior for the unfinished station.
+- Added browser captures at default, framed close, and extreme close zoom so distant framing can no longer conceal broken fictional-object geometry.
+
 ## [2.7.1] - 2026-08-08
 
 ### Changed in 2.7.1

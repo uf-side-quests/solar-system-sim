@@ -91,7 +91,7 @@ Jupiter's halo, main ring, two gossamer rings and Thebe extension, plus Neptune'
 Reality mode preserves those very low optical depths; Orrery mode applies a declared bounded visibility gain so the dusty systems can be inspected without widening their measured radial structure.
 These dusty systems remain appropriately faint in Reality; Orrery applies a disclosed visibility gain so their measured locations can be studied without widening them.
 
-Two original high-detail Death Star references orbit Callisto and Ganymede at physical scale.
+Two original high-detail Death Star references orbit Callisto and Ganymede at physical scale, using an integrated PBR hull, recessed superlaser geometry, and a dense unfinished machinery interior rather than protruding display bands or flat placeholder shapes.
 Their original geometry uses a generated industrial PBR hull treatment, recessed superlaser assemblies, equatorial infrastructure, and exposed construction structure for the incomplete second station.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.

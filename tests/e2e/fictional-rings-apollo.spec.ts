@@ -102,6 +102,10 @@ for (const [search, bodyId, geometryAttribute] of [
     await focus.press("Enter");
     await expect(scene).toHaveAttribute("data-focus-body", bodyId);
     await expect(scene).toHaveAttribute(geometryAttribute, "true");
+    await expect(scene).toHaveAttribute(
+      `data-${bodyId.replaceAll("-", "")}-visual-model`,
+      "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3",
+    );
     await expect(page.getByRole("complementary")).toContainText(
       "Hypothetical live circular two-body orbit",
     );
@@ -118,6 +122,31 @@ for (const [search, bodyId, geometryAttribute] of [
     }
     await page.screenshot({
       path: testInfo.outputPath(`${bodyId}.png`),
+      animations: "disabled",
+    });
+    const radiusAttribute = `data-${bodyId.replaceAll("-", "")}-radius-pixels`;
+    const zoomIn = page.getByRole("button", { name: "Zoom in" });
+    for (let zoomStep = 0; zoomStep < 3; zoomStep += 1) {
+      const previousRadius = Number(await scene.getAttribute(radiusAttribute));
+      await zoomIn.click();
+      await expect
+        .poll(() => scene.getAttribute(radiusAttribute).then(Number))
+        .toBeGreaterThan(previousRadius);
+      if (zoomStep === 1) {
+        await expect
+          .poll(() => scene.getAttribute(radiusAttribute).then(Number))
+          .toBeGreaterThan(280);
+        await page.screenshot({
+          path: testInfo.outputPath(`${bodyId}-close-framed.png`),
+          animations: "disabled",
+        });
+      }
+    }
+    await expect
+      .poll(() => scene.getAttribute(radiusAttribute).then(Number))
+      .toBeGreaterThan(280);
+    await page.screenshot({
+      path: testInfo.outputPath(`${bodyId}-close.png`),
       animations: "disabled",
     });
     harness.assertNoBrowserErrors();

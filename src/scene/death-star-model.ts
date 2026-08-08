@@ -7,7 +7,6 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
-  RepeatWrapping,
   RingGeometry,
   SRGBColorSpace,
   SphereGeometry,
@@ -33,55 +32,48 @@ function selectableMesh(
 
 function createPanelledHullMaterial(): MeshPhysicalMaterial {
   const hullTexture = new TextureLoader().load(
-    "/textures/fictional/death-star-hull.webp",
+    "/textures/fictional/death-star-hull-v2.webp",
   );
-  hullTexture.name = "Original fictional battle-station hull texture";
+  hullTexture.name =
+    "Original equirectangular fictional battle-station hull texture";
   hullTexture.colorSpace = SRGBColorSpace;
-  hullTexture.wrapS = RepeatWrapping;
-  hullTexture.wrapT = RepeatWrapping;
-  hullTexture.repeat.set(4, 2);
   return new MeshPhysicalMaterial({
-    name: "Fictional battle station PBR panelled hull",
-    color: 0xf1f3f3,
+    name: "Fictional battle station integrated PBR panelled hull",
+    color: 0xd8dcdd,
     map: hullTexture,
     bumpMap: hullTexture,
-    bumpScale: 0.006,
-    emissive: 0x9da4a7,
+    bumpScale: 0.0035,
+    emissive: 0x3f4547,
     emissiveMap: hullTexture,
-    emissiveIntensity: 0.42,
-    metalness: 0.18,
-    roughness: 0.76,
-    clearcoat: 0.04,
-    clearcoatRoughness: 0.8,
+    emissiveIntensity: 0.18,
+    metalness: 0.34,
+    roughness: 0.74,
+    clearcoat: 0.025,
+    clearcoatRoughness: 0.86,
     dithering: true,
   });
 }
 
-function addEquatorialInfrastructure(
-  root: Group,
-  bodyId: string,
-  trenchMaterial: MeshStandardMaterial,
-  edgeMaterial: MeshStandardMaterial,
-): void {
-  const trench = selectableMesh(
-    new TorusGeometry(1.006, 0.019, 10, 256),
-    trenchMaterial,
-    bodyId,
+function createInteriorMaterial(): MeshPhysicalMaterial {
+  const interiorTexture = new TextureLoader().load(
+    "/textures/fictional/death-star-interior.webp",
   );
-  trench.name = "Deep equatorial service trench";
-  trench.rotation.x = Math.PI / 2;
-  root.add(trench);
-  for (const y of [-0.021, 0.021]) {
-    const trenchEdge = selectableMesh(
-      new TorusGeometry(1.009, 0.0045, 8, 256),
-      edgeMaterial,
-      bodyId,
-    );
-    trenchEdge.name = "Equatorial trench armoured edge";
-    trenchEdge.rotation.x = Math.PI / 2;
-    trenchEdge.position.y = y;
-    root.add(trenchEdge);
-  }
+  interiorTexture.name =
+    "Original fictional unfinished battle-station interior texture";
+  interiorTexture.colorSpace = SRGBColorSpace;
+  return new MeshPhysicalMaterial({
+    name: "Fictional battle station dense machinery interior",
+    color: 0x798084,
+    map: interiorTexture,
+    bumpMap: interiorTexture,
+    bumpScale: 0.005,
+    emissive: 0x252a2d,
+    emissiveMap: interiorTexture,
+    emissiveIntensity: 0.16,
+    metalness: 0.48,
+    roughness: 0.76,
+    side: DoubleSide,
+  });
 }
 
 function createDishSurface(radius: number): RingGeometry {
@@ -94,7 +86,7 @@ function createDishSurface(radius: number): RingGeometry {
     const x = positions.getX(index);
     const y = positions.getY(index);
     const normalizedRadius = Math.min(Math.hypot(x, y) / radius, 1);
-    positions.setZ(index, 0.072 * normalizedRadius * normalizedRadius);
+    positions.setZ(index, -0.068 * (1 - normalizedRadius * normalizedRadius));
   }
   positions.needsUpdate = true;
   geometry.computeVertexNormals();
@@ -111,50 +103,65 @@ function addSuperlaserAssembly(
   dishRoot.name = "Recessed superlaser assembly";
   dishRoot.userData["bodyId"] = bodyId;
   const direction = new Vector3(0.36, 0.3, 0.884).normalize();
-  dishRoot.position.copy(direction).multiplyScalar(1.006);
+  dishRoot.position.copy(direction).multiplyScalar(1.002);
   dishRoot.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), direction);
   root.add(dishRoot);
 
-  const dish = selectableMesh(createDishSurface(0.224), dishMaterial, bodyId);
+  const dishRadius = 0.185;
+  const dishDepthAt = (radius: number): number =>
+    -0.068 * (1 - Math.min(radius / dishRadius, 1) ** 2);
+  const dish = selectableMesh(
+    createDishSurface(dishRadius),
+    dishMaterial,
+    bodyId,
+  );
   dish.name = "Concave superlaser reflector";
+  dish.renderOrder = 4;
   dishRoot.add(dish);
 
-  for (const radius of [0.057, 0.108, 0.16, 0.224]) {
+  for (const radius of [0.047, 0.089, 0.135, dishRadius]) {
     const ring = selectableMesh(
-      new TorusGeometry(radius, radius === 0.224 ? 0.008 : 0.003, 8, 96),
+      new TorusGeometry(radius, radius === dishRadius ? 0.006 : 0.0022, 8, 96),
       structureMaterial,
       bodyId,
     );
     ring.name = "Superlaser concentric support";
-    ring.position.z = 0.072 * (radius / 0.224) ** 2 + 0.006;
+    ring.position.z = dishDepthAt(radius) + 0.004;
+    ring.renderOrder = 5;
     dishRoot.add(ring);
   }
-  for (let index = 0; index < 12; index += 1) {
-    const angle = (index / 12) * Math.PI * 2;
+  const hub = new Vector3(0, 0, dishDepthAt(0) + 0.009);
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (index / 8) * Math.PI * 2 + Math.PI / 8;
+    const nodeRadius = 0.138;
+    const nodePosition = new Vector3(
+      Math.cos(angle) * nodeRadius,
+      Math.sin(angle) * nodeRadius,
+      dishDepthAt(nodeRadius) + 0.009,
+    );
+    const beamVector = nodePosition.clone().sub(hub);
     const spoke = selectableMesh(
-      new BoxGeometry(0.19, 0.004, 0.004),
+      new CylinderGeometry(0.0022, 0.0022, beamVector.length(), 8),
       structureMaterial,
       bodyId,
     );
-    spoke.name = "Superlaser radial support";
-    spoke.position.set(Math.cos(angle) * 0.105, Math.sin(angle) * 0.105, 0.075);
-    spoke.rotation.z = angle;
+    spoke.name = "Superlaser focusing beam";
+    spoke.position.copy(hub).add(nodePosition).multiplyScalar(0.5);
+    spoke.quaternion.setFromUnitVectors(
+      new Vector3(0, 1, 0),
+      beamVector.normalize(),
+    );
+    spoke.renderOrder = 5;
     dishRoot.add(spoke);
-  }
-  for (let index = 0; index < 8; index += 1) {
-    const angle = (index / 8) * Math.PI * 2 + Math.PI / 8;
     const focusingNode = selectableMesh(
-      new CylinderGeometry(0.009, 0.012, 0.018, 12),
+      new CylinderGeometry(0.007, 0.009, 0.014, 12),
       structureMaterial,
       bodyId,
     );
     focusingNode.name = "Superlaser perimeter focusing node";
     focusingNode.rotation.x = Math.PI / 2;
-    focusingNode.position.set(
-      Math.cos(angle) * 0.166,
-      Math.sin(angle) * 0.166,
-      0.047,
-    );
+    focusingNode.position.copy(nodePosition);
+    focusingNode.renderOrder = 5;
     dishRoot.add(focusingNode);
   }
   const emitter = selectableMesh(
@@ -164,7 +171,8 @@ function addSuperlaserAssembly(
   );
   emitter.name = "Superlaser central emitter";
   emitter.rotation.x = Math.PI / 2;
-  emitter.position.z = 0.019;
+  emitter.position.copy(hub);
+  emitter.renderOrder = 5;
   dishRoot.add(emitter);
 }
 
@@ -177,8 +185,8 @@ function addIncompleteSuperstructure(
   const frame = new Group();
   frame.name = "Death Star II exposed internal construction";
   frame.userData["bodyId"] = bodyId;
-  frame.position.z = 0.12;
-  frame.scale.setScalar(0.9);
+  frame.position.z = 0.045;
+  frame.scale.setScalar(0.92);
   root.add(frame);
 
   const voidBacking = selectableMesh(
@@ -187,14 +195,14 @@ function addIncompleteSuperstructure(
     bodyId,
   );
   voidBacking.name = "Exposed incomplete hull interior";
-  voidBacking.position.z = -0.34;
+  voidBacking.position.z = -0.3;
   frame.add(voidBacking);
 
   for (const [ringIndex, radius] of [0.2, 0.38, 0.57, 0.76].entries()) {
     const supportRing = selectableMesh(
       new TorusGeometry(
         radius,
-        radius < 0.3 ? 0.018 : 0.011,
+        radius < 0.3 ? 0.014 : 0.008,
         7,
         112,
         Math.PI * (1.18 + ringIndex * 0.09),
@@ -203,7 +211,7 @@ function addIncompleteSuperstructure(
       bodyId,
     );
     supportRing.name = "Incomplete station concentric truss";
-    supportRing.position.z = -0.08 + radius * 0.06;
+    supportRing.position.z = -0.12 + radius * 0.09;
     supportRing.rotation.z = -0.72 + ringIndex * 0.31;
     frame.add(supportRing);
   }
@@ -211,7 +219,7 @@ function addIncompleteSuperstructure(
     const angle = -1.12 + (index / 8) * Math.PI * 1.45;
     const length = 0.7 + (index % 4) * 0.075;
     const radial = selectableMesh(
-      new BoxGeometry(length, 0.019, 0.024),
+      new BoxGeometry(length, 0.013, 0.018),
       structureMaterial,
       bodyId,
     );
@@ -220,7 +228,7 @@ function addIncompleteSuperstructure(
     radial.position.set(
       Math.cos(angle) * length * 0.42,
       Math.sin(angle) * length * 0.42,
-      -0.035 + (index % 3) * 0.025,
+      -0.08 + (index % 3) * 0.03,
     );
     frame.add(radial);
   }
@@ -231,7 +239,7 @@ function addIncompleteSuperstructure(
     [0.48, 0.18, 0.5, Math.PI / 2.8],
   ] as const) {
     const girder = selectableMesh(
-      new BoxGeometry(length, 0.028, 0.03),
+      new BoxGeometry(length, 0.018, 0.025),
       structureMaterial,
       bodyId,
     );
@@ -293,7 +301,7 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   group.name = `${orbiter.name} detailed physical-scale visualization`;
   group.userData["bodyId"] = orbiter.id;
   group.userData["visualSource"] =
-    "original-pbr-hull-and-physically-shaded-geometry";
+    "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3";
   group.scale.setScalar(orbiter.diameterM / 2 / ASTRONOMICAL_UNIT_M);
   const modelRoot = new Group();
   modelRoot.name = `${orbiter.name} presentation geometry`;
@@ -301,37 +309,32 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   group.add(modelRoot);
 
   const hull = createPanelledHullMaterial();
-  const trench = new MeshStandardMaterial({
-    name: "Fictional battle station equatorial trench",
-    color: 0x090c0e,
-    metalness: 0.64,
-    roughness: 0.78,
-  });
   const structure = new MeshStandardMaterial({
     name: "Fictional exposed construction interior",
-    color: 0x70787b,
-    emissive: 0x3d4346,
-    emissiveIntensity: 0.2,
-    metalness: 0.38,
-    roughness: 0.7,
+    color: 0x303638,
+    emissive: 0x101416,
+    emissiveIntensity: 0.08,
+    metalness: 0.56,
+    roughness: 0.74,
   });
-  const interiorVoid = new MeshStandardMaterial({
-    name: "Fictional exposed construction void",
-    color: 0x050708,
-    metalness: 0.12,
-    roughness: 0.94,
-    side: DoubleSide,
-  });
-  const dish = new MeshPhysicalMaterial({
-    name: "Fictional superlaser reflector",
-    color: 0x525a5e,
-    emissive: 0x353b3e,
-    emissiveIntensity: 0.24,
-    metalness: 0.34,
-    roughness: 0.72,
-    clearcoat: 0.03,
-    side: DoubleSide,
-  });
+  const interior = createInteriorMaterial();
+  const dishStructure = structure.clone();
+  dishStructure.name = "Fictional superlaser support structure";
+  dishStructure.depthTest = false;
+  dishStructure.depthWrite = false;
+  const dish = interior.clone();
+  dish.name = "Fictional recessed superlaser reflector";
+  dish.color.setHex(0x687074);
+  dish.emissive.setHex(0x202628);
+  dish.emissiveIntensity = 0.12;
+  dish.metalness = 0.42;
+  dish.roughness = 0.68;
+  dish.depthTest = false;
+  dish.depthWrite = false;
+  dish.clearcoat = 0.02;
+  dish.side = DoubleSide;
+  dish.needsUpdate = true;
+  dishStructure.needsUpdate = true;
 
   const spherePhiLength =
     orbiter.constructionState === "complete" ? Math.PI * 2 : Math.PI * 1.5;
@@ -345,11 +348,10 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   shell.name = `${orbiter.name} main hull`;
   modelRoot.add(shell);
 
-  addEquatorialInfrastructure(modelRoot, orbiter.id, trench, structure);
-  addSuperlaserAssembly(modelRoot, orbiter.id, dish, structure);
+  addSuperlaserAssembly(modelRoot, orbiter.id, dish, dishStructure);
 
   if (orbiter.constructionState === "incomplete") {
-    addIncompleteSuperstructure(modelRoot, orbiter.id, structure, interiorVoid);
+    addIncompleteSuperstructure(modelRoot, orbiter.id, structure, interior);
   }
 
   return group;

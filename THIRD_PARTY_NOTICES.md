@@ -114,7 +114,8 @@ Users redistributing these assets should follow the NASA media usage guidelines:
 
 ## Fictional references
 
-The Jovian Monolith and two Death Star visualizations are original procedural fan-reference models.
+The Jovian Monolith and two Death Star visualizations are original fan-reference models.
+The Death Star surfaces use original generated PBR texture atlases with authored Three.js geometry; no film, game, or third-party Death Star mesh or texture is distributed.
 No Lucasfilm, Disney, MGM, or Warner Bros model or texture asset is included.
 The Death Star names and designs remain the property of Lucasfilm Ltd.; their official descriptive references are the Star Wars Databank pages.
 The installed stations are clearly labelled fictional, use hypothetical massless two-body paths, and do not affect the physical Solar System simulation.

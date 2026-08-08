@@ -1224,6 +1224,12 @@ export function SolarSystemScene({
       group.visible = false;
       scene.add(group);
       fictionalOrbiterGroups.set(orbiter.id, group);
+      const visualSource: unknown = group.userData["visualSource"];
+      if (typeof visualSource !== "string") {
+        throw new Error(`${orbiter.name} visual provenance is unavailable`);
+      }
+      container.dataset[`${orbiter.id.replaceAll("-", "")}VisualModel`] =
+        visualSource;
       group.traverse((object) => {
         if (object.type === "Mesh") {
           const modelMesh = object as Mesh;
