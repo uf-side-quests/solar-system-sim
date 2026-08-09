@@ -1,5 +1,5 @@
 export type CameraTransitionPhase =
-  "outbound" | "overview" | "inbound" | "settled";
+  "orienting" | "outbound" | "overview" | "inbound" | "settled";
 
 export type CameraTransitionSample = Readonly<{
   phase: CameraTransitionPhase;
@@ -14,8 +14,9 @@ export type DirectCameraTransitionSample = Readonly<{
   segmentProgress: number;
 }>;
 
-const OUTBOUND_END = 0.3;
-const INBOUND_START = 0.7;
+const AUTHORED_ORIENTATION_END = 0.3;
+const OUTBOUND_END = 0.5;
+const INBOUND_START = 0.75;
 const DIRECT_ORIENTATION_END = 0.34;
 const DIRECT_ARRIVAL_START = 0.68;
 const SPEED_OF_LIGHT_MPS = 299_792_458;
@@ -82,10 +83,19 @@ export function sampleCameraTransition(
   if (progress >= 1) {
     return { phase: "settled", segmentProgress: 1 };
   }
+  if (progress < AUTHORED_ORIENTATION_END) {
+    return {
+      phase: "orienting",
+      segmentProgress: smootherStep(progress / AUTHORED_ORIENTATION_END),
+    };
+  }
   if (progress < OUTBOUND_END) {
     return {
       phase: "outbound",
-      segmentProgress: smootherStep(progress / OUTBOUND_END),
+      segmentProgress: smootherStep(
+        (progress - AUTHORED_ORIENTATION_END) /
+          (OUTBOUND_END - AUTHORED_ORIENTATION_END),
+      ),
     };
   }
   if (progress <= INBOUND_START) {

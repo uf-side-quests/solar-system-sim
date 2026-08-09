@@ -30,11 +30,26 @@ test("shows the JPL Roadster and all six Moon-fixed Apollo landing sites", async
     "data-roadster-model-provenance",
     "mit-spacedock-community-model",
   );
+  await expect(scene).toHaveAttribute(
+    "data-roadster-exterior-materials",
+    "opaque-two-sided-depth-writing",
+  );
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-roadster-exterior-material-count")),
+    )
+    .toBeGreaterThan(0);
   await expect(scene).toHaveAttribute("data-roadster-geometry-visible", "true");
   const detail = page.getByRole("complementary");
   await expect(detail).toContainText("Tesla Roadster and Starman");
   await expect(detail).toContainText("Horizons solution 11");
   await expect(detail).toContainText("374 optical observations");
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+  await page
+    .getByRole("combobox", { name: "Zoom preset" })
+    .selectOption("close");
+  await page.getByRole("button", { name: "Close" }).click();
   await page.screenshot({
     path: testInfo.outputPath("roadster-starman.png"),
     animations: "disabled",

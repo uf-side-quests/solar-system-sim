@@ -114,7 +114,9 @@ Users redistributing these assets should follow the NASA media usage guidelines:
 
 ## Fictional references
 
-The Jovian Monolith and two Death Star visualizations are original fan-reference models.
+The Jovian Monolith, Discovery One, and two Death Star visualizations are original fan-reference models.
+Discovery One uses original procedural Three.js geometry based on openly licensed museum photography rather than a redistributed third-party model.
+The story places Discovery in orbit around Io but does not publish precise osculating elements, so the application identifies its authored massless circular orbit as fictional.
 The Death Star surfaces use original generated PBR texture atlases with authored Three.js geometry; no film, game, or third-party Death Star mesh or texture is distributed.
 No Lucasfilm, Disney, MGM, or Warner Bros model or texture asset is included.
 The Death Star names and designs remain the property of Lucasfilm Ltd.; their official descriptive references are the Star Wars Databank pages.
@@ -122,6 +124,8 @@ The installed stations are clearly labelled fictional, use hypothetical massless
 
 - Death Star: <https://www.starwars.com/databank/death-star>
 - Death Star II: <https://www.starwars.com/databank/death-star-ii>
+- AFI Catalog, 2010: <https://catalog.afi.com/Film/57233-2010>
+- Wikimedia Commons Discovery One museum photography: <https://commons.wikimedia.org/wiki/Category:Discovery_One>
 
 ## ESA Hipparcos catalogue
 

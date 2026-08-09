@@ -158,6 +158,7 @@ test("shows the twelve-sign zodiac as an optional sky reference", async ({
   });
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("checkbox", { name: "Stars" }).uncheck();
+  await page.getByRole("tab", { name: "Guides" }).click();
   await page.getByRole("checkbox", { name: "Zodiac signs" }).check();
   await expect(scene).toHaveAttribute("data-zodiac-visible", "true");
   await expect(scene).toHaveAttribute("data-zodiac-sign-count", "12");

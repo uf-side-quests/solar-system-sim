@@ -52,10 +52,7 @@ test("switches between physical, orrery, and schematic views without changing ph
 
   await page.getByRole("button", { name: "Display" }).click();
   const bodySizeBoost = page.getByRole("slider", { name: "Body size boost" });
-  await expect(bodySizeBoost).toBeDisabled();
-  await expect(
-    page.locator("label", { hasText: "Body size boost" }).locator("output"),
-  ).toHaveText("Physical");
+  await expect(bodySizeBoost).toHaveCount(0);
   await expect(
     page.getByRole("checkbox", { name: "Asteroids" }),
   ).toBeDisabled();
@@ -71,6 +68,8 @@ test("switches between physical, orrery, and schematic views without changing ph
   await expect(scene).toHaveAttribute("data-known-moon-point-count", "437");
   await expect(scene).toHaveAttribute("data-orbit-guide-count", "0");
   await page.getByRole("button", { name: "Display" }).click();
+  await expect(bodySizeBoost).toBeVisible();
+  await page.getByRole("tab", { name: "Guides" }).click();
   const orbitGuides = page.getByRole("checkbox", { name: "Orbit guides" });
   await expect(orbitGuides).not.toBeChecked();
   await orbitGuides.check();
@@ -112,12 +111,14 @@ test("switches between physical, orrery, and schematic views without changing ph
   );
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "false");
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Guides" }).click();
   const tacticalOverlay = page.getByRole("checkbox", {
     name: "Tactical overlay",
   });
   await expect(tacticalOverlay).not.toBeChecked();
   await tacticalOverlay.check();
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "true");
+  await page.getByRole("tab", { name: "Camera" }).click();
   const orientation = page.getByRole("combobox", { name: "Orientation" });
   const sequenceBeforeVelocity = await scene.getAttribute(
     "data-camera-transition-sequence",
@@ -154,7 +155,7 @@ test("switches between physical, orrery, and schematic views without changing ph
     .not.toBe(cameraDirectionBefore);
   const trackedTime = await timeOutput.getAttribute("data-time-seconds");
 
-  await page.getByText("Trails and frames", { exact: true }).click();
+  await page.getByRole("tab", { name: "Guides" }).click();
   const referenceFrame = page.getByRole("combobox", {
     name: "Reference frame",
   });

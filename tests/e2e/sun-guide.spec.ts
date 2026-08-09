@@ -22,6 +22,44 @@ async function waitForCameraJourney(
   );
 }
 
+async function expectLabelAnchoredToSunMarker(
+  scene: Locator,
+  sunLabel: Locator,
+): Promise<void> {
+  await expect
+    .poll(async () => {
+      const [sceneBounds, labelBounds, endpointX, endpointY] =
+        await Promise.all([
+          scene.boundingBox(),
+          sunLabel.boundingBox(),
+          scene.getAttribute("data-sun-guide-endpoint-x"),
+          scene.getAttribute("data-sun-guide-endpoint-y"),
+        ]);
+      if (
+        sceneBounds === null ||
+        labelBounds === null ||
+        endpointX === null ||
+        endpointY === null
+      ) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const markerX = sceneBounds.x + Number(endpointX);
+      const markerY = sceneBounds.y + Number(endpointY);
+      const horizontalDistance = Math.max(
+        labelBounds.x - markerX,
+        markerX - (labelBounds.x + labelBounds.width),
+        0,
+      );
+      const verticalDistance = Math.max(
+        labelBounds.y - markerY,
+        markerY - (labelBounds.y + labelBounds.height),
+        0,
+      );
+      return Math.hypot(horizontalDistance, verticalDistance);
+    })
+    .toBeLessThanOrEqual(9);
+}
+
 test("keeps the Sun labelled with a live focus distance and bearing line", async ({
   page,
 }, testInfo) => {
@@ -40,6 +78,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
   await expect(sunLabel).toBeVisible();
   await expect(sunLabel).toHaveText("Sun");
   await expect(scene).toHaveAttribute("data-sun-guide-line-visible", "false");
+  await expectLabelAnchoredToSunMarker(scene, sunLabel);
 
   const sequenceBeforeEarth = await scene.getAttribute(
     "data-camera-transition-sequence",
@@ -60,6 +99,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     .toBeLessThan(1.1);
   await expect(sunLabel).toContainText("Sun");
   await expect(sunLabel).toContainText("AU");
+  await expectLabelAnchoredToSunMarker(scene, sunLabel);
   await expect(sunLine).not.toHaveCSS("display", "none");
   const earthLabel = page.locator('.body-label[data-body-id="earth"]');
   await expect(earthLabel).toBeVisible();
@@ -85,9 +125,10 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
 
   await page.getByRole("button", { name: "Display" }).click();
   const labels = page.getByRole("checkbox", { name: "Labels" });
+  await labels.uncheck();
+  await page.getByRole("tab", { name: "Guides" }).click();
   const wayfinders = page.getByRole("combobox", { name: "Wayfinders" });
   await expect(wayfinders).toHaveValue("sun");
-  await labels.uncheck();
   await expect(sunLabel).toBeVisible();
   await wayfinders.selectOption("off");
   await expect(scene).toHaveAttribute("data-wayfinder-count", "0");
@@ -119,6 +160,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     animations: "disabled",
   });
   await wayfinders.selectOption("sun");
+  await page.getByRole("button", { name: "Close" }).click();
 
   const sequenceBeforeJupiter = await scene.getAttribute(
     "data-camera-transition-sequence",
@@ -132,6 +174,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     )
     .toBeGreaterThan(3.9);
   await expect(sunLabel).toContainText("AU");
+  await expectLabelAnchoredToSunMarker(scene, sunLabel);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(async () => {
@@ -171,6 +214,8 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     animations: "disabled",
   });
 
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Guides" }).click();
   await wayfinders.selectOption("sun-two-planets");
   await page.getByRole("button", { name: "Close" }).click();
   await expect(scene).toHaveAttribute("data-wayfinder-count", "3");

@@ -52,6 +52,16 @@ import type {
   CameraNavigationCommand,
   CameraOrientationPreset,
 } from "./scene/camera-view";
+import {
+  circularOrbitSolution,
+  defaultOrbitConfiguration,
+  hillSphereRadiusM,
+  orbitConfigurationForPreset,
+  poweredHoverAccelerationMps2,
+  type CameraOrbitConfiguration,
+  type OrbitBodyParameters,
+  type OrbitPreset,
+} from "./scene/camera-orbit";
 import type {
   GravityWellMode,
   GravityWellScale,
@@ -77,8 +87,19 @@ import {
 } from "./scene/lunar-landing-sites";
 import {
   bodyOrientationAngles,
+  siderealRotationRateRadPerSecond,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
+import {
+  DISCOVERY_ONE_BODY_ID,
+  DISCOVERY_ONE_LENGTH_M,
+  DISCOVERY_ONE_MAXIMUM_DIAMETER_M,
+  DISCOVERY_ONE_NAME,
+  DISCOVERY_ONE_ORBITAL_ALTITUDE_M,
+  DISCOVERY_ONE_PARENT_BODY_ID,
+  DISCOVERY_ONE_SOURCE_URL,
+  discoveryOneState,
+} from "./scene/discovery-one";
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
 import {
@@ -109,6 +130,7 @@ import {
   SCALE_TOUR_STEPS,
   SCALE_TOUR_TRANSITION_DURATION_MS,
 } from "./tour/scale-tour";
+import { CINEMATIC_SHOTS, type CinematicShot } from "./tour/cinematic-shots";
 
 const SolarSystemScene = lazy(async () => {
   const module = await import("./scene/SolarSystemScene");
@@ -123,6 +145,8 @@ const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
 const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
+type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
+
 const CAMERA_ZOOM_PRESETS = [
   { id: "system", label: "System context (0.063x)", zoom: 0.0625 },
   { id: "wide", label: "Wide (0.25x)", zoom: 0.25 },
@@ -167,12 +191,14 @@ const VIEW_MODE_OPTIONS = [
 const TIME_RATES = [
   { label: "1 second / second", secondsPerSecond: 1 },
   { label: "1 minute / second", secondsPerSecond: 60 },
+  { label: "10 minutes / second", secondsPerSecond: 600 },
   { label: "1 hour / second", secondsPerSecond: 3_600 },
   { label: "1 day / second", secondsPerSecond: DAY_SECONDS },
   { label: "1 week / second", secondsPerSecond: 7 * DAY_SECONDS },
   { label: "30 days / second", secondsPerSecond: 30 * DAY_SECONDS },
   { label: "1 year / second", secondsPerSecond: 365.25 * DAY_SECONDS },
 ] as const;
+const USER_TIME_RATE_INDEXES = [0, 1, 3, 4, 5, 6, 7] as const;
 const PLANET_FOCUS_ORDER = [
   "mercury",
   "venus",
@@ -263,6 +289,15 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
       "Jovian Monolith TMA-2 2001 2010 Space Odyssey Jupiter Io L1 fictional",
     disabled: false,
   },
+  {
+    id: DISCOVERY_ONE_BODY_ID,
+    key: DISCOVERY_ONE_BODY_ID,
+    label: DISCOVERY_ONE_NAME,
+    group: "Fictional references",
+    searchText:
+      "Discovery One 2001 2010 Space Odyssey Io Jupiter spacecraft fictional",
+    disabled: false,
+  },
   ...FICTIONAL_ORBITERS.map((orbiter) => ({
     id: orbiter.id,
     key: orbiter.id,
@@ -276,6 +311,48 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
 const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
   (option) => option.id !== "" && !option.disabled,
 );
+
+function orbitParametersForBody(
+  state: SimulationState | undefined,
+  bodyId: string,
+): OrbitBodyParameters | undefined {
+  if (state === undefined) {
+    return undefined;
+  }
+  const definition = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  const bodyState = state.bodies.find((candidate) => candidate.id === bodyId);
+  if (
+    definition === undefined ||
+    bodyState === undefined ||
+    bodyState.gravitationalParameterM3S2 <= 0
+  ) {
+    return undefined;
+  }
+  const parentId = PARENT_BODY_ID[bodyId];
+  const parentState = state.bodies.find(
+    (candidate) => candidate.id === parentId,
+  );
+  const hillRadiusM =
+    parentState === undefined || parentId === undefined
+      ? undefined
+      : hillSphereRadiusM(
+          Math.hypot(
+            bodyState.positionM[0] - parentState.positionM[0],
+            bodyState.positionM[1] - parentState.positionM[1],
+            bodyState.positionM[2] - parentState.positionM[2],
+          ),
+          bodyState.gravitationalParameterM3S2,
+          parentState.gravitationalParameterM3S2,
+        );
+  return {
+    radiusM: definition.meanRadiusM,
+    gravitationalParameterM3S2: bodyState.gravitationalParameterM3S2,
+    siderealRotationRateRadPerSecond: siderealRotationRateRadPerSecond(bodyId),
+    ...(hillRadiusM === undefined ? {} : { hillSphereRadiusM: hillRadiusM }),
+  };
+}
 
 const FOCUS_GROUPS = Array.from(
   new Set(FOCUS_OPTIONS.map((option) => option.group)),
@@ -466,6 +543,16 @@ function formatEffectiveRate(secondsPerSecond: number): string {
   return `${absolute.toLocaleString(undefined, { maximumFractionDigits: 1 })} s/s`;
 }
 
+function formatDuration(seconds: number): string {
+  if (seconds >= DAY_SECONDS) {
+    return `${(seconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
+  }
+  if (seconds >= 3_600) {
+    return `${(seconds / 3_600).toLocaleString(undefined, { maximumFractionDigits: 2 })} hours`;
+  }
+  return `${(seconds / 60).toLocaleString(undefined, { maximumFractionDigits: 1 })} minutes`;
+}
+
 function formatSimulationOffset(seconds: number): string {
   if (seconds === 0) {
     return "0 days";
@@ -561,13 +648,15 @@ export function App() {
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
-  const [timeRateIndex, setTimeRateIndex] = useState(2);
+  const [timeRateIndex, setTimeRateIndex] = useState(3);
   const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
   const [bodyVisibilityPercent, setBodyVisibilityPercent] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>("reality");
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [displayPanelTab, setDisplayPanelTab] =
+    useState<DisplayPanelTab>("view");
   const [focusBodyId, setFocusBodyId] = useState("");
   const [selectedBodyId, setSelectedBodyId] = useState("");
   const [showMoonTrail, setShowMoonTrail] = useState(false);
@@ -605,12 +694,21 @@ export function App() {
     });
   const [cameraOrientation, setCameraOrientation] =
     useState<CameraOrientationPreset>("perspective");
+  const [orbitViewEnabled, setOrbitViewEnabled] = useState(false);
+  const [orbitConfiguration, setOrbitConfiguration] =
+    useState<CameraOrbitConfiguration | null>(null);
+  const [orbitConfigurationError, setOrbitConfigurationError] = useState<
+    string | undefined
+  >();
   const [orientationPresetToken, setOrientationPresetToken] = useState(0);
   const [tourStepIndex, setTourStepIndex] = useState<number | null>(null);
   const [tourPlaying, setTourPlaying] = useState(false);
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
   const [tourTransitionDurationMs, setTourTransitionDurationMs] = useState(0);
+  const [activeCinematicShotId, setActiveCinematicShotId] = useState<
+    string | null
+  >(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -624,6 +722,8 @@ export function App() {
   const [visualQuality, setVisualQuality] =
     useState<VisualQuality>("photographic");
   const [immersiveMode, setImmersiveMode] = useState(false);
+  const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
+    useState(false);
   const [fullscreenError, setFullscreenError] = useState<string>();
   const [objectVisibility, setObjectVisibility] = useState<ObjectVisibility>(
     DEFAULT_OBJECT_VISIBILITY,
@@ -631,6 +731,7 @@ export function App() {
   const [gpuStatus, setGpuStatus] = useState<SmallBodyGpuStatus>();
   const [gpuError, setGpuError] = useState<string>();
   const [simulationRunToken, setSimulationRunToken] = useState(0);
+  const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const playingRef = useRef(playing);
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
@@ -645,6 +746,7 @@ export function App() {
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
+  orbitViewEnabledRef.current = orbitViewEnabled;
   directionRef.current = direction;
   timeRateIndexRef.current = timeRateIndex;
   focusBodyIdRef.current = focusBodyId;
@@ -1051,10 +1153,15 @@ export function App() {
       setCameraOrientation(preset);
       if (preset === "custom") {
         setTourPlaying(false);
+        setActiveCinematicShotId(null);
       }
     },
     [],
   );
+
+  const handleOrbitViewChange = useCallback((enabled: boolean): void => {
+    setOrbitViewEnabled(enabled);
+  }, []);
 
   const handleSceneBodySelection = useCallback((bodyId: string): void => {
     setApolloInspectionSiteId(null);
@@ -1063,6 +1170,7 @@ export function App() {
 
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
+      setActiveCinematicShotId(null);
       setApolloInspectionSiteId(null);
       setTourPlaying(false);
       setTourStepIndex(null);
@@ -1073,7 +1181,13 @@ export function App() {
       setSelectedBodyId(bodyId);
       if (bodyId === currentBodyId) {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
-        setCameraOrientation(bodyId === "" ? "perspective" : "sun-facing");
+        setCameraOrientation(
+          bodyId === ""
+            ? "perspective"
+            : orbitViewEnabledRef.current
+              ? "custom"
+              : "sun-facing",
+        );
         issueCameraNavigation("fit-selection");
         return;
       }
@@ -1121,7 +1235,9 @@ export function App() {
       );
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
-        setCameraOrientation("sun-facing");
+        setCameraOrientation(
+          orbitViewEnabledRef.current ? "custom" : "sun-facing",
+        );
       }
     },
     [issueCameraNavigation, tourStepIndex],
@@ -1129,6 +1245,7 @@ export function App() {
 
   const navigateBack = (): void => {
     setSurfaceObserverEnabled(false);
+    setActiveCinematicShotId(null);
     setTourPlaying(false);
     setTourStepIndex(null);
     setPlaying(false);
@@ -1139,6 +1256,21 @@ export function App() {
     focusBodyIdRef.current = previousBodyId;
     setFocusBodyId(previousBodyId);
     setSelectedBodyId(previousBodyId);
+    setCameraZoom(DEFAULT_CAMERA_ZOOM);
+    setCameraOrientation(
+      previousBodyId === ""
+        ? "perspective"
+        : orbitViewEnabledRef.current
+          ? "custom"
+          : "sun-facing",
+    );
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : MANUAL_CAMERA_TRANSITION_DURATION_MS,
+    );
+    setResetViewToken((current) => current + 1);
+    setTourTransitionSequence((current) => current + 1);
     setFrame((currentFrame) =>
       currentFrame === undefined
         ? currentFrame
@@ -1165,6 +1297,9 @@ export function App() {
         ? "sun"
         : undefined) ??
       (selectedBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+      (selectedBodyId === DISCOVERY_ONE_BODY_ID
+        ? DISCOVERY_ONE_PARENT_BODY_ID
+        : undefined) ??
       (isFictionalOrbiterId(selectedBodyId)
         ? fictionalOrbiterById.get(selectedBodyId)?.parentBodyId
         : undefined) ??
@@ -1184,6 +1319,7 @@ export function App() {
 
   const navigateHome = (): void => {
     setSurfaceObserverEnabled(false);
+    setOrbitViewEnabled(false);
     setTourPlaying(false);
     setPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
@@ -1212,6 +1348,7 @@ export function App() {
     ).matches;
     setControlPanelOpen(false);
     setSurfaceObserverEnabled(false);
+    setOrbitViewEnabled(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -1229,6 +1366,7 @@ export function App() {
   const enterSurfaceObserver = (): void => {
     setTourPlaying(false);
     setTourStepIndex(null);
+    setOrbitViewEnabled(false);
     setViewMode("reality");
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation("custom");
@@ -1271,6 +1409,7 @@ export function App() {
     }
     setTourPlaying(false);
     setTourStepIndex(null);
+    setOrbitViewEnabled(false);
     setShowApolloSites(true);
     setApolloInspectionSiteId(null);
     setViewMode("reality");
@@ -1378,10 +1517,55 @@ export function App() {
 
   const activeTourStep =
     tourStepIndex === null ? undefined : SCALE_TOUR_STEPS[tourStepIndex];
+  const activeCinematicShot =
+    activeCinematicShotId === null
+      ? undefined
+      : CINEMATIC_SHOTS.find((shot) => shot.id === activeCinematicShotId);
   const activeCameraTargetBodyId =
     activeTourStep?.focusBodyId === focusBodyId
       ? activeTourStep.cameraTargetBodyId
-      : undefined;
+      : activeCinematicShot?.focusBodyId === focusBodyId
+        ? activeCinematicShot.cameraTargetBodyId
+        : undefined;
+
+  const presentCinematicShot = (shot: CinematicShot): void => {
+    const requestedRateIndex = TIME_RATES.findIndex(
+      (rate) => rate.secondsPerSecond === shot.timeRateSecondsPerSecond,
+    );
+    if (requestedRateIndex < 0) {
+      throw new Error(`${shot.name} requests an unavailable playback rate`);
+    }
+    setTourPlaying(false);
+    setTourStepIndex(null);
+    setSurfaceObserverEnabled(false);
+    setOrbitViewEnabled(false);
+    setActiveCinematicShotId(shot.id);
+    setDirection(1);
+    setTimeRateIndex(requestedRateIndex);
+    setPlaying(true);
+    setViewMode(shot.viewMode);
+    setBodyVisibilityPercent(shot.bodyVisibilityPercent);
+    setShowLabels(shot.labels);
+    setShowOrbitGuides(shot.orbitGuides);
+    setShowTacticalOverlay(false);
+    setShowEclipticPlane(false);
+    setSelectedBodyPanelCollapsed(true);
+    setCameraZoom(shot.cameraZoom);
+    setCameraOrientation(shot.orientation);
+    setOrientationPresetToken((current) => current + 1);
+    focusHistoryRef.current.push(focusBodyIdRef.current);
+    focusBodyIdRef.current = shot.focusBodyId;
+    setFocusBodyId(shot.focusBodyId);
+    setSelectedBodyId(shot.focusBodyId);
+    setTourTransitionDurationMs(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : MANUAL_CAMERA_TRANSITION_DURATION_MS,
+    );
+    setResetViewToken((current) => current + 1);
+    setTourTransitionSequence((current) => current + 1);
+    setControlPanelOpen(false);
+  };
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
@@ -1418,9 +1602,82 @@ export function App() {
   };
 
   const selectedTimeRate = TIME_RATES[timeRateIndex];
+  const playbackRateSliderIndex = USER_TIME_RATE_INDEXES.indexOf(
+    timeRateIndex as (typeof USER_TIME_RATE_INDEXES)[number],
+  );
   if (selectedTimeRate === undefined) {
     throw new Error("Selected simulation time rate is unavailable");
   }
+
+  const focusedOrbitParameters = useMemo(
+    () => orbitParametersForBody(state, focusBodyId),
+    [focusBodyId, state],
+  );
+  const activeOrbitConfiguration = orbitViewEnabled ? orbitConfiguration : null;
+  const orbitReadout = useMemo(() => {
+    if (focusedOrbitParameters === undefined || orbitConfiguration === null) {
+      return undefined;
+    }
+    if (orbitConfiguration.preset === "powered-hover") {
+      return {
+        kind: "hover" as const,
+        accelerationMps2: poweredHoverAccelerationMps2(
+          focusedOrbitParameters.gravitationalParameterM3S2,
+          focusedOrbitParameters.radiusM,
+          orbitConfiguration.altitudeM,
+        ),
+      };
+    }
+    const solution = circularOrbitSolution(
+      focusedOrbitParameters.gravitationalParameterM3S2,
+      focusedOrbitParameters.radiusM,
+      orbitConfiguration.altitudeM,
+    );
+    return { kind: "orbit" as const, ...solution };
+  }, [focusedOrbitParameters, orbitConfiguration]);
+
+  const beginPhysicalOrbit = (bodyId = focusBodyId): void => {
+    const bodyParameters = orbitParametersForBody(state, bodyId);
+    if (bodyParameters === undefined) {
+      setOrbitConfigurationError(
+        "Physical orbit presets require a body with a known radius and gravitational parameter.",
+      );
+      return;
+    }
+    setOrbitConfigurationError(undefined);
+    setOrbitConfiguration({
+      ...defaultOrbitConfiguration(bodyParameters),
+      epochTimeSeconds: state?.timeSeconds ?? 0,
+    });
+    setOrbitViewEnabled(true);
+    setTourPlaying(false);
+    setSurfaceObserverEnabled(false);
+    setViewMode("reality");
+    setCameraOrientation("custom");
+  };
+
+  const applyOrbitPreset = (preset: OrbitPreset): void => {
+    if (focusedOrbitParameters === undefined) {
+      setOrbitConfigurationError(
+        "Physical orbit presets require a body with a known radius and gravitational parameter.",
+      );
+      return;
+    }
+    const current =
+      orbitConfiguration ?? defaultOrbitConfiguration(focusedOrbitParameters);
+    try {
+      setOrbitConfiguration(
+        orbitConfigurationForPreset(preset, focusedOrbitParameters, current),
+      );
+      setOrbitConfigurationError(undefined);
+    } catch (presetError: unknown) {
+      setOrbitConfigurationError(
+        presetError instanceof Error
+          ? presetError.message
+          : "The requested orbit is unavailable.",
+      );
+    }
+  };
 
   const selectedBodyDetail = useMemo(() => {
     if (selectedBodyId === "") {
@@ -1456,12 +1713,15 @@ export function App() {
       (body) => body.id === bodyId,
     );
     const isJovianMonolith = bodyId === JOVIAN_MONOLITH_BODY_ID;
+    const isDiscoveryOne = bodyId === DISCOVERY_ONE_BODY_ID;
     const isFictionalOrbiter = isFictionalOrbiterId(bodyId);
     const bodyState = isJovianMonolith
       ? jovianMonolithState(state)
-      : isFictionalOrbiter
-        ? fictionalOrbiterStateById(state, bodyId)
-        : state.bodies.find((body) => body.id === bodyId);
+      : isDiscoveryOne
+        ? discoveryOneState(state)
+        : isFictionalOrbiter
+          ? fictionalOrbiterStateById(state, bodyId)
+          : state.bodies.find((body) => body.id === bodyId);
     const knownSatellite = knownSatelliteById.get(bodyId);
     const isIss = bodyId === ISS_BODY_ID;
     const voyager = voyagerById.get(
@@ -1480,21 +1740,24 @@ export function App() {
         !isVoyager &&
         !isOperationalSpacecraft &&
         !isJovianMonolith &&
+        !isDiscoveryOne &&
         !isFictionalOrbiter)
     ) {
       return undefined;
     }
     const parentId = isJovianMonolith
       ? "jupiter"
-      : isFictionalOrbiter
-        ? fictionalOrbiterById.get(bodyId)?.parentBodyId
-        : definition === undefined
-          ? isIss
-            ? ISS_PARENT_BODY_ID
-            : isVoyager
-              ? "sun"
-              : (PARENT_BODY_ID[bodyId] ?? knownSatellite?.parentId)
-          : PARENT_BODY_ID[bodyId];
+      : isDiscoveryOne
+        ? DISCOVERY_ONE_PARENT_BODY_ID
+        : isFictionalOrbiter
+          ? fictionalOrbiterById.get(bodyId)?.parentBodyId
+          : definition === undefined
+            ? isIss
+              ? ISS_PARENT_BODY_ID
+              : isVoyager
+                ? "sun"
+                : (PARENT_BODY_ID[bodyId] ?? knownSatellite?.parentId)
+            : PARENT_BODY_ID[bodyId];
     const parentState = state.bodies.find((body) => body.id === parentId);
     const parentDefinition = majorBodySnapshot.bodies.find(
       (body) => body.id === parentId,
@@ -1534,6 +1797,36 @@ export function App() {
         dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString()} m · 1:4:9`,
         ephemerisStatus:
           "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+      };
+    }
+    if (isDiscoveryOne) {
+      return {
+        name: DISCOVERY_ONE_NAME,
+        surface:
+          "Original detailed physical-scale reconstruction based on openly licensed museum photography",
+        parentName: parentDefinition?.name,
+        distance:
+          parentState === undefined
+            ? undefined
+            : formatDistance(
+                bodyDistanceM(bodyState, parentState),
+                semanticZoom,
+              ),
+        distanceLabel: "Distance from Io",
+        speed:
+          parentState === undefined
+            ? undefined
+            : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
+        speedLabel: "Speed relative to Io",
+        mass: "Fictional · excluded from gravity",
+        composition: {
+          summary:
+            "Fictional crewed spacecraft with command sphere, long truss spine and nuclear propulsion module",
+          authority: "AFI Catalog - 2010",
+          sourceUrl: DISCOVERY_ONE_SOURCE_URL,
+        },
+        dimensionsM: `${DISCOVERY_ONE_LENGTH_M.toFixed(1)} m long · ${DISCOVERY_ONE_MAXIMUM_DIAMETER_M.toFixed(1)} m maximum diameter`,
+        ephemerisStatus: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
       };
     }
     if (isFictionalOrbiter) {
@@ -1759,6 +2052,9 @@ export function App() {
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
     (focusBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+    (focusBodyId === DISCOVERY_ONE_BODY_ID
+      ? DISCOVERY_ONE_PARENT_BODY_ID
+      : undefined) ??
     (isFictionalOrbiterId(focusBodyId)
       ? fictionalOrbiterById.get(focusBodyId)?.parentBodyId
       : undefined) ??
@@ -1775,6 +2071,7 @@ export function App() {
       ref={appShellRef}
       className={`app-shell${immersiveMode ? " is-immersive" : ""}`}
       data-immersive-mode={String(immersiveMode)}
+      data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
       data-audio-state={audio.status}
       data-narration-state={audio.narrationStatus}
@@ -1832,9 +2129,13 @@ export function App() {
                   aria-pressed={viewMode === mode}
                   aria-describedby={tooltipId}
                   onClick={() => {
+                    setActiveCinematicShotId(null);
                     setTourPlaying(false);
                     setTourStepIndex(null);
                     setSurfaceObserverEnabled(false);
+                    if (mode === "schematic") {
+                      setOrbitViewEnabled(false);
+                    }
                     setViewMode(mode);
                   }}
                 >
@@ -1926,6 +2227,9 @@ export function App() {
                   focusedVoyager?.name ??
                   (focusBodyId === JOVIAN_MONOLITH_BODY_ID
                     ? JOVIAN_MONOLITH_NAME
+                    : undefined) ??
+                  (focusBodyId === DISCOVERY_ONE_BODY_ID
+                    ? DISCOVERY_ONE_NAME
                     : undefined) ??
                   (isFictionalOrbiterId(focusBodyId)
                     ? fictionalOrbiterById.get(focusBodyId)?.name
@@ -2023,17 +2327,26 @@ export function App() {
               cameraDistanceOverrideAu={
                 typeof activeTourStep?.cameraDistanceAu === "number"
                   ? activeTourStep.cameraDistanceAu
-                  : undefined
+                  : activeCinematicShot?.cameraDistanceAu
               }
               cameraTargetBodyId={activeCameraTargetBodyId}
               cameraTransitionSequence={tourTransitionSequence}
               cameraTransitionDurationMs={tourTransitionDurationMs}
-              cameraTransitionAutoFrame={activeTourStep === undefined}
+              cameraTransitionAutoFrame={
+                activeTourStep === undefined &&
+                activeCinematicShot?.cameraDistanceAu === undefined
+              }
               cameraTransitionOverviewAnchorBodyId={
-                activeTourStep?.transitionOverviewAnchorBodyId
+                activeTourStep?.transitionOverviewAnchorBodyId ??
+                (activeCinematicShot?.cameraTargetBodyId === undefined
+                  ? undefined
+                  : activeCinematicShot.focusBodyId)
               }
               cameraTransitionOverviewDistanceAu={
                 activeTourStep?.transitionOverviewDistanceAu ??
+                (activeCinematicShot?.cameraTargetBodyId === undefined
+                  ? undefined
+                  : 0.008) ??
                 (focusBodyId === "" || focusBodyId === "sun"
                   ? 90
                   : focusBodyId === ISS_BODY_ID ||
@@ -2043,6 +2356,8 @@ export function App() {
                     : 0.01)
               }
               cameraNavigationCommand={cameraNavigationCommand}
+              orbitViewEnabled={orbitViewEnabled}
+              orbitConfiguration={activeOrbitConfiguration}
               orientationPreset={cameraOrientation}
               orientationPresetToken={orientationPresetToken}
               viewMode={viewMode}
@@ -2054,6 +2369,7 @@ export function App() {
               onSelectBody={handleSceneBodySelection}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}
+              onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
               onViewZoomChange={setViewMagnification}
               onGpuStatus={setGpuStatus}
@@ -2338,7 +2654,13 @@ export function App() {
         {selectedBodyDetail === undefined ||
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
-          <aside className="selected-body-detail">
+          <aside
+            className={
+              selectedBodyPanelCollapsed
+                ? "selected-body-detail is-collapsed"
+                : "selected-body-detail"
+            }
+          >
             <div className="selected-body-heading">
               <div>
                 <span>
@@ -2349,19 +2671,50 @@ export function App() {
                 <strong>{selectedBodyDetail.name}</strong>
               </div>
               <div className="selected-body-actions">
-                <button
-                  type="button"
-                  className="primary-action"
-                  onClick={() =>
-                    selectedApolloSite === undefined
-                      ? navigateToFocus(selectedBodyId)
-                      : focusApolloLandingSite(selectedApolloSite.id)
-                  }
-                >
-                  {selectedApolloSite === undefined ? "Focus" : "Show on Moon"}
-                </button>
-                {selectedApolloSite === undefined ? (
+                {selectedBodyPanelCollapsed ? null : (
+                  <button
+                    type="button"
+                    className="primary-action"
+                    onClick={() =>
+                      selectedApolloSite === undefined
+                        ? navigateToFocus(selectedBodyId)
+                        : focusApolloLandingSite(selectedApolloSite.id)
+                    }
+                  >
+                    {selectedApolloSite === undefined
+                      ? "Focus"
+                      : "Show on Moon"}
+                  </button>
+                )}
+                {selectedBodyPanelCollapsed ? null : selectedApolloSite ===
+                  undefined ? (
                   <>
+                    <button
+                      type="button"
+                      disabled={
+                        orbitParametersForBody(state, selectedBodyId) ===
+                        undefined
+                      }
+                      aria-pressed={
+                        orbitViewEnabled && focusBodyId === selectedBodyId
+                      }
+                      title="Enter a physics-derived circular orbit around this body"
+                      onClick={() => {
+                        if (
+                          orbitViewEnabled &&
+                          focusBodyId === selectedBodyId
+                        ) {
+                          setOrbitViewEnabled(false);
+                          return;
+                        }
+                        navigateToFocus(selectedBodyId);
+                        beginPhysicalOrbit(selectedBodyId);
+                      }}
+                    >
+                      {orbitViewEnabled && focusBodyId === selectedBodyId
+                        ? "Leave orbit"
+                        : "Enter orbit"}
+                    </button>
                     <button type="button" onClick={navigateToParent}>
                       Parent
                     </button>
@@ -2379,151 +2732,177 @@ export function App() {
                     Stand at site
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="selected-body-collapse"
+                  aria-expanded={!selectedBodyPanelCollapsed}
+                  aria-label={
+                    selectedBodyPanelCollapsed
+                      ? "Expand selected body details"
+                      : "Collapse selected body details"
+                  }
+                  title={
+                    selectedBodyPanelCollapsed
+                      ? "Expand details"
+                      : "Collapse details"
+                  }
+                  onClick={() =>
+                    setSelectedBodyPanelCollapsed((current) => !current)
+                  }
+                >
+                  {selectedBodyPanelCollapsed ? "Expand" : "Collapse"}
+                </button>
               </div>
             </div>
-            <div className="selected-body-metrics">
-              {selectedBodyDetail.distance === undefined ? null : (
+            {selectedBodyPanelCollapsed ? null : (
+              <div className="selected-body-metrics">
+                {selectedBodyDetail.distance === undefined ? null : (
+                  <span>
+                    <small>
+                      {selectedBodyDetail.distanceLabel ?? "Distance"}
+                    </small>
+                    {selectedBodyDetail.distance}
+                  </span>
+                )}
+                {selectedBodyDetail.altitudeKm === undefined ? null : (
+                  <span>
+                    <small>Altitude</small>
+                    {selectedBodyDetail.altitudeKm.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    })}{" "}
+                    km
+                  </span>
+                )}
+                {selectedBodyDetail.speed === undefined ? null : (
+                  <span>
+                    <small>
+                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
+                    </small>
+                    {selectedBodyDetail.speed.toLocaleString(undefined, {
+                      maximumFractionDigits: 3,
+                    })}{" "}
+                    km/s
+                  </span>
+                )}
+                {selectedBodyDetail.dimensionsM === undefined ? null : (
+                  <span>
+                    <small>Maximum footprint</small>
+                    {selectedBodyDetail.dimensionsM}
+                  </span>
+                )}
+                {selectedBodyDetail.ephemerisStatus === undefined ? null : (
+                  <span>
+                    <small>Orbit data</small>
+                    {selectedBodyDetail.ephemerisStatus}
+                  </span>
+                )}
+                {selectedBodyDetail.diameterKm === undefined ? null : (
+                  <span>
+                    <small>Diameter</small>
+                    {selectedBodyDetail.diameterKm.toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })}{" "}
+                    km
+                  </span>
+                )}
+                {selectedBodyDetail.rotationHours === undefined ? null : (
+                  <span>
+                    <small>Sidereal rotation</small>
+                    {selectedBodyDetail.rotationHours.toLocaleString(
+                      undefined,
+                      {
+                        maximumFractionDigits: 2,
+                      },
+                    )}{" "}
+                    h
+                  </span>
+                )}
+                {selectedBodyDetail.primeMeridianDeg === undefined ? null : (
+                  <span>
+                    <small>Rotation angle</small>
+                    {selectedBodyDetail.primeMeridianDeg.toLocaleString(
+                      undefined,
+                      { maximumFractionDigits: 1 },
+                    )}
+                    °
+                  </span>
+                )}
                 <span>
+                  <small>Mass</small>
+                  {selectedBodyDetail.mass}
+                </span>
+                <span className="selected-body-surface">
+                  <small>Surface</small>
+                  {selectedBodyDetail.surface}
+                </span>
+                <span className="selected-body-composition">
                   <small>
-                    {selectedBodyDetail.distanceLabel ?? "Distance"}
+                    <span>Composition</span>
+                    {selectedBodyDetail.composition === undefined ? null : (
+                      <a
+                        href={selectedBodyDetail.composition.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Source: ${selectedBodyDetail.composition.authority}`}
+                      >
+                        Source
+                      </a>
+                    )}
                   </small>
-                  {selectedBodyDetail.distance}
+                  {selectedBodyDetail.composition?.summary ??
+                    "Not provided by the installed authority snapshot"}
                 </span>
-              )}
-              {selectedBodyDetail.altitudeKm === undefined ? null : (
-                <span>
-                  <small>Altitude</small>
-                  {selectedBodyDetail.altitudeKm.toLocaleString(undefined, {
-                    maximumFractionDigits: 1,
-                  })}{" "}
-                  km
-                </span>
-              )}
-              {selectedBodyDetail.speed === undefined ? null : (
-                <span>
-                  <small>
-                    {selectedBodyDetail.speedLabel ?? "Relative speed"}
-                  </small>
-                  {selectedBodyDetail.speed.toLocaleString(undefined, {
-                    maximumFractionDigits: 3,
-                  })}{" "}
-                  km/s
-                </span>
-              )}
-              {selectedBodyDetail.dimensionsM === undefined ? null : (
-                <span>
-                  <small>Maximum footprint</small>
-                  {selectedBodyDetail.dimensionsM}
-                </span>
-              )}
-              {selectedBodyDetail.ephemerisStatus === undefined ? null : (
-                <span>
-                  <small>Orbit data</small>
-                  {selectedBodyDetail.ephemerisStatus}
-                </span>
-              )}
-              {selectedBodyDetail.diameterKm === undefined ? null : (
-                <span>
-                  <small>Diameter</small>
-                  {selectedBodyDetail.diameterKm.toLocaleString(undefined, {
-                    maximumFractionDigits: 0,
-                  })}{" "}
-                  km
-                </span>
-              )}
-              {selectedBodyDetail.rotationHours === undefined ? null : (
-                <span>
-                  <small>Sidereal rotation</small>
-                  {selectedBodyDetail.rotationHours.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  h
-                </span>
-              )}
-              {selectedBodyDetail.primeMeridianDeg === undefined ? null : (
-                <span>
-                  <small>Rotation angle</small>
-                  {selectedBodyDetail.primeMeridianDeg.toLocaleString(
-                    undefined,
-                    { maximumFractionDigits: 1 },
-                  )}
-                  °
-                </span>
-              )}
-              <span>
-                <small>Mass</small>
-                {selectedBodyDetail.mass}
-              </span>
-              <span className="selected-body-surface">
-                <small>Surface</small>
-                {selectedBodyDetail.surface}
-              </span>
-              <span className="selected-body-composition">
-                <small>
-                  <span>Composition</span>
-                  {selectedBodyDetail.composition === undefined ? null : (
-                    <a
-                      href={selectedBodyDetail.composition.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={`Source: ${selectedBodyDetail.composition.authority}`}
-                    >
-                      Source
-                    </a>
-                  )}
-                </small>
-                {selectedBodyDetail.composition?.summary ??
-                  "Not provided by the installed authority snapshot"}
-              </span>
-              {selectedApolloSite === undefined ? null : (
-                <span className="apollo-mission-detail">
-                  <small>Mission record</small>
-                  <strong>
-                    Landed {selectedApolloSite.landingDateUtc} · Lunar Module{" "}
-                    {selectedApolloSite.lunarModule}
-                  </strong>
-                  <span>
-                    Moonwalkers: {selectedApolloSite.moonwalkers.join(" and ")}
+                {selectedApolloSite === undefined ? null : (
+                  <span className="apollo-mission-detail">
+                    <small>Mission record</small>
+                    <strong>
+                      Landed {selectedApolloSite.landingDateUtc} · Lunar Module{" "}
+                      {selectedApolloSite.lunarModule}
+                    </strong>
+                    <span>
+                      Moonwalkers:{" "}
+                      {selectedApolloSite.moonwalkers.join(" and ")}
+                    </span>
+                    <span>
+                      Command Module Pilot:{" "}
+                      {selectedApolloSite.commandModulePilot}
+                    </span>
+                    <span>
+                      {selectedApolloSite.surfaceStayHours.toFixed(1)} hours on
+                      the surface · {selectedApolloSite.evaHours.toFixed(1)} EVA
+                      hours · {selectedApolloSite.traverseDistanceKm.toFixed(2)}{" "}
+                      km traversed
+                    </span>
+                    <span>
+                      Experiments: {selectedApolloSite.experiments.join("; ")}
+                    </span>
+                    <span className="apollo-source-links">
+                      <a
+                        href={selectedApolloSite.mappingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        LROC traverse map
+                      </a>
+                      <a
+                        href={selectedApolloSite.photoArchiveUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Surface photographs
+                      </a>
+                      <a
+                        href={selectedApolloSite.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Mission record
+                      </a>
+                    </span>
                   </span>
-                  <span>
-                    Command Module Pilot:{" "}
-                    {selectedApolloSite.commandModulePilot}
-                  </span>
-                  <span>
-                    {selectedApolloSite.surfaceStayHours.toFixed(1)} hours on
-                    the surface · {selectedApolloSite.evaHours.toFixed(1)} EVA
-                    hours · {selectedApolloSite.traverseDistanceKm.toFixed(2)}{" "}
-                    km traversed
-                  </span>
-                  <span>
-                    Experiments: {selectedApolloSite.experiments.join("; ")}
-                  </span>
-                  <span className="apollo-source-links">
-                    <a
-                      href={selectedApolloSite.mappingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      LROC traverse map
-                    </a>
-                    <a
-                      href={selectedApolloSite.photoArchiveUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Surface photographs
-                    </a>
-                    <a
-                      href={selectedApolloSite.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Mission record
-                    </a>
-                  </span>
-                </span>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </aside>
         )}
 
@@ -2535,6 +2914,7 @@ export function App() {
           role="dialog"
           aria-modal="false"
           aria-label="Display controls"
+          data-active-tab={displayPanelTab}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
@@ -2562,8 +2942,35 @@ export function App() {
             </p>
           )}
 
-          <details open>
-            <summary>Image quality</summary>
+          <div className="display-tabs" role="tablist" aria-label="Settings">
+            {(
+              [
+                ["view", "View"],
+                ["camera", "Camera"],
+                ["guides", "Guides"],
+                ["sound", "Sound"],
+              ] as const
+            ).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={displayPanelTab === tab}
+                aria-controls={`display-${tab}-panel`}
+                onClick={() => setDisplayPanelTab(tab)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <section
+            id="display-view-panel"
+            className="display-panel-section"
+            role="tabpanel"
+            hidden={displayPanelTab !== "view"}
+          >
+            <h3>Image quality</h3>
             <div className="control-section visual-quality-controls">
               <label>
                 Rendering
@@ -2593,10 +3000,15 @@ export function App() {
                 changing positions or physics.
               </small>
             </div>
-          </details>
+          </section>
 
-          <details open>
-            <summary>Surface observer</summary>
+          <section
+            id="display-camera-panel"
+            className="display-panel-section"
+            role="tabpanel"
+            hidden={displayPanelTab !== "camera"}
+          >
+            <h3>Surface observer</h3>
             <div className="control-section surface-observer-controls">
               <label>
                 Observer body
@@ -2696,10 +3108,15 @@ export function App() {
                   : "Enter surface view"}
               </button>
             </div>
-          </details>
+          </section>
 
-          <details open>
-            <summary>Audio</summary>
+          <section
+            id="display-sound-panel"
+            className="display-panel-section"
+            role="tabpanel"
+            hidden={displayPanelTab !== "sound"}
+          >
+            <h3>Audio</h3>
             <div className="control-section audio-controls">
               <label className="switch-control">
                 <input
@@ -2810,12 +3227,34 @@ export function App() {
                         : "Starts after your next interaction"}
               </span>
             </div>
-          </details>
+          </section>
 
-          <details open>
-            <summary>Camera and guides</summary>
+          <section
+            className="display-panel-section camera-guide-panel"
+            role="tabpanel"
+            hidden={
+              displayPanelTab !== "camera" && displayPanelTab !== "guides"
+            }
+          >
+            <h3>{displayPanelTab === "camera" ? "Camera" : "Guides"}</h3>
             <div className="control-section">
-              <label>
+              <div className="cinematic-shot-picker camera-only">
+                <span>Cool shots</span>
+                <div className="cinematic-shot-grid">
+                  {CINEMATIC_SHOTS.map((shot) => (
+                    <button
+                      type="button"
+                      key={shot.id}
+                      aria-pressed={activeCinematicShotId === shot.id}
+                      title={shot.description}
+                      onClick={() => presentCinematicShot(shot)}
+                    >
+                      {shot.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="camera-only">
                 Orientation
                 <select
                   value={cameraOrientation}
@@ -2841,7 +3280,173 @@ export function App() {
                   </option>
                 </select>
               </label>
-              <label>
+              <label className="switch-control camera-orbit-control camera-only">
+                <input
+                  type="checkbox"
+                  checked={orbitViewEnabled}
+                  disabled={
+                    viewMode === "schematic" ||
+                    surfaceObserverEnabled ||
+                    focusBodyId === "" ||
+                    focusedOrbitParameters === undefined
+                  }
+                  onChange={(event) => {
+                    const enabled = event.currentTarget.checked;
+                    if (enabled) {
+                      beginPhysicalOrbit();
+                    } else {
+                      setOrbitViewEnabled(false);
+                    }
+                  }}
+                />
+                <span>Fly in orbit</span>
+              </label>
+              <small className="control-note camera-orbit-note camera-only">
+                Circular speed and period are derived from the focused body's
+                live gravity. Playback rate compresses time without changing the
+                trajectory.
+              </small>
+              {!orbitViewEnabled || orbitConfiguration === null ? null : (
+                <div className="orbit-flight-controls camera-only">
+                  <label>
+                    Flight mode
+                    <select
+                      value={orbitConfiguration.preset}
+                      onChange={(event) =>
+                        applyOrbitPreset(
+                          event.currentTarget.value as OrbitPreset,
+                        )
+                      }
+                    >
+                      <option value="low-circular">Low circular</option>
+                      <option value="equatorial">Equatorial circular</option>
+                      <option value="polar">Polar circular</option>
+                      <option value="synchronous">
+                        {focusBodyId === "earth"
+                          ? "Geostationary"
+                          : "Synchronous"}
+                      </option>
+                      <option value="high-observation">High observation</option>
+                      <option value="powered-hover">Powered hover</option>
+                      <option value="custom">Custom circular</option>
+                    </select>
+                  </label>
+                  <label>
+                    Altitude
+                    <span className="number-with-unit">
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={Number(
+                          (orbitConfiguration.altitudeM / 1_000).toFixed(3),
+                        )}
+                        disabled={orbitConfiguration.preset === "synchronous"}
+                        onChange={(event) => {
+                          const altitudeM =
+                            Number(event.currentTarget.value) * 1_000;
+                          if (!Number.isFinite(altitudeM) || altitudeM < 0) {
+                            return;
+                          }
+                          setOrbitConfiguration({
+                            ...orbitConfiguration,
+                            preset: "custom",
+                            altitudeM,
+                          });
+                        }}
+                      />
+                      <span>km</span>
+                    </span>
+                  </label>
+                  <label>
+                    Inclination
+                    <span className="number-with-unit">
+                      <input
+                        type="number"
+                        min="0"
+                        max="180"
+                        step="1"
+                        value={orbitConfiguration.inclinationDeg}
+                        disabled={
+                          orbitConfiguration.preset === "synchronous" ||
+                          orbitConfiguration.preset === "powered-hover"
+                        }
+                        onChange={(event) => {
+                          const inclinationDeg = Number(
+                            event.currentTarget.value,
+                          );
+                          if (
+                            !Number.isFinite(inclinationDeg) ||
+                            inclinationDeg < 0 ||
+                            inclinationDeg > 180
+                          ) {
+                            return;
+                          }
+                          setOrbitConfiguration({
+                            ...orbitConfiguration,
+                            preset: "custom",
+                            inclinationDeg,
+                          });
+                        }}
+                      />
+                      <span>°</span>
+                    </span>
+                  </label>
+                  <label>
+                    Direction
+                    <select
+                      value={orbitConfiguration.direction}
+                      disabled={
+                        orbitConfiguration.preset === "synchronous" ||
+                        orbitConfiguration.preset === "powered-hover"
+                      }
+                      onChange={(event) =>
+                        setOrbitConfiguration({
+                          ...orbitConfiguration,
+                          preset: "custom",
+                          direction: event.currentTarget.value as
+                            "prograde" | "retrograde",
+                        })
+                      }
+                    >
+                      <option value="prograde">Prograde</option>
+                      <option value="retrograde">Retrograde</option>
+                    </select>
+                  </label>
+                  <label>
+                    Starting longitude
+                    <span className="number-with-unit">
+                      <input
+                        type="number"
+                        min="-180"
+                        max="180"
+                        step="1"
+                        value={orbitConfiguration.longitudeDeg}
+                        onChange={(event) =>
+                          setOrbitConfiguration({
+                            ...orbitConfiguration,
+                            longitudeDeg: Number(event.currentTarget.value),
+                          })
+                        }
+                      />
+                      <span>°</span>
+                    </span>
+                  </label>
+                  <output className="orbit-flight-readout">
+                    {orbitReadout?.kind === "hover"
+                      ? `Station keeping ${orbitReadout.accelerationMps2.toFixed(4)} m/s²`
+                      : orbitReadout?.kind === "orbit"
+                        ? `${(orbitReadout.speedMps / 1_000).toFixed(3)} km/s · period ${formatDuration(orbitReadout.periodSeconds)}`
+                        : "Orbit data unavailable"}
+                  </output>
+                </div>
+              )}
+              {orbitConfigurationError === undefined ? null : (
+                <p className="control-error camera-only" role="alert">
+                  {orbitConfigurationError}
+                </p>
+              )}
+              <label className="camera-only">
                 Zoom preset
                 <select
                   value={activeZoomPreset}
@@ -2868,7 +3473,7 @@ export function App() {
                   </option>
                 </select>
               </label>
-              <label className="range-control">
+              <label className="range-control camera-only">
                 <span>Camera zoom</span>
                 <input
                   type="range"
@@ -2895,26 +3500,7 @@ export function App() {
                   x
                 </output>
               </label>
-              <label className="range-control">
-                <span>Body size boost</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={bodyVisibilityPercent}
-                  disabled={viewMode !== "orrery"}
-                  onChange={(event) =>
-                    setBodyVisibilityPercent(Number(event.currentTarget.value))
-                  }
-                />
-                <output>
-                  {viewMode === "reality" || bodyVisibilityPercent === 0
-                    ? "Physical"
-                    : `${String(bodyVisibilityPercent)}%`}
-                </output>
-              </label>
-              <label className="wayfinder-control">
+              <label className="wayfinder-control guide-only">
                 Wayfinders
                 <select
                   value={wayfinderMode}
@@ -2931,7 +3517,7 @@ export function App() {
                   </option>
                 </select>
               </label>
-              <label>
+              <label className="guide-only">
                 Gravity field
                 <select
                   value={gravityWellMode}
@@ -2947,7 +3533,7 @@ export function App() {
                   <option value="surface">3D potential surface</option>
                 </select>
               </label>
-              <label>
+              <label className="guide-only">
                 Gravity scale
                 <select
                   value={gravityWellScale}
@@ -2966,7 +3552,6 @@ export function App() {
               </label>
               {(
                 [
-                  ["Labels", showLabels, setShowLabels],
                   ["Orbit guides", showOrbitGuides, setShowOrbitGuides],
                   [
                     "Tactical overlay",
@@ -2978,7 +3563,7 @@ export function App() {
                   ["Apollo landing sites", showApolloSites, setShowApolloSites],
                 ] as const
               ).map(([label, checked, setter]) => (
-                <label className="switch-control" key={label}>
+                <label className="switch-control guide-only" key={label}>
                   <input
                     type="checkbox"
                     checked={checked}
@@ -2989,10 +3574,49 @@ export function App() {
                 </label>
               ))}
             </div>
-          </details>
+          </section>
 
-          <details open>
-            <summary>Objects</summary>
+          <section
+            className="display-panel-section"
+            role="tabpanel"
+            hidden={displayPanelTab !== "view"}
+          >
+            <h3>Objects</h3>
+            <div className="control-section object-view-controls">
+              <label className="switch-control">
+                <input
+                  type="checkbox"
+                  checked={showLabels}
+                  disabled={viewMode === "schematic"}
+                  onChange={(event) =>
+                    setShowLabels(event.currentTarget.checked)
+                  }
+                />
+                <span>Labels</span>
+              </label>
+              {viewMode === "orrery" ? (
+                <label className="range-control">
+                  <span>Body size boost</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={bodyVisibilityPercent}
+                    onChange={(event) =>
+                      setBodyVisibilityPercent(
+                        Number(event.currentTarget.value),
+                      )
+                    }
+                  />
+                  <output>
+                    {bodyVisibilityPercent === 0
+                      ? "Physical"
+                      : `${String(bodyVisibilityPercent)}%`}
+                  </output>
+                </label>
+              ) : null}
+            </div>
             <div className="category-grid">
               {(
                 [
@@ -3026,10 +3650,22 @@ export function App() {
                 </label>
               ))}
             </div>
-          </details>
+            {viewMode === "reality" ? (
+              <small className="control-note object-availability-note">
+                Asteroids and comets are GPU catalogue points, so they are
+                available in Orrery mode. Reality mode will not draw a false
+                one-pixel object larger than its physical apparent size.
+              </small>
+            ) : null}
+          </section>
 
-          <details>
-            <summary>Trails and frames</summary>
+          <section
+            id="display-guides-panel"
+            className="display-panel-section"
+            role="tabpanel"
+            hidden={displayPanelTab !== "guides"}
+          >
+            <h3>Trails and frames</h3>
             <div className="control-section">
               <label className="switch-control">
                 <input
@@ -3114,7 +3750,7 @@ export function App() {
                 Clear trails
               </button>
             </div>
-          </details>
+          </section>
         </aside>
 
         <section className="timeline-dock" aria-label="Time controls">
@@ -3179,12 +3815,17 @@ export function App() {
             <input
               type="range"
               min="0"
-              max={String(TIME_RATES.length - 1)}
+              max={String(USER_TIME_RATE_INDEXES.length - 1)}
               step="1"
-              value={timeRateIndex}
-              onChange={(event) =>
-                setTimeRateIndex(Number(event.currentTarget.value))
-              }
+              value={Math.max(0, playbackRateSliderIndex)}
+              onChange={(event) => {
+                const selectedIndex =
+                  USER_TIME_RATE_INDEXES[Number(event.currentTarget.value)];
+                if (selectedIndex === undefined) {
+                  throw new Error("Selected playback rate is unavailable");
+                }
+                setTimeRateIndex(selectedIndex);
+              }}
             />
             <output>{selectedTimeRate.label}</output>
           </label>

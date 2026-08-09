@@ -145,6 +145,7 @@ test("mouse wheel can dolly from the Solar System to Alpha Centauri scale", asyn
     "interstellar",
   );
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
   const zoomOutput = page
     .getByText("Camera zoom", { exact: true })
     .locator("..")

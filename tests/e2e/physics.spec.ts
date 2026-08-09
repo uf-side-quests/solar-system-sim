@@ -92,12 +92,12 @@ test("renders solver state and advances time through the physics worker", async 
     name: "Body size boost",
   });
   const initialTimeRate = page.getByRole("slider", { name: "Playback rate" });
-  await expect(bodyVisibility).toHaveValue("100");
-  await expect(bodyVisibility).toBeDisabled();
+  await expect(bodyVisibility).toHaveCount(0);
   await expect(initialTimeRate).toHaveValue("2");
   await expect(
     page.getByText("1 hour / second", { exact: true }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Camera" }).click();
   const cameraZoom = page.getByRole("slider", { name: "Camera zoom" });
   const zoomPreset = page.getByRole("combobox", { name: "Zoom preset" });
   const orientation = page.getByRole("combobox", { name: "Orientation" });
@@ -222,19 +222,15 @@ test("renders solver state and advances time through the physics worker", async 
     )
     .toBeLessThan(0.001);
   await orientation.selectOption("perspective");
+  await page.getByRole("tab", { name: "View" }).click();
   const planets = page.getByRole("checkbox", { name: "Planets" });
   const moons = page.getByRole("checkbox", { name: "Moons" });
   const asteroids = page.getByRole("checkbox", { name: "Asteroids" });
   const comets = page.getByRole("checkbox", { name: "Comets" });
-  await page.getByText("Trails and frames", { exact: true }).click();
-  const minorBodyTrails = page.getByRole("checkbox", {
-    name: "Minor-body trails",
-  });
   await expect(planets).toBeChecked();
   await expect(moons).toBeChecked();
   await expect(asteroids).not.toBeChecked();
   await expect(comets).not.toBeChecked();
-  await expect(minorBodyTrails).not.toBeChecked();
 
   await planets.uncheck();
   await expect(scene).toHaveAttribute("data-planets-visible", "false");
@@ -245,6 +241,12 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(scene).toHaveAttribute("data-moons-visible", "false");
   await moons.check();
 
+  await page.getByRole("tab", { name: "Guides" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Minor-body trails" }),
+  ).not.toBeChecked();
+  await page.getByRole("tab", { name: "View" }).click();
+
   await expect(smallBodyCanvas).toHaveAttribute(
     "data-asteroids-visible",
     "false",
@@ -252,6 +254,7 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(smallBodyCanvas).toHaveAttribute("data-comets-visible", "false");
   await expect(smallBodyCanvas).toBeHidden();
   await page.getByRole("button", { name: "Orrery" }).click();
+  await expect(bodyVisibility).toBeVisible();
   await expect(bodyVisibility).toBeEnabled();
   await expect(
     page.locator("label", { hasText: "Body size boost" }).locator("output"),
@@ -299,7 +302,8 @@ test("renders solver state and advances time through the physics worker", async 
       timeout: 30_000,
     })
     .toBeGreaterThan(100);
-  await minorBodyTrails.check();
+  await page.getByRole("tab", { name: "Guides" }).click();
+  await page.getByRole("checkbox", { name: "Minor-body trails" }).check();
   await expect(smallBodyCanvas).toHaveAttribute(
     "data-minor-body-trails",
     "true",
@@ -315,6 +319,7 @@ test("renders solver state and advances time through the physics worker", async 
     });
   }
 
+  await page.getByRole("tab", { name: "Camera" }).click();
   const initialView = await readCanvasPixels(smallBodyCanvas);
   const initialCameraDirection = await scene.getAttribute(
     "data-camera-direction",
@@ -375,6 +380,7 @@ test("renders solver state and advances time through the physics worker", async 
   ).toBeVisible();
   await timeRate.fill("3");
 
+  await page.getByRole("tab", { name: "View" }).click();
   await bodyVisibility.fill("0");
   await expect(
     page.locator("label", { hasText: "Body size boost" }).locator("output"),
@@ -414,6 +420,7 @@ test("renders solver state and advances time through the physics worker", async 
     },
   );
   await expect(scene).toHaveAttribute("data-focus-distance-au", "0.00204420");
+  await page.getByRole("tab", { name: "Camera" }).click();
   await expect(cameraZoom).toHaveValue("0");
   await expect(orientation).toHaveValue("sun-facing");
   const earthPrimeMeridianBefore = Number(
@@ -467,6 +474,7 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(orientation).toHaveValue("sun-facing");
   await expect(scene).toHaveAttribute("data-visible-body-labels", /[1-9]\d*/u);
 
+  await page.getByRole("tab", { name: "Guides" }).click();
   const trailFrame = page.getByRole("combobox", { name: "Reference frame" });
   const planetTrails = page.getByRole("checkbox", { name: "Planet trails" });
   const moonTrail = page.getByRole("checkbox", { name: "Moon trail" });

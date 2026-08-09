@@ -109,10 +109,16 @@ export function bodyOrientationQuaternion(
 }
 
 export function siderealRotationPeriodHours(body: MajorBodyDefinition): number {
+  return (
+    (Math.PI * 2) / Math.abs(siderealRotationRateRadPerSecond(body.id)) / 3_600
+  );
+}
+
+export function siderealRotationRateRadPerSecond(bodyId: string): number {
   const rateDegPerDay =
-    naifPhysicalSnapshot.bodies[body.id]?.orientation.primeMeridianDeg[1];
+    naifPhysicalSnapshot.bodies[bodyId]?.orientation.primeMeridianDeg[1];
   if (rateDegPerDay === undefined || rateDegPerDay === 0) {
-    throw new Error(`NAIF rotation rate is missing body ${body.id}`);
+    throw new Error(`NAIF rotation rate is missing body ${bodyId}`);
   }
-  return (360 / Math.abs(rateDegPerDay)) * 24;
+  return (rateDegPerDay * Math.PI) / 180 / SECONDS_PER_DAY;
 }

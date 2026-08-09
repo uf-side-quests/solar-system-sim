@@ -92,7 +92,9 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
   await expect(scene).toHaveAttribute("data-visual-quality", "balanced");
   await quality.selectOption("photographic");
   await expect(scene).toHaveAttribute("data-visual-quality", "photographic");
+  await page.getByRole("tab", { name: "Guides" }).click();
   await page.getByRole("combobox", { name: "Wayfinders" }).selectOption("off");
+  await page.getByRole("tab", { name: "View" }).click();
   await page.getByRole("checkbox", { name: "Labels" }).uncheck();
   await page.getByRole("button", { name: "Close" }).click();
 
@@ -251,6 +253,7 @@ test("keeps both physical ring systems coherent across camera orientations", asy
     await focusBody(page, scene, name, bodyId);
     for (const orientation of ["sun-facing", "overhead", "edge-on"] as const) {
       await page.getByRole("button", { name: "Display" }).click();
+      await page.getByRole("tab", { name: "Camera" }).click();
       await page
         .getByRole("combobox", { name: "Orientation" })
         .selectOption(orientation);
@@ -273,6 +276,7 @@ test("keeps both physical ring systems coherent across camera orientations", asy
 
   await focusBody(page, scene, "Saturn", "saturn");
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
   await page
     .getByRole("combobox", { name: "Orientation" })
     .selectOption("sun-facing");

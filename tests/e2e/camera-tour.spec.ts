@@ -9,6 +9,10 @@ async function waitForCameraJourney(
     .not.toBe(previousSequence);
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
+    "orienting",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
     "settled",
     { timeout: 16_000 },
   );
@@ -45,16 +49,13 @@ test("keeps escape navigation visible and guides the user through scale", async 
   await expect(page.getByRole("button", { name: "Re-centre" })).toBeVisible();
 
   const focus = page.getByRole("combobox", { name: "Focus" });
+  const sequenceBeforeEarth = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await focus.fill("Earth");
   await focus.press("Enter");
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
-  await expect(scene).toHaveAttribute(
-    "data-camera-transition-phase",
-    "settled",
-    {
-      timeout: 15_000,
-    },
-  );
+  await waitForCameraJourney(scene, sequenceBeforeEarth);
   await expect(scene).toHaveAttribute("data-camera-orientation", "sun-facing");
   await expect
     .poll(async () =>
@@ -180,7 +181,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
-    "depart-coast-arrive",
+    "orient-depart-coast-arrive",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-duration-ms",

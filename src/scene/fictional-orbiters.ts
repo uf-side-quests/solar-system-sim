@@ -1,4 +1,5 @@
 import type { BodyState, SimulationState } from "../physics/contracts";
+import { masslessCircularOrbitState } from "./massless-circular-orbit";
 
 export type FictionalOrbiter = Readonly<{
   id: "death-star-1" | "death-star-2";
@@ -49,35 +50,6 @@ export function isFictionalOrbiterId(
   return fictionalOrbiterById.has(bodyId as FictionalOrbiterId);
 }
 
-function requiredBody(state: SimulationState, bodyId: string): BodyState {
-  const body = state.bodies.find((candidate) => candidate.id === bodyId);
-  if (body === undefined) {
-    throw new Error(`${bodyId} physics state is required`);
-  }
-  return body;
-}
-
-function normalized(
-  vector: readonly [number, number, number],
-): [number, number, number] {
-  const length = Math.hypot(...vector);
-  if (!Number.isFinite(length) || length <= 0) {
-    throw new Error("Fictional orbiter reference vector is unavailable");
-  }
-  return [vector[0] / length, vector[1] / length, vector[2] / length];
-}
-
-function cross(
-  left: readonly [number, number, number],
-  right: readonly [number, number, number],
-): [number, number, number] {
-  return [
-    left[1] * right[2] - left[2] * right[1],
-    left[2] * right[0] - left[0] * right[2],
-    left[0] * right[1] - left[1] * right[0],
-  ];
-}
-
 /**
  * Evaluate a hypothetical massless circular orbit around a live Galilean moon.
  *
@@ -90,61 +62,16 @@ export function fictionalOrbiterState(
   state: SimulationState,
   orbiter: FictionalOrbiter,
 ): BodyState {
-  const moon = requiredBody(state, orbiter.parentBodyId);
-  const jupiter = requiredBody(state, "jupiter");
-  if (
-    !Number.isFinite(moon.gravitationalParameterM3S2) ||
-    moon.gravitationalParameterM3S2 <= 0
-  ) {
-    throw new Error(`${orbiter.name} requires its moon's gravity`);
-  }
   const moonRadiusM =
     orbiter.parentBodyId === "callisto" ? 2_410_300 : 2_634_100;
-  const orbitalRadiusM = moonRadiusM + orbiter.orbitalAltitudeM;
-  const inward = normalized([
-    jupiter.positionM[0] - moon.positionM[0],
-    jupiter.positionM[1] - moon.positionM[1],
-    jupiter.positionM[2] - moon.positionM[2],
-  ]);
-  const moonRelativeVelocity = normalized([
-    moon.velocityMps[0] - jupiter.velocityMps[0],
-    moon.velocityMps[1] - jupiter.velocityMps[1],
-    moon.velocityMps[2] - jupiter.velocityMps[2],
-  ]);
-  const normal = normalized(cross(inward, moonRelativeVelocity));
-  const tangent = normalized(cross(normal, inward));
-  const angularRateRadPerSecond = Math.sqrt(
-    moon.gravitationalParameterM3S2 / orbitalRadiusM ** 3,
-  );
-  const phase =
-    orbiter.initialPhaseRad + state.timeSeconds * angularRateRadPerSecond;
-  const cosine = Math.cos(phase);
-  const sine = Math.sin(phase);
-  const radial: [number, number, number] = [
-    inward[0] * cosine + tangent[0] * sine,
-    inward[1] * cosine + tangent[1] * sine,
-    inward[2] * cosine + tangent[2] * sine,
-  ];
-  const directionOfTravel: [number, number, number] = [
-    -inward[0] * sine + tangent[0] * cosine,
-    -inward[1] * sine + tangent[1] * cosine,
-    -inward[2] * sine + tangent[2] * cosine,
-  ];
-  const circularSpeedMps = angularRateRadPerSecond * orbitalRadiusM;
-  return {
+  return masslessCircularOrbitState(state, {
     id: orbiter.id,
-    gravitationalParameterM3S2: 0,
-    positionM: [
-      moon.positionM[0] + radial[0] * orbitalRadiusM,
-      moon.positionM[1] + radial[1] * orbitalRadiusM,
-      moon.positionM[2] + radial[2] * orbitalRadiusM,
-    ],
-    velocityMps: [
-      moon.velocityMps[0] + directionOfTravel[0] * circularSpeedMps,
-      moon.velocityMps[1] + directionOfTravel[1] * circularSpeedMps,
-      moon.velocityMps[2] + directionOfTravel[2] * circularSpeedMps,
-    ],
-  };
+    parentBodyId: orbiter.parentBodyId,
+    planeReferenceBodyId: "jupiter",
+    parentRadiusM: moonRadiusM,
+    orbitalAltitudeM: orbiter.orbitalAltitudeM,
+    initialPhaseRad: orbiter.initialPhaseRad,
+  });
 }
 
 export function fictionalOrbiterStateById(

@@ -37,6 +37,7 @@ test("keeps the zoom control in sync with wheel and trackpad dolly", async ({
   await expect(navigationMap).toHaveAttribute("data-observer-body", "camera");
   await expect(navigationMap).toHaveAttribute("data-view-bearing-deg", /\d/u);
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
   const zoom = page.getByRole("slider", { name: "Camera zoom" });
   const before = await scene.getAttribute("data-view-magnification");
   await canvas.hover();
@@ -82,10 +83,12 @@ test("searches grouped focus targets and renders official operational spacecraft
   ).toBeVisible();
   await focus.fill("telescope");
   await expect(
-    page.getByRole("option", { name: "Hubble Space Telescope" }),
+    focusPopover.getByRole("option", { name: "Hubble Space Telescope" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("option", { name: "James Webb Space Telescope" }),
+    focusPopover.getByRole("option", {
+      name: "James Webb Space Telescope",
+    }),
   ).toBeVisible();
 
   await focus.fill("Hubble Space Telescope");
@@ -105,6 +108,7 @@ test("searches grouped focus targets and renders official operational spacecraft
   );
 
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
   const zoom = page.getByRole("slider", { name: "Camera zoom" });
   await zoom.fill("-6");
   await expect(scene).toHaveAttribute("data-camera-zoom", "0.02");
@@ -124,6 +128,7 @@ test("searches grouped focus targets and renders official operational spacecraft
   const canvas = page.locator("canvas.major-body-layer");
   const spacecraftOn = await canvas.screenshot();
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "View" }).click();
   const spacecraftToggle = page.getByRole("checkbox", { name: "Spacecraft" });
   await spacecraftToggle.uncheck();
   await expect(scene).toHaveAttribute("data-jwst-geometry-visible", "false");

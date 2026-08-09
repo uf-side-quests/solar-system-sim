@@ -148,6 +148,9 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await expect(focus).toHaveValue("Jovian Monolith (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
   await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Discovery One (fictional)");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("Death Star I (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
   await page.getByRole("button", { name: "Focus", exact: true }).click();
@@ -158,7 +161,7 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await page.getByRole("button", { name: "Home" }).click();
   await expect(focus).toHaveValue("Solar System");
 
-  await page.getByText("Trails and frames", { exact: true }).click();
+  await page.getByRole("tab", { name: "Guides" }).click();
   const trailLength = page.getByRole("combobox", { name: "Trail length" });
   const trailFade = page.getByRole("slider", { name: "Trail fade" });
   await trailLength.selectOption("7");

@@ -24,6 +24,7 @@ test("starts original ambient audio after interaction and persists controls", as
 
   await page.getByRole("button", { name: "Display" }).click();
   await expect(app).toHaveAttribute("data-audio-state", "running");
+  await page.getByRole("tab", { name: "Sound" }).click();
 
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
@@ -95,6 +96,7 @@ test("starts original ambient audio after interaction and persists controls", as
 
   await page.reload();
   await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Sound" }).click();
   await expect(
     page.getByRole("checkbox", { name: "Ambient music" }),
   ).not.toBeChecked();

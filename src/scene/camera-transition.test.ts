@@ -15,15 +15,16 @@ describe("camera transition", () => {
     expect(() => formatViewpointSpeed(-1)).toThrow(/non-negative/u);
   });
 
-  it("departs, crosses the overview continuously, and settles into the authored shot", () => {
+  it("orients, departs, crosses the overview continuously, and settles into the authored shot", () => {
     expect(sampleCameraTransition(0, 3_000)).toEqual({
-      phase: "outbound",
+      phase: "orienting",
       segmentProgress: 0,
     });
-    const coast = sampleCameraTransition(1_500, 3_000);
+    expect(sampleCameraTransition(1_000, 3_000).phase).toBe("outbound");
+    const coast = sampleCameraTransition(1_875, 3_000);
     expect(coast.phase).toBe("overview");
     expect(coast.segmentProgress).toBeCloseTo(0.5);
-    expect(sampleCameraTransition(2_250, 3_000).phase).toBe("inbound");
+    expect(sampleCameraTransition(2_400, 3_000).phase).toBe("inbound");
     expect(sampleCameraTransition(3_000, 3_000)).toEqual({
       phase: "settled",
       segmentProgress: 1,
@@ -31,8 +32,8 @@ describe("camera transition", () => {
   });
 
   it("does not introduce a frozen overview beat", () => {
-    const early = sampleCameraTransition(1_050, 3_000);
-    const late = sampleCameraTransition(1_950, 3_000);
+    const early = sampleCameraTransition(1_650, 3_000);
+    const late = sampleCameraTransition(2_100, 3_000);
     expect(early.phase).toBe("overview");
     expect(late.phase).toBe("overview");
     expect(late.segmentProgress).toBeGreaterThan(early.segmentProgress);

@@ -39,6 +39,11 @@ test("keeps the compact controls usable at narrow widths", async ({
   await expect(
     page.getByRole("dialog", { name: "Display controls" }),
   ).toBeVisible();
+  await expect(cameraNavigation).toBeHidden();
+  await expect(
+    page.getByRole("region", { name: "Time controls" }),
+  ).toBeHidden();
+  await page.getByRole("tab", { name: "Camera" }).click();
   await expect(
     page.getByRole("combobox", { name: "Orientation" }),
   ).toBeVisible();
@@ -48,6 +53,11 @@ test("keeps the compact controls usable at narrow widths", async ({
       document.documentElement.clientWidth,
   );
   expect(controlsOverflow).toBeLessThanOrEqual(0);
+
+  await page.screenshot({
+    path: testInfo.outputPath("display-panel-mobile.png"),
+    fullPage: true,
+  });
 
   await page.keyboard.press("Escape");
   await expect(

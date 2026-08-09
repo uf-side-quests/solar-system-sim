@@ -100,6 +100,12 @@ import type {
   CameraNavigationCommand,
   CameraOrientationPreset,
 } from "./camera-view";
+import {
+  circularOrbitSolution,
+  orbitNormalForInclination,
+  orbitRadialDirection,
+  type CameraOrbitConfiguration,
+} from "./camera-orbit";
 import { PARENT_BODY_ID } from "./body-facts";
 import {
   formatViewpointSpeed,
@@ -121,6 +127,14 @@ import {
   fictionalOrbiterStateById,
   isFictionalOrbiterId,
 } from "./fictional-orbiters";
+import {
+  DISCOVERY_ONE_BODY_ID,
+  DISCOVERY_ONE_BOUNDING_RADIUS_M,
+  DISCOVERY_ONE_NAME,
+  DISCOVERY_ONE_PARENT_BODY_ID,
+  discoveryOneState,
+} from "./discovery-one";
+import { createDiscoveryOneModel } from "./discovery-one-model";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import { surfaceObserverViewpoint } from "./observer-camera";
 import {
@@ -183,6 +197,7 @@ import {
   type VisualQuality,
 } from "./visual-quality";
 import { ROADSTER_BODY_ID, spacecraftAssets } from "./spacecraft-assets";
+import { enforceOpaqueTwoSidedExterior } from "./model-exterior-materials";
 import {
   eclipticDirection,
   eclipticSkyDirection,
@@ -200,6 +215,16 @@ const PERSPECTIVE_CAMERA_DIRECTION = ECLIPTIC_FORWARD.clone()
 const SOLAR_SYSTEM_CAMERA_POSITION =
   PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(90);
 const VOYAGER_MODEL_HGA_BORESIGHT = new Vector3(0, 1, 0);
+const NAVIGATION_MAP_RANGES = [
+  { value: "auto", label: "Auto" },
+  { value: "2", label: "2 AU" },
+  { value: "10", label: "10 AU" },
+  { value: "50", label: "50 AU" },
+  { value: "200", label: "200 AU" },
+  { value: "2000", label: "2k AU" },
+  { value: "100000", label: "100k AU" },
+  { value: "300000", label: "300k AU" },
+] as const;
 
 function voyagerEarthPointingQuaternion(
   probePosition: Vector3,
@@ -314,6 +339,9 @@ const majorBodyById = new Map(
 function spacecraftBoundingRadiusM(bodyId: string): number | undefined {
   if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
     return JOVIAN_MONOLITH_BOUNDING_RADIUS_M;
+  }
+  if (bodyId === DISCOVERY_ONE_BODY_ID) {
+    return DISCOVERY_ONE_BOUNDING_RADIUS_M;
   }
   const fictionalOrbiter = fictionalOrbiterById.get(
     isFictionalOrbiterId(bodyId) ? bodyId : "death-star-1",
@@ -455,6 +483,9 @@ function bodyStateById(
   if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
     return jovianMonolithState(state);
   }
+  if (bodyId === DISCOVERY_ONE_BODY_ID) {
+    return discoveryOneState(state);
+  }
   if (isFictionalOrbiterId(bodyId)) {
     return fictionalOrbiterStateById(state, bodyId);
   }
@@ -475,6 +506,7 @@ function gravityFieldExtentAu(
     isVoyagerBodyId(focusBodyId) ||
     isOperationalSpacecraftBodyId(focusBodyId) ||
     focusBodyId === JOVIAN_MONOLITH_BODY_ID ||
+    focusBodyId === DISCOVERY_ONE_BODY_ID ||
     isFictionalOrbiterId(focusBodyId)
   ) {
     return 0.000_001;
@@ -508,12 +540,14 @@ function parentBodyId(bodyId: string): string | undefined {
       ? "earth"
       : bodyId === JOVIAN_MONOLITH_BODY_ID
         ? "jupiter"
-        : isFictionalOrbiterId(bodyId)
-          ? fictionalOrbiterById.get(bodyId)?.parentBodyId
-          : bodyId === "jwst" || isVoyagerBodyId(bodyId)
-            ? "sun"
-            : (knownSatelliteById.get(bodyId)?.parentId ??
-              PARENT_BODY_ID[bodyId]);
+        : bodyId === DISCOVERY_ONE_BODY_ID
+          ? DISCOVERY_ONE_PARENT_BODY_ID
+          : isFictionalOrbiterId(bodyId)
+            ? fictionalOrbiterById.get(bodyId)?.parentBodyId
+            : bodyId === "jwst" || isVoyagerBodyId(bodyId)
+              ? "sun"
+              : (knownSatelliteById.get(bodyId)?.parentId ??
+                PARENT_BODY_ID[bodyId]);
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -556,6 +590,8 @@ type SolarSystemSceneProps = Readonly<{
   cameraTransitionOverviewAnchorBodyId: string | undefined;
   cameraTransitionOverviewDistanceAu: number;
   cameraNavigationCommand: CameraNavigationCommand;
+  orbitViewEnabled: boolean;
+  orbitConfiguration: CameraOrbitConfiguration | null;
   orientationPreset: CameraOrientationPreset;
   orientationPresetToken: number;
   viewMode: Exclude<ViewMode, "schematic">;
@@ -574,6 +610,7 @@ type SolarSystemSceneProps = Readonly<{
   onSelectBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
+  onOrbitViewChange(enabled: boolean): void;
   onSemanticZoomChange(level: SemanticZoomLevel): void;
   onViewZoomChange(zoom: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
@@ -609,6 +646,8 @@ export function SolarSystemScene({
   cameraTransitionOverviewAnchorBodyId,
   cameraTransitionOverviewDistanceAu,
   cameraNavigationCommand,
+  orbitViewEnabled,
+  orbitConfiguration,
   orientationPreset,
   orientationPresetToken,
   viewMode,
@@ -626,6 +665,7 @@ export function SolarSystemScene({
   onSelectBody,
   onFocusBody,
   onOrientationChange,
+  onOrbitViewChange,
   onSemanticZoomChange,
   onViewZoomChange,
   onGpuStatus,
@@ -663,6 +703,8 @@ export function SolarSystemScene({
     cameraTransitionOverviewDistanceAu,
   );
   const cameraNavigationCommandRef = useRef(cameraNavigationCommand);
+  const orbitViewEnabledRef = useRef(orbitViewEnabled);
+  const orbitConfigurationRef = useRef(orbitConfiguration);
   const orientationPresetRef = useRef(orientationPreset);
   const orientationPresetTokenRef = useRef(orientationPresetToken);
   const viewModeRef = useRef(viewMode);
@@ -680,6 +722,7 @@ export function SolarSystemScene({
   const visualQualityRef = useRef(visualQuality);
   const deepSpacePresentationRef = useRef(deepSpacePresentation);
   const onViewZoomChangeRef = useRef(onViewZoomChange);
+  const onOrbitViewChangeRef = useRef(onOrbitViewChange);
   frameRef.current = frame;
   bodyVisibilityRef.current = bodyVisibility;
   focusBodyIdRef.current = focusBodyId;
@@ -709,6 +752,8 @@ export function SolarSystemScene({
   cameraTransitionOverviewDistanceAuRef.current =
     cameraTransitionOverviewDistanceAu;
   cameraNavigationCommandRef.current = cameraNavigationCommand;
+  orbitViewEnabledRef.current = orbitViewEnabled;
+  orbitConfigurationRef.current = orbitConfiguration;
   orientationPresetRef.current = orientationPreset;
   orientationPresetTokenRef.current = orientationPresetToken;
   viewModeRef.current = viewMode;
@@ -724,6 +769,7 @@ export function SolarSystemScene({
   visualQualityRef.current = visualQuality;
   deepSpacePresentationRef.current = deepSpacePresentation;
   onViewZoomChangeRef.current = onViewZoomChange;
+  onOrbitViewChangeRef.current = onOrbitViewChange;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1048,6 +1094,10 @@ export function SolarSystemScene({
     let interruptCameraTransition: () => void = () => undefined;
     const handleControlStart = (): void => {
       interruptCameraTransition();
+      if (orbitViewEnabledRef.current) {
+        orbitViewEnabledRef.current = false;
+        onOrbitViewChangeRef.current(false);
+      }
       onOrientationChange("custom");
       container.dataset["cameraOrientation"] = "custom";
     };
@@ -1215,6 +1265,52 @@ export function SolarSystemScene({
     ]
       .map((value) => value.toFixed(3))
       .join(",");
+
+    const discoveryOneGroup = createDiscoveryOneModel();
+    discoveryOneGroup.visible = false;
+    scene.add(discoveryOneGroup);
+    discoveryOneGroup.traverse((object) => {
+      if (object.type !== "Mesh") {
+        return;
+      }
+      const modelMesh = object as Mesh;
+      additionalSelectableMeshes.push(modelMesh);
+      geometries.push(modelMesh.geometry);
+      const objectMaterials = Array.isArray(modelMesh.material)
+        ? modelMesh.material
+        : [modelMesh.material];
+      materials.push(...objectMaterials);
+    });
+    const discoveryOneLabel = document.createElement("button");
+    discoveryOneLabel.type = "button";
+    discoveryOneLabel.className = "body-label fictional-object-label";
+    discoveryOneLabel.textContent = DISCOVERY_ONE_NAME;
+    discoveryOneLabel.dataset["bodyId"] = DISCOVERY_ONE_BODY_ID;
+    discoveryOneLabel.setAttribute("aria-label", `Focus ${DISCOVERY_ONE_NAME}`);
+    discoveryOneLabel.title = "Click to select; double-click to focus";
+    discoveryOneLabel.addEventListener("click", () =>
+      onSelectBody(DISCOVERY_ONE_BODY_ID),
+    );
+    discoveryOneLabel.addEventListener("dblclick", () =>
+      onFocusBody(DISCOVERY_ONE_BODY_ID),
+    );
+    discoveryOneLabel.hidden = true;
+    labelLayer.append(discoveryOneLabel);
+    const discoveryOneMarker = document.createElement("span");
+    discoveryOneMarker.className = "orrery-marker";
+    discoveryOneMarker.hidden = true;
+    markerLayer.append(discoveryOneMarker);
+    container.dataset["discoveryOneVisualModel"] = String(
+      discoveryOneGroup.userData["visualSource"],
+    );
+    container.dataset["discoveryOneExteriorMaterials"] = String(
+      discoveryOneGroup.userData["exteriorMaterialContract"],
+    );
+    container.dataset["discoveryOneExteriorMaterialCount"] = String(
+      discoveryOneGroup.userData["exteriorMaterialCount"],
+    );
+    container.dataset["discoveryOnePhysics"] =
+      "authored-massless-circular-two-body-orbit-around-io";
 
     const fictionalOrbiterGroups = new Map<string, Group>();
     const fictionalOrbiterLabels = new Map<string, HTMLButtonElement>();
@@ -2428,6 +2524,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           return;
         }
         model.updateMatrixWorld(true);
+        const exteriorMaterialReport =
+          asset.bodyId === ROADSTER_BODY_ID
+            ? enforceOpaqueTwoSidedExterior(model)
+            : undefined;
         const sourceBounds = new Box3().setFromObject(model);
         const sourceSize = new Vector3();
         const sourceCenter = new Vector3();
@@ -2480,6 +2580,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (asset.bodyId === ROADSTER_BODY_ID) {
           container.dataset["roadsterModelProvenance"] =
             "mit-spacedock-community-model";
+          container.dataset["roadsterExteriorMaterials"] =
+            "opaque-two-sided-depth-writing";
+          container.dataset["roadsterExteriorMaterialCount"] = String(
+            exteriorMaterialReport?.materialCount ?? 0,
+          );
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -2540,27 +2645,218 @@ float saturnRingTransmission(vec3 surfacePosition) {
     const navigationMap = document.createElement("div");
     navigationMap.className = "reality-navigation-map";
     navigationMap.setAttribute("aria-label", "Solar System navigation map");
+    const navigationMapHeader = document.createElement("div");
+    navigationMapHeader.className = "reality-navigation-map__header";
     const navigationMapTitle = document.createElement("strong");
     navigationMapTitle.textContent = "NAVIGATION";
+    const navigationRangeLabel = document.createElement("label");
+    navigationRangeLabel.textContent = "Range";
+    const navigationRangeSelect = document.createElement("select");
+    navigationRangeSelect.setAttribute("aria-label", "Navigation map range");
+    for (const range of NAVIGATION_MAP_RANGES) {
+      const option = document.createElement("option");
+      option.value = range.value;
+      option.textContent = range.label;
+      if (range.value === "50") option.selected = true;
+      navigationRangeSelect.append(option);
+    }
+    navigationRangeLabel.append(navigationRangeSelect);
+    navigationMapHeader.append(navigationMapTitle, navigationRangeLabel);
     const navigationMapCanvas = document.createElement("canvas");
     navigationMapCanvas.width = 320;
     navigationMapCanvas.height = 240;
-    navigationMapCanvas.setAttribute("role", "img");
+    navigationMapCanvas.tabIndex = 0;
+    navigationMapCanvas.setAttribute("role", "application");
     navigationMapCanvas.setAttribute(
       "aria-label",
-      "Top-down map showing the Sun, planets, current location and view direction",
+      "Top-down map. Click an object to select it and double-click to travel.",
+    );
+    const navigationTooltip = document.createElement("span");
+    navigationTooltip.className = "reality-navigation-map__tooltip";
+    navigationTooltip.setAttribute("role", "tooltip");
+    navigationTooltip.hidden = true;
+    const navigationDestinationRow = document.createElement("div");
+    navigationDestinationRow.className = "reality-navigation-map__destination";
+    const navigationDestinationSelect = document.createElement("select");
+    navigationDestinationSelect.setAttribute(
+      "aria-label",
+      "Navigation destination",
+    );
+    const navigationTravelButton = document.createElement("button");
+    navigationTravelButton.type = "button";
+    navigationTravelButton.textContent = "Travel";
+    const navigationDestinationGroups = new Map<string, HTMLOptGroupElement>();
+    const navigationDestinations = [
+      ...majorBodySnapshot.bodies.map((body) => ({
+        id: body.id,
+        name: body.name,
+        group:
+          body.type === "moon"
+            ? "Moons"
+            : body.type === "planet" || body.type === "dwarf-planet"
+              ? "Planets"
+              : "Star",
+      })),
+      ...operationalSpacecraftSnapshot.spacecraft.map((spacecraft) => ({
+        id: spacecraft.id,
+        name: spacecraft.name,
+        group: "Spacecraft",
+      })),
+      ...voyagerSnapshot.probes.map((probe) => ({
+        id: probe.id,
+        name: probe.name,
+        group: "Spacecraft",
+      })),
+      {
+        id: ISS_BODY_ID,
+        name: "International Space Station",
+        group: "Spacecraft",
+      },
+      {
+        id: JOVIAN_MONOLITH_BODY_ID,
+        name: JOVIAN_MONOLITH_NAME,
+        group: "Fictional references",
+      },
+      {
+        id: DISCOVERY_ONE_BODY_ID,
+        name: DISCOVERY_ONE_NAME,
+        group: "Fictional references",
+      },
+      ...FICTIONAL_ORBITERS.map((orbiter) => ({
+        id: orbiter.id,
+        name: orbiter.name,
+        group: "Fictional references",
+      })),
+    ];
+    const navigationDestinationById = new Map(
+      navigationDestinations.map((destination) => [
+        destination.id,
+        destination,
+      ]),
+    );
+    for (const destination of navigationDestinations) {
+      let group = navigationDestinationGroups.get(destination.group);
+      if (group === undefined) {
+        group = document.createElement("optgroup");
+        group.label = destination.group;
+        navigationDestinationGroups.set(destination.group, group);
+        navigationDestinationSelect.append(group);
+      }
+      const option = document.createElement("option");
+      option.value = destination.id;
+      option.textContent = destination.name;
+      group.append(option);
+    }
+    navigationDestinationSelect.value = focusBodyIdRef.current ?? "sun";
+    navigationDestinationRow.append(
+      navigationDestinationSelect,
+      navigationTravelButton,
     );
     const navigationMapScale = document.createElement("small");
+    const navigationMapHelp = document.createElement("small");
+    navigationMapHelp.textContent =
+      "Click to select · double-click or Travel to fly";
     navigationMap.append(
-      navigationMapTitle,
+      navigationMapHeader,
       navigationMapCanvas,
+      navigationTooltip,
       navigationMapScale,
+      navigationDestinationRow,
+      navigationMapHelp,
     );
     container.append(navigationMap);
     const navigationContext = navigationMapCanvas.getContext("2d");
     if (navigationContext === null) {
       throw new Error("Reality navigation map 2D context is unavailable");
     }
+    let navigationMapHits: readonly Readonly<{
+      bodyId: string;
+      x: number;
+      y: number;
+      radius: number;
+      distanceFromSunAu: number;
+    }>[] = [];
+    let lastNavigationFocusBodyId = focusBodyIdRef.current;
+    const navigationHitAtPointer = (
+      event: PointerEvent | MouseEvent,
+    ): (typeof navigationMapHits)[number] | undefined => {
+      const bounds = navigationMapCanvas.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return undefined;
+      const x =
+        ((event.clientX - bounds.left) / bounds.width) *
+        navigationMapCanvas.width;
+      const y =
+        ((event.clientY - bounds.top) / bounds.height) *
+        navigationMapCanvas.height;
+      return [...navigationMapHits]
+        .reverse()
+        .find((hit) => Math.hypot(x - hit.x, y - hit.y) <= hit.radius);
+    };
+    const hideNavigationTooltip = (): void => {
+      navigationTooltip.hidden = true;
+    };
+    const handleNavigationPointerMove = (event: PointerEvent): void => {
+      const hit = navigationHitAtPointer(event);
+      if (hit === undefined) {
+        hideNavigationTooltip();
+        navigationMapCanvas.style.cursor = "crosshair";
+        return;
+      }
+      const destination = navigationDestinationById.get(hit.bodyId);
+      if (destination === undefined) {
+        throw new Error(`Navigation destination ${hit.bodyId} is unavailable`);
+      }
+      const mapBounds = navigationMap.getBoundingClientRect();
+      navigationTooltip.textContent = `${destination.name} · ${formatTacticalDistance(hit.distanceFromSunAu)} from Sun`;
+      navigationTooltip.style.left = `${String(event.clientX - mapBounds.left + 10)}px`;
+      navigationTooltip.style.top = `${String(event.clientY - mapBounds.top - 10)}px`;
+      navigationTooltip.hidden = false;
+      navigationMapCanvas.style.cursor = "pointer";
+    };
+    const handleNavigationClick = (event: MouseEvent): void => {
+      const hit = navigationHitAtPointer(event);
+      if (hit === undefined) return;
+      navigationDestinationSelect.value = hit.bodyId;
+      onSelectBody(hit.bodyId);
+    };
+    const travelToNavigationDestination = (): void => {
+      const bodyId = navigationDestinationSelect.value;
+      if (!navigationDestinationById.has(bodyId)) {
+        throw new Error(`Navigation destination ${bodyId} is unavailable`);
+      }
+      onFocusBody(bodyId);
+    };
+    const handleNavigationDoubleClick = (event: MouseEvent): void => {
+      const hit = navigationHitAtPointer(event);
+      if (hit === undefined) return;
+      navigationDestinationSelect.value = hit.bodyId;
+      onFocusBody(hit.bodyId);
+    };
+    const handleNavigationDestinationChange = (): void => {
+      const bodyId = navigationDestinationSelect.value;
+      if (!navigationDestinationById.has(bodyId)) {
+        throw new Error(`Navigation destination ${bodyId} is unavailable`);
+      }
+      onSelectBody(bodyId);
+    };
+    navigationMapCanvas.addEventListener(
+      "pointermove",
+      handleNavigationPointerMove,
+    );
+    navigationMapCanvas.addEventListener("pointerleave", hideNavigationTooltip);
+    navigationMapCanvas.addEventListener("click", handleNavigationClick);
+    navigationMapCanvas.addEventListener(
+      "dblclick",
+      handleNavigationDoubleClick,
+    );
+    navigationDestinationSelect.addEventListener(
+      "change",
+      handleNavigationDestinationChange,
+    );
+    navigationTravelButton.addEventListener(
+      "click",
+      travelToNavigationDestination,
+    );
 
     const raycaster = new Raycaster();
     const pointer = new Vector2();
@@ -2613,6 +2909,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
       if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
         return "Jovian Monolith · fictional 2001 / 2010 object near Jupiter-Io L1";
+      }
+      if (bodyId === DISCOVERY_ONE_BODY_ID) {
+        return "Discovery One · fictional 2001 / 2010 spacecraft in orbit around Io";
       }
       const voyager = isVoyagerBodyId(bodyId)
         ? voyagerById.get(bodyId)
@@ -3205,6 +3504,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           startPosition: Vector3;
           startTarget: Vector3;
           startUp: Vector3;
+          orientationTarget: Vector3;
           overviewStartPosition: Vector3;
           overviewStartTarget: Vector3;
           departureAnchor: Vector3;
@@ -3643,6 +3943,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         isOperationalSpacecraftBodyId(requestedFocusBodyId);
       const isJovianMonolithFocus =
         requestedFocusBodyId === JOVIAN_MONOLITH_BODY_ID;
+      const isDiscoveryOneFocus =
+        requestedFocusBodyId === DISCOVERY_ONE_BODY_ID;
       const isFictionalOrbiterFocus =
         isFictionalOrbiterId(requestedFocusBodyId);
       const isSpacecraftFocus =
@@ -3650,6 +3952,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         isVoyagerFocus ||
         isOperationalSpacecraftFocus ||
         isJovianMonolithFocus ||
+        isDiscoveryOneFocus ||
         isFictionalOrbiterFocus;
       const focusState = bodyStateById(current, requestedFocusBodyId);
       if (
@@ -3659,6 +3962,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           !isVoyagerFocus &&
           !isOperationalSpacecraftFocus &&
           !isJovianMonolithFocus &&
+          !isDiscoveryOneFocus &&
           !isFictionalOrbiterFocus) ||
         focusState === undefined
       ) {
@@ -4055,6 +4359,23 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
       }
       const overviewStartTarget = startTarget.clone();
+      const startLookDistanceAu = Math.max(
+        startPosition.distanceTo(startTarget),
+        DEFAULT_CAMERA_NEAR_AU * 10,
+      );
+      const destinationLookDirection = destinationAnchor
+        .clone()
+        .sub(startPosition);
+      const orientationTarget =
+        destinationLookDirection.lengthSq() <= Number.EPSILON
+          ? endTarget.clone()
+          : startPosition
+              .clone()
+              .add(
+                destinationLookDirection
+                  .normalize()
+                  .multiplyScalar(startLookDistanceAu),
+              );
       const overviewEndTarget = isObserverDestination
         ? endTarget.clone()
         : destinationAnchor.clone();
@@ -4083,6 +4404,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         startPosition,
         startTarget,
         startUp,
+        orientationTarget,
         overviewStartPosition: departureAnchor
           .clone()
           .add(
@@ -4128,8 +4450,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       controls.minDistance = 0;
       controls.maxDistance = Number.POSITIVE_INFINITY;
       controls.enabled = true;
-      container.dataset["cameraTransitionPhase"] =
-        activeCameraTransition.style === "direct" ? "orienting" : "outbound";
+      container.dataset["cameraTransitionPhase"] = "orienting";
       container.dataset["cameraTransitionSequence"] = String(sequence);
       container.dataset["cameraTransitionOverviewAnchor"] =
         activeCameraTransition.style === "direct"
@@ -4144,14 +4465,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraTransitionInterpolation"] =
         activeCameraTransition.style === "direct"
           ? "orient-then-logarithmic-approach"
-          : "depart-coast-arrive";
+          : "orient-depart-coast-arrive";
       cameraJourney.hidden = false;
       cameraJourney.title =
         "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
-      cameraJourney.textContent =
-        activeCameraTransition.style === "direct"
-          ? `Turning toward ${activeCameraTransition.destinationName}`
-          : `Departing ${activeCameraTransition.departureName}`;
+      cameraJourney.textContent = `Turning toward ${activeCameraTransition.destinationName}`;
       return true;
     };
 
@@ -4336,16 +4654,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
         completeCameraTransition();
         return;
       }
-      let journeyStatus = `Departing ${transition.departureName}`;
-      if (sample.phase === "outbound") {
-        interpolateCameraPositionAroundAnchor(
-          camera.position,
-          transition.startPosition,
-          transition.overviewStartPosition,
-          transition.departureAnchor,
+      let journeyStatus = `Turning toward ${transition.destinationName}`;
+      let measureJourneySpeed = false;
+      if (sample.phase === "orienting") {
+        camera.position.copy(transition.startPosition);
+        controls.target.lerpVectors(
+          transition.startTarget,
+          transition.orientationTarget,
           sample.segmentProgress,
         );
-        controls.target.copy(transition.startTarget);
         camera.up
           .lerpVectors(
             transition.startUp,
@@ -4353,6 +4670,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
             sample.segmentProgress,
           )
           .normalize();
+      } else if (sample.phase === "outbound") {
+        interpolateCameraPositionAroundAnchor(
+          camera.position,
+          transition.startPosition,
+          transition.overviewStartPosition,
+          transition.departureAnchor,
+          sample.segmentProgress,
+        );
+        controls.target.lerpVectors(
+          transition.orientationTarget,
+          transition.overviewStartTarget,
+          sample.segmentProgress,
+        );
+        camera.up.copy(ECLIPTIC_NORTH);
+        journeyStatus = `Departing ${transition.departureName}`;
+        measureJourneySpeed = true;
       } else if (sample.phase === "overview") {
         camera.position.lerpVectors(
           transition.overviewStartPosition,
@@ -4375,6 +4708,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         journeyStatus = `Crossing ${formatTacticalDistance(
           transition.journeyDistanceAu,
         )} toward ${transition.destinationName}`;
+        measureJourneySpeed = true;
       } else {
         interpolateCameraPositionAroundAnchor(
           camera.position,
@@ -4392,8 +4726,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           .lerpVectors(ECLIPTIC_NORTH, transition.endUp, sample.segmentProgress)
           .normalize();
         journeyStatus = `Arriving at ${transition.destinationName}`;
+        measureJourneySpeed = true;
       }
-      updateJourneyStatus(journeyStatus, true);
+      updateJourneyStatus(journeyStatus, measureJourneySpeed);
       camera.lookAt(controls.target);
     };
 
@@ -4643,6 +4978,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
             scenePosition(orbiterState.positionM),
           );
         }
+        const discoveryState = discoveryOneState(current);
+        sceneBodyPositions.set(
+          DISCOVERY_ONE_BODY_ID,
+          scenePosition(discoveryState.positionM),
+        );
         const gravityMode = gravityWellModeRef.current;
         const gravityFocusId = focusBodyIdRef.current;
         const gravityCenterState = bodyStateById(
@@ -4911,6 +5251,43 @@ float saturnRingTransmission(vec3 surfacePosition) {
             `${orbiter.id.replaceAll("-", "")}DistanceFromParentKm`
           ] = distanceFromParentKm.toFixed(3);
         }
+
+        const discoveryPosition = sceneBodyPositions.get(DISCOVERY_ONE_BODY_ID);
+        const ioPositionForDiscovery = sceneBodyPositions.get(
+          DISCOVERY_ONE_PARENT_BODY_ID,
+        );
+        if (
+          discoveryPosition === undefined ||
+          ioPositionForDiscovery === undefined
+        ) {
+          throw new Error("Discovery One scene state is unavailable");
+        }
+        discoveryOneGroup.position.copy(discoveryPosition);
+        const discoveryRadial = discoveryPosition
+          .clone()
+          .sub(ioPositionForDiscovery)
+          .normalize();
+        const discoveryVelocity = icrfToScene({
+          x: discoveryState.velocityMps[0] - ioStateForMonolith.velocityMps[0],
+          y: discoveryState.velocityMps[1] - ioStateForMonolith.velocityMps[1],
+          z: discoveryState.velocityMps[2] - ioStateForMonolith.velocityMps[2],
+        }).normalize();
+        const discoveryUp = discoveryRadial
+          .clone()
+          .cross(discoveryVelocity)
+          .normalize();
+        discoveryOneGroup.quaternion.setFromRotationMatrix(
+          new Matrix4().makeBasis(
+            discoveryVelocity,
+            discoveryUp,
+            discoveryRadial,
+          ),
+        );
+        container.dataset["discoveryOneDistanceFromIoKm"] = (
+          (discoveryPosition.distanceTo(ioPositionForDiscovery) *
+            ASTRONOMICAL_UNIT_M) /
+          1_000
+        ).toFixed(3);
 
         const issState = bodyStateById(current, ISS_BODY_ID);
         const earthStateForIss = bodyStateById(current, ISS_PARENT_BODY_ID);
@@ -5221,12 +5598,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 requestedTargetBodyId === undefined
                   ? undefined
                   : bodyStateById(current, requestedTargetBodyId);
+              const orbitTrackingEnabled =
+                orbitViewEnabledRef.current &&
+                requestedTargetBodyId === undefined;
               const presetContinuouslyTracked =
                 requestedPreset === "sun-facing" ||
                 requestedPreset === "parent-facing" ||
                 requestedPreset === "velocity" ||
                 requestedPreset === "orbital-plane";
               const continuouslyTracked =
+                orbitTrackingEnabled ||
                 requestedTargetBodyId !== undefined ||
                 presetContinuouslyTracked;
               if (
@@ -5250,6 +5631,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 container.dataset["focusDistanceAu"] = camera.position
                   .distanceTo(targetPosition)
                   .toFixed(8);
+              } else if (orbitTrackingEnabled) {
+                const trackingDelta = focusPosition
+                  .clone()
+                  .sub(controls.target);
+                camera.position.add(trackingDelta);
+                controls.target.copy(focusPosition);
               } else if (presetContinuouslyTracked) {
                 applyOrientationPreset(
                   requestedPreset,
@@ -5351,6 +5738,117 @@ float saturnRingTransmission(vec3 surfacePosition) {
         lastSurfaceConfigurationKey = "";
         updateCameraTransition(renderNowMs, current);
         controls.update();
+        const requestedOrbitBodyId = focusBodyIdRef.current;
+        const requestedOrbitConfiguration = orbitConfigurationRef.current;
+        const orbitViewActive =
+          orbitViewEnabledRef.current &&
+          requestedOrbitConfiguration !== null &&
+          activeCameraTransition === undefined &&
+          cameraTargetBodyIdRef.current === undefined;
+        if (
+          orbitViewActive &&
+          current !== undefined &&
+          requestedOrbitBodyId !== null
+        ) {
+          const orbitBodyState = bodyStateById(current, requestedOrbitBodyId);
+          const orbitBodyDefinition = majorBodyById.get(requestedOrbitBodyId);
+          if (
+            orbitBodyState === undefined ||
+            orbitBodyDefinition === undefined
+          ) {
+            throw new Error(
+              `Physical orbit body ${requestedOrbitBodyId} is unavailable`,
+            );
+          }
+          const orbitTarget = scenePosition(orbitBodyState.positionM);
+          const sunStateForOrbit = bodyStateById(current, "sun");
+          if (sunStateForOrbit === undefined) {
+            throw new Error("Physical camera orbit requires the Sun state");
+          }
+          const sunlightReference = scenePosition(
+            sunStateForOrbit.positionM,
+          ).sub(orbitTarget);
+          const orientation = bodyOrientationQuaternion(
+            requestedOrbitBodyId,
+            current.timeSeconds,
+          );
+          const spinAxis = new Vector3(0, 1, 0)
+            .applyQuaternion(orientation)
+            .normalize();
+          const orbitNormal = orbitNormalForInclination(
+            spinAxis,
+            sunlightReference,
+            requestedOrbitConfiguration.inclinationDeg,
+          );
+          const circularOrbit = circularOrbitSolution(
+            orbitBodyState.gravitationalParameterM3S2,
+            orbitBodyDefinition.meanRadiusM,
+            requestedOrbitConfiguration.altitudeM,
+          );
+          let radialDirection: Vector3;
+          if (
+            requestedOrbitConfiguration.preset === "synchronous" ||
+            requestedOrbitConfiguration.preset === "powered-hover"
+          ) {
+            const longitudeRad =
+              (requestedOrbitConfiguration.longitudeDeg * Math.PI) / 180;
+            radialDirection = new Vector3(
+              Math.cos(longitudeRad),
+              0,
+              Math.sin(longitudeRad),
+            )
+              .applyQuaternion(orientation)
+              .normalize();
+          } else {
+            const directionSign =
+              requestedOrbitConfiguration.direction === "prograde" ? 1 : -1;
+            const phaseRad =
+              (requestedOrbitConfiguration.longitudeDeg * Math.PI) / 180 +
+              (current.timeSeconds -
+                requestedOrbitConfiguration.epochTimeSeconds) *
+                circularOrbit.angularRateRadPerSecond *
+                directionSign;
+            radialDirection = orbitRadialDirection(
+              orbitNormal,
+              sunlightReference,
+              ECLIPTIC_NORTH,
+              phaseRad,
+            );
+          }
+          camera.position
+            .copy(orbitTarget)
+            .addScaledVector(
+              radialDirection,
+              circularOrbit.orbitalRadiusM / ASTRONOMICAL_UNIT_M,
+            );
+          controls.target.copy(orbitTarget);
+          camera.up.copy(orbitNormal);
+          camera.lookAt(orbitTarget);
+          container.dataset["orbitView"] = "active";
+          container.dataset["orbitViewBody"] = requestedOrbitBodyId;
+          container.dataset["cameraTracking"] =
+            requestedOrbitConfiguration.preset === "powered-hover"
+              ? "powered-hover"
+              : "physical-circular-orbit";
+          container.dataset["orbitPreset"] = requestedOrbitConfiguration.preset;
+          container.dataset["orbitAltitudeM"] =
+            requestedOrbitConfiguration.altitudeM.toFixed(3);
+          container.dataset["orbitSpeedMps"] =
+            requestedOrbitConfiguration.preset === "powered-hover"
+              ? "0.000"
+              : circularOrbit.speedMps.toFixed(6);
+          container.dataset["orbitPeriodSeconds"] =
+            circularOrbit.periodSeconds.toFixed(6);
+        } else {
+          container.dataset["orbitView"] = orbitViewEnabledRef.current
+            ? "waiting-for-arrival"
+            : "off";
+          delete container.dataset["orbitViewBody"];
+          delete container.dataset["orbitPreset"];
+          delete container.dataset["orbitAltitudeM"];
+          delete container.dataset["orbitSpeedMps"];
+          delete container.dataset["orbitPeriodSeconds"];
+        }
         surfaceHorizon.visible = false;
         for (const label of compassLabels.values()) {
           label.hidden = true;
@@ -5713,11 +6211,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ? camera.position
             : (bodyMeshes.get(observerBodyId)?.position ?? camera.position);
         const observerDistanceAu = observerPosition.distanceTo(liveSunPosition);
-        const mapScaleAu = Math.max(
+        const automaticMapScaleAu = Math.max(
           2,
           observerDistanceAu * 1.35,
           distanceFromSunAu * 1.1,
         );
+        const selectedMapRange = navigationRangeSelect.value;
+        const mapScaleAu =
+          selectedMapRange === "auto"
+            ? automaticMapScaleAu
+            : Number(selectedMapRange);
+        if (!Number.isFinite(mapScaleAu) || mapScaleAu <= 0) {
+          throw new Error(
+            `Navigation map range ${selectedMapRange} is invalid`,
+          );
+        }
         const pixelsPerAu = (Math.min(width, height) * 0.42) / mapScaleAu;
         const mapPoint = (position: Vector3): readonly [number, number] => {
           const relative = position.clone().sub(liveSunPosition);
@@ -5746,21 +6254,91 @@ float saturnRingTransmission(vec3 surfacePosition) {
         navigationContext.beginPath();
         navigationContext.arc(centerX, centerY, 4, 0, Math.PI * 2);
         navigationContext.fill();
-        for (const planetId of PLANET_TRAIL_BODY_IDS) {
-          const planetPosition = bodyMeshes.get(planetId)?.position;
-          if (planetPosition === undefined) continue;
-          const [x, y] = mapPoint(planetPosition);
+        navigationMapHits = [
+          {
+            bodyId: "sun",
+            x: centerX,
+            y: centerY,
+            radius: 9,
+            distanceFromSunAu: 0,
+          },
+        ];
+        const plottedBodyIds = new Set<string>();
+        for (const destination of navigationDestinations) {
+          if (destination.id === "sun" || plottedBodyIds.has(destination.id)) {
+            continue;
+          }
+          plottedBodyIds.add(destination.id);
+          const destinationState =
+            current === undefined
+              ? undefined
+              : bodyStateById(current, destination.id);
+          if (destinationState === undefined) continue;
+          const destinationPosition = scenePosition(destinationState.positionM);
+          const [x, y] = mapPoint(destinationPosition);
           if (x < 0 || y < 0 || x > width || y > height) continue;
-          navigationContext.fillStyle = "#83bde4";
+          const isFocused = destination.id === focusBodyIdRef.current;
+          const isSelectedDestination =
+            destination.id === navigationDestinationSelect.value;
+          navigationContext.fillStyle =
+            destination.group === "Spacecraft"
+              ? "#a5e3c2"
+              : destination.group === "Fictional references"
+                ? "#d8a8ee"
+                : destination.group === "Moons"
+                  ? "#b9c4cf"
+                  : "#83bde4";
           navigationContext.beginPath();
           navigationContext.arc(
             x,
             y,
-            planetId === observerBodyId ? 5 : 2.3,
+            isFocused ? 5.5 : isSelectedDestination ? 4.5 : 2.3,
             0,
             Math.PI * 2,
           );
           navigationContext.fill();
+          if (isFocused || isSelectedDestination) {
+            navigationContext.strokeStyle = isFocused ? "#ffffff" : "#b8dfff";
+            navigationContext.lineWidth = 1.2;
+            navigationContext.beginPath();
+            navigationContext.arc(x, y, isFocused ? 8 : 7, 0, Math.PI * 2);
+            navigationContext.stroke();
+          }
+          navigationMapHits = [
+            ...navigationMapHits,
+            {
+              bodyId: destination.id,
+              x,
+              y,
+              radius: Math.max(8, isFocused ? 10 : 0),
+              distanceFromSunAu:
+                destinationPosition.distanceTo(liveSunPosition),
+            },
+          ];
+        }
+        if (mapScaleAu >= 250_000) {
+          const alphaCentauriPosition = liveSunPosition
+            .clone()
+            .add(alphaCentauriOffset);
+          const [alphaX, alphaY] = mapPoint(alphaCentauriPosition);
+          if (
+            alphaX >= 0 &&
+            alphaY >= 0 &&
+            alphaX <= width &&
+            alphaY <= height
+          ) {
+            navigationContext.fillStyle = "#ffe5ae";
+            navigationContext.beginPath();
+            navigationContext.arc(alphaX, alphaY, 3, 0, Math.PI * 2);
+            navigationContext.fill();
+            navigationContext.fillStyle = "rgba(255, 229, 174, 0.82)";
+            navigationContext.font = "12px system-ui";
+            navigationContext.fillText(
+              "Alpha Centauri",
+              alphaX + 7,
+              alphaY - 7,
+            );
+          }
         }
         const [observerX, observerY] = mapPoint(observerPosition);
         const cameraDirection = camera.getWorldDirection(new Vector3());
@@ -5780,8 +6358,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
         navigationContext.beginPath();
         navigationContext.arc(observerX, observerY, 3.5, 0, Math.PI * 2);
         navigationContext.fill();
-        navigationMapScale.textContent = `Radius ${formatTacticalDistance(mapScaleAu)}`;
+        if (
+          focusBodyIdRef.current !== lastNavigationFocusBodyId &&
+          focusBodyIdRef.current !== null &&
+          navigationDestinationById.has(focusBodyIdRef.current)
+        ) {
+          navigationDestinationSelect.value = focusBodyIdRef.current;
+          lastNavigationFocusBodyId = focusBodyIdRef.current;
+        }
+        navigationMapScale.textContent = `Radius ${formatTacticalDistance(mapScaleAu)} · white arrow is your view`;
         navigationMap.dataset["scaleAu"] = mapScaleAu.toFixed(4);
+        navigationMap.dataset["rangeMode"] = selectedMapRange;
+        navigationMap.dataset["destination"] =
+          navigationDestinationSelect.value;
+        navigationMap.dataset["plottedTargetCount"] = String(
+          navigationMapHits.length,
+        );
         navigationMap.dataset["observerBody"] = observerBodyId ?? "camera";
         navigationMap.dataset["viewBearingDeg"] = (
           (Math.atan2(directionX, -directionY) * 180) / Math.PI +
@@ -5909,6 +6501,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           current === undefined ||
           wayfinderSunState === undefined ||
           activeWayfinderMode === "off" ||
+          container.closest(".app-shell.is-immersive") !== null ||
           (wayfinderFocusId === "sun" && activeDeepPresentation !== undefined)
         ) {
           hideAllWayfinders();
@@ -6064,6 +6657,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
               `Focus ${targetDefinition.name}`,
             );
             visual.label.title = "Click to select; double-click to focus";
+            const previousTargetBodyId = visual.label.dataset["targetBodyId"];
+            const previousLocation = visual.label.dataset["location"];
             visual.label.dataset["targetBodyId"] = targetBodyId;
             visual.label.dataset["distanceAu"] = distanceAu.toFixed(8);
             visual.label.dataset["location"] = location;
@@ -6074,23 +6669,45 @@ float saturnRingTransmission(vec3 surfacePosition) {
               targetBodyId === focusBodyIdRef.current,
             );
             visual.label.setAttribute("aria-pressed", String(targetIsSelected));
-            const labelWidthAllowance = Math.min(240, viewportWidth - 16);
+            visual.label.hidden = false;
+            const labelWidth = visual.label.getBoundingClientRect().width;
+            if (labelWidth <= 0) {
+              throw new Error(
+                `Wayfinder label for ${targetDefinition.name} has no measurable width`,
+              );
+            }
+            const labelGap = 8;
+            const labelMargin = 8;
+            const preferredLabelX =
+              endpoint.x + labelGap + labelWidth <= viewportWidth - labelMargin
+                ? endpoint.x + labelGap
+                : endpoint.x - labelWidth - labelGap;
             const labelX = Math.min(
-              viewportWidth - labelWidthAllowance - 8,
-              Math.max(
-                8,
-                endpoint.x > viewportWidth / 2
-                  ? endpoint.x - labelWidthAllowance - 8
-                  : endpoint.x + 8,
-              ),
+              viewportWidth - labelWidth - labelMargin,
+              Math.max(labelMargin, preferredLabelX),
             );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
             const labelY = Math.min(
               viewportHeight - 30,
               Math.max(30, endpoint.y + laneOffset),
             );
-            visual.label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
-            visual.label.hidden = false;
+            const previousLabelX = Number(visual.label.dataset["positionX"]);
+            const previousLabelY = Number(visual.label.dataset["positionY"]);
+            const repositionThresholdPx = targetBodyId === "sun" ? 0 : 6;
+            const labelTargetChanged =
+              previousTargetBodyId !== targetBodyId ||
+              previousLocation !== location;
+            if (
+              labelTargetChanged ||
+              !Number.isFinite(previousLabelX) ||
+              !Number.isFinite(previousLabelY) ||
+              Math.hypot(labelX - previousLabelX, labelY - previousLabelY) >=
+                repositionThresholdPx
+            ) {
+              visual.label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
+              visual.label.dataset["positionX"] = labelX.toFixed(3);
+              visual.label.dataset["positionY"] = labelY.toFixed(3);
+            }
             if (targetBodyId === "sun") {
               sunLocation = location;
               sunDistanceAu = distanceAu;
@@ -6590,6 +7207,72 @@ float saturnRingTransmission(vec3 surfacePosition) {
         monolithMesh.visible = false;
         monolithLabel.hidden = true;
         monolithMarker.hidden = true;
+      }
+      if (current === undefined) {
+        discoveryOneGroup.visible = false;
+        discoveryOneLabel.hidden = true;
+        discoveryOneMarker.hidden = true;
+      } else {
+        const discoveryState = discoveryOneState(current);
+        const position = scenePosition(discoveryState.positionM);
+        const projected = position.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(position),
+          1e-15,
+        );
+        const radiusAu = DISCOVERY_ONE_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        discoveryOneGroup.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          (focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
+            selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID);
+        discoveryOneLabel.hidden = !labelVisible;
+        discoveryOneLabel.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID,
+        );
+        discoveryOneLabel.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID,
+        );
+        discoveryOneLabel.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID),
+        );
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          discoveryOneLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        const markerVisible =
+          viewModeRef.current === "orrery" &&
+          layerVisible &&
+          inCameraFrustum &&
+          !geometryVisible;
+        discoveryOneMarker.hidden = !markerVisible;
+        if (markerVisible) {
+          discoveryOneMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        container.dataset["discoveryOneRadiusPixels"] = radiusPixels.toFixed(3);
+        container.dataset["discoveryOneGeometryVisible"] =
+          String(geometryVisible);
       }
       for (const orbiter of FICTIONAL_ORBITERS) {
         const group = fictionalOrbiterGroups.get(orbiter.id);
@@ -7174,6 +7857,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
         handlePointerLeave,
       );
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
+      navigationMapCanvas.removeEventListener(
+        "pointermove",
+        handleNavigationPointerMove,
+      );
+      navigationMapCanvas.removeEventListener(
+        "pointerleave",
+        hideNavigationTooltip,
+      );
+      navigationMapCanvas.removeEventListener("click", handleNavigationClick);
+      navigationMapCanvas.removeEventListener(
+        "dblclick",
+        handleNavigationDoubleClick,
+      );
+      navigationDestinationSelect.removeEventListener(
+        "change",
+        handleNavigationDestinationChange,
+      );
+      navigationTravelButton.removeEventListener(
+        "click",
+        travelToNavigationDestination,
+      );
       gpuLayer?.dispose();
       gravityWellLayer.dispose();
       renderer.dispose();
@@ -7231,6 +7935,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       data-planets-visible={String(objectVisibility.planets)}
       data-moons-visible={String(objectVisibility.moons)}
       data-spacecraft-visible={String(objectVisibility.spacecraft)}
+      data-orbit-view-requested={String(orbitViewEnabled)}
       data-apollo-sites-visible={String(showApolloSites)}
       data-wayfinder-mode={wayfinderMode}
       data-star-field-count={hipparcosStarSnapshot.stars.length}

@@ -28,12 +28,14 @@ test("focused Earth visibly rotates with simulation time", async ({ page }) => {
   await focus.fill("Earth");
   await focus.press("Enter");
   await page.getByRole("button", { name: "Display" }).click();
-  await page.getByText("Trails and frames", { exact: true }).click();
+  await page.getByRole("tab", { name: "Guides" }).click();
   await uncheckImmediately(page.getByRole("checkbox", { name: "Moon trail" }));
   await uncheckImmediately(
     page.getByRole("checkbox", { name: "Planet trails" }),
   );
+  await page.getByRole("tab", { name: "View" }).click();
   await uncheckImmediately(page.getByRole("checkbox", { name: "Moons" }));
+  await page.getByRole("tab", { name: "Guides" }).click();
   await uncheckImmediately(
     page.getByRole("checkbox", { name: "Ecliptic grid" }),
   );

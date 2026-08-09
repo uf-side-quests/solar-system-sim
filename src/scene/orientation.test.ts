@@ -4,6 +4,7 @@ import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
   siderealRotationPeriodHours,
+  siderealRotationRateRadPerSecond,
 } from "./orientation";
 import { majorBodySnapshot } from "../physics/solar-system";
 
@@ -28,6 +29,8 @@ describe("NAIF body orientation", () => {
     expect(uranusDay.primeMeridianDeg).toBeLessThan(
       uranusInitial.primeMeridianDeg,
     );
+    expect(siderealRotationRateRadPerSecond("earth")).toBeGreaterThan(0);
+    expect(siderealRotationRateRadPerSecond("venus")).toBeLessThan(0);
   });
 
   it("uses the NAIF Venus retrograde rotation rate", () => {

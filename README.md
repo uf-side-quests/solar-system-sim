@@ -21,8 +21,13 @@ A WebGL vertex shader evaluates the field across the display mesh, while logarit
 The three-dimensional funnel is an energy-landscape visualization, not a claim that Newtonian gravity literally bends a sheet or a representation of relativistic spacetime curvature.
 
 The camera uses standard orbit controls: left drag orbits, right drag pans, and wheel or pinch dollies toward or away from the current target.
+Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
+Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
+The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, and a guided scale tour.
+The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a map double-click uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -92,6 +97,10 @@ Reality mode preserves those very low optical depths; Orrery mode applies a decl
 These dusty systems remain appropriately faint in Reality; Orrery applies a disclosed visibility gain so their measured locations can be studied without widening them.
 
 Two original high-detail Death Star references orbit Callisto and Ganymede at physical scale, using an integrated PBR hull, recessed superlaser geometry, and a dense unfinished machinery interior rather than protruding display bands or flat placeholder shapes.
+
+An original physical-scale Discovery One reconstruction orbits Io, where 2010 places the ship.
+Its command sphere, pod bays, truss spine, external tanks, high-gain antenna, and propulsion module are lit by the same inverse-square Sun source as the real objects.
+Because no precise trajectory is published, its displayed 400 kilometre circular orbit is clearly identified as an authored massless two-body reference rather than historical ephemeris.
 Their original geometry uses a generated industrial PBR hull treatment, recessed superlaser assemblies, equatorial infrastructure, and exposed construction structure for the incomplete second station.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
