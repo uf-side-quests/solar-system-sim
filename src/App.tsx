@@ -211,6 +211,9 @@ const PLANET_FOCUS_ORDER = [
 ] as const;
 
 const FOCUS_SYSTEM_KEY = "__solar-system__";
+const ADDITIONAL_KNOWN_SATELLITE_IDS = new Set(
+  additionalKnownSatellites.map((body) => body.id),
+);
 type FocusOption = Readonly<{
   id: string;
   key: string;
@@ -311,6 +314,9 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
 const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
   (option) => option.id !== "" && !option.disabled,
 );
+const FOCUS_BROWSE_OPTIONS = FOCUS_OPTIONS.filter(
+  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+);
 
 function orbitParametersForBody(
   state: SimulationState | undefined,
@@ -373,10 +379,12 @@ const FocusSelect = memo(function FocusSelect({
     throw new Error(`Focus option ${value} is unavailable`);
   }
   const [filteredOptions, setFilteredOptions] = useState<FocusOption[]>([
-    ...FOCUS_OPTIONS,
+    ...FOCUS_BROWSE_OPTIONS,
   ]);
-  const resetFilteredOptions = (): void => {
-    setFilteredOptions([...FOCUS_OPTIONS]);
+  const [catalogueSearchActive, setCatalogueSearchActive] = useState(false);
+  const showBrowseOptions = (): void => {
+    setCatalogueSearchActive(false);
+    setFilteredOptions([...FOCUS_BROWSE_OPTIONS]);
   };
   const selectTypedOption = (candidate: string): boolean => {
     const normalizedCandidate = candidate.trim().toLocaleLowerCase();
@@ -405,11 +413,14 @@ const FocusSelect = memo(function FocusSelect({
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
-      const normalizedInput = inputValue.toLocaleLowerCase();
+      const normalizedInput = inputValue.trim().toLocaleLowerCase();
+      setCatalogueSearchActive(normalizedInput.length > 0);
       setFilteredOptions(
-        FOCUS_OPTIONS.filter((option) =>
-          option.searchText.toLocaleLowerCase().includes(normalizedInput),
-        ),
+        normalizedInput.length === 0
+          ? [...FOCUS_BROWSE_OPTIONS]
+          : FOCUS_OPTIONS.filter((option) =>
+              option.searchText.toLocaleLowerCase().includes(normalizedInput),
+            ),
       );
     },
     onSelectedItemChange: ({ selectedItem }) => {
@@ -427,12 +438,12 @@ const FocusSelect = memo(function FocusSelect({
             "aria-label": "Focus",
             spellCheck: false,
             onFocus: () => {
-              resetFilteredOptions();
+              showBrowseOptions();
               openMenu();
             },
             onKeyDown: (event) => {
               if (event.key === "ArrowDown" && !isOpen) {
-                resetFilteredOptions();
+                showBrowseOptions();
               }
               if (
                 event.key === "Enter" &&
@@ -453,7 +464,7 @@ const FocusSelect = memo(function FocusSelect({
           type="button"
           aria-label="Open focus list"
           {...getToggleButtonProps({
-            onClick: resetFilteredOptions,
+            onClick: showBrowseOptions,
           })}
         >
           ⌄
@@ -489,6 +500,12 @@ const FocusSelect = memo(function FocusSelect({
             </li>
           );
         })}
+        {!catalogueSearchActive && (
+          <li className="focus-search-hint" role="presentation">
+            Type a name to search all {additionalKnownSatellites.length} known
+            moons
+          </li>
+        )}
       </ul>
     </div>
   );

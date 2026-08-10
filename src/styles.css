@@ -423,6 +423,16 @@ h1 {
   opacity: 0.5;
 }
 
+.focus-search-hint {
+  position: sticky;
+  bottom: -0.4rem;
+  padding: 0.55rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  background: rgb(4 11 18 / 96%);
+  font-size: 0.68rem;
+}
+
 .command-actions {
   justify-content: flex-end;
   gap: 0.4rem;

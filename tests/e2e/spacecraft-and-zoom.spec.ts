@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("reopens the focus picker with the complete catalogue after a selection", async ({
+test("reopens the focus picker with a concise catalogue and searches every known body", async ({
   page,
 }) => {
   await page.goto("/");
@@ -19,6 +19,15 @@ test("reopens the focus picker with the complete catalogue after a selection", a
   ).toBeVisible();
   await expect(
     focusPopover.getByText("Spacecraft", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    focusPopover.getByText("Saturn moons", { exact: true }),
+  ).toBeHidden();
+  expect(await focusPopover.getByRole("option").count()).toBeLessThan(60);
+
+  await focus.fill("S2023_S63");
+  await expect(
+    focusPopover.getByRole("option", { name: "S2023_S63 (Saturn)" }),
   ).toBeVisible();
 });
 
