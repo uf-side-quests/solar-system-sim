@@ -23,6 +23,10 @@ test("observes the live sky from physical surface coordinates", async ({
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
+  await page
+    .getByRole("dialog", { name: "Display controls" })
+    .getByText("Surface observer", { exact: true })
+    .click();
 
   const observerBody = page.getByRole("combobox", {
     name: "Observer body",

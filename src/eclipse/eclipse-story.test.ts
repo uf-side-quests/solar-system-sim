@@ -37,7 +37,19 @@ describe("12 August 2026 eclipse story", () => {
       expect(step.overlays.eclipticGrid, step.id).toBe(false);
       expect(step.overlays.planetTrails, step.id).toBe(false);
       expect(step.overlays.moonTrail, step.id).toBe(false);
+      expect(step.narration.audioSource).toBe(`/audio/tour/${step.id}.mp3`);
+      expect(step.narration.text.length).toBeGreaterThan(120);
     }
+  });
+
+  it("starts with the nested Earth-Moon and solar orbits", () => {
+    const opening = ECLIPSE_STORY_STEPS[0];
+    expect(opening?.orientation).toBe("perspective");
+    expect(opening?.timeRateSecondsPerSecond).toBe(86_400);
+    expect(opening?.overlays.orbitGuides).toBe(true);
+    expect(opening?.overlays.moonTrail).toBe(false);
+    expect(opening?.title).toContain("Moon orbits Earth");
+    expect(opening?.description).toContain("around the Sun");
   });
 
   it("uses surface views for each contact phase and totality comparison", () => {

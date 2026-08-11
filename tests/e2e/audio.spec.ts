@@ -168,4 +168,19 @@ test("plays, pauses, resumes, and advances generated tour narration", async ({
   await expect(app).toHaveAttribute("data-narration-state", "playing", {
     timeout: 15_000,
   });
+
+  await tour.getByRole("button", { name: "Exit" }).click();
+  const startsBeforeEclipse = await narrationStarts();
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  const eclipseStory = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await expect(eclipseStory).toHaveAttribute(
+    "data-tour-step",
+    "eclipse-alignment",
+  );
+  await expect(app).toHaveAttribute("data-narration-state", "playing", {
+    timeout: 15_000,
+  });
+  await expect.poll(narrationStarts).toBeGreaterThan(startsBeforeEclipse);
 });

@@ -1,28 +1,11 @@
 import type { CameraOrientationPreset } from "../scene/camera-view";
-import tourNarrationData from "../data/tour-narration.json";
-
-type TourNarration = Readonly<{
-  audioSource: string;
-  text: string;
-}>;
-
-const tourNarrationById = new Map(
-  tourNarrationData.map((entry) => [
-    entry.id,
-    { audioSource: entry.audioSource, text: entry.text },
-  ]),
-);
-
-function narrationFor(stepId: string): TourNarration {
-  const narration = tourNarrationById.get(stepId);
-  if (narration === undefined) {
-    throw new Error(`Tour narration for ${stepId} is unavailable`);
-  }
-  return narration;
-}
+import { narrationFor, type TourNarration } from "./narration";
 
 export type ScaleTourStep = Readonly<{
   id: string;
+  timeUtc?: never;
+  timeSeconds?: never;
+  surfaceObserver?: never;
   focusBodyId: string;
   cameraTargetBodyId?: string;
   orientation: Exclude<CameraOrientationPreset, "custom">;

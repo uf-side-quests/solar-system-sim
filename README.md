@@ -32,7 +32,7 @@ Each tour change uses a slow logarithmic-distance journey through the smallest u
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
 Pausing the tour pauses the physics clock.
-Each of the fifteen scenes has an original educational script and a matching static ElevenLabs narration track.
+All twenty-two scale-tour and eclipse-story scenes have original educational scripts and matching static ElevenLabs narration tracks.
 Narration pauses and resumes with the tour, has independent enable and volume controls, and temporarily lowers the ambient music so the explanation remains intelligible.
 Physics-anchored observer scenes select Mars, Io, Jupiter, or Titan as the view origin, place the camera above that body's physical radius, and continuously point it toward the live target body.
 Breadcrumbs, selected-body data, transition framing, and Sun distance remain anchored to the observer rather than switching to the look-at target.
@@ -43,7 +43,8 @@ The local display reports altitude, azimuth, true angular diameter, illuminated 
 Its calculated horizon and compass use the same oriented reference sphere as the camera, while the interface explicitly discloses that terrain, atmosphere, and refraction are not modelled.
 Every guided scene keeps body radii physical; the tour never inflates moons or planets with Orrery sizing.
 Focusing an object now uses a true 1× fit instead of silently applying additional optical magnification.
-Orientation presets provide perspective, J2000 ecliptic overhead, ecliptic edge-on, Sun-facing, parent-facing, velocity-following, and instantaneous orbital-plane views.
+The View angle panel provides seven direct buttons for 3D, above, side, sunlit, parent, path, and orbital-plane views.
+Each button explains the resulting camera position, while free drag changes the current view to Custom.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.

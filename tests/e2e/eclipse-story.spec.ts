@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const STORY_SCENES = [
-  ["eclipse-alignment", "The Moon passes between the Sun and Earth"],
+  ["eclipse-alignment", "The Moon orbits Earth as both circle the Sun"],
   ["london-before-contact", "The Moon is ten minutes from first contact"],
   ["london-first-contact", "First contact: the Moon touches the Sun"],
   ["london-maximum", "Maximum: about 91% of the Sun is hidden"],

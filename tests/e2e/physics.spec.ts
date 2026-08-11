@@ -100,10 +100,12 @@ test("renders solver state and advances time through the physics worker", async 
   await page.getByRole("tab", { name: "Camera" }).click();
   const cameraZoom = page.getByRole("slider", { name: "Camera zoom" });
   const zoomPreset = page.getByRole("combobox", { name: "Zoom preset" });
-  const orientation = page.getByRole("combobox", { name: "Orientation" });
+  const orientation = page.getByRole("group", { name: "View angle" });
   await expect(cameraZoom).toHaveValue("0");
   await expect(zoomPreset).toHaveValue("fit");
-  await expect(orientation).toHaveValue("perspective");
+  await expect(
+    orientation.getByRole("button", { name: "3D view" }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Physical scale", { exact: true })).toBeVisible();
   const smallBodyCanvas = page.locator("canvas.small-body-layer");
   await expect(smallBodyCanvas).toBeHidden();
@@ -205,14 +207,14 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(scene).toHaveAttribute("data-camera-zoom", "2.38");
   await zoomPreset.selectOption("fit");
 
-  await orientation.selectOption("overhead");
+  await orientation.getByRole("button", { name: "Above" }).click();
   await expect(scene).toHaveAttribute("data-camera-orientation", "overhead");
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-ecliptic-north-dot")),
     )
     .toBeGreaterThan(0.999);
-  await orientation.selectOption("edge-on");
+  await orientation.getByRole("button", { name: "Side", exact: true }).click();
   await expect(scene).toHaveAttribute("data-camera-orientation", "edge-on");
   await expect
     .poll(async () =>
@@ -221,7 +223,7 @@ test("renders solver state and advances time through the physics worker", async 
       ),
     )
     .toBeLessThan(0.001);
-  await orientation.selectOption("perspective");
+  await orientation.getByRole("button", { name: "3D view" }).click();
   await page.getByRole("tab", { name: "View" }).click();
   const planets = page.getByRole("checkbox", { name: "Planets" });
   const moons = page.getByRole("checkbox", { name: "Moons" });
@@ -341,7 +343,8 @@ test("renders solver state and advances time through the physics worker", async 
     { steps: 10 },
   );
   await page.mouse.up();
-  await expect(orientation).toHaveValue("custom");
+  await expect(scene).toHaveAttribute("data-camera-orientation", "custom");
+  await expect(orientation.getByText("Custom view active.")).toBeVisible();
   await expect
     .poll(async () => scene.getAttribute("data-camera-direction"))
     .not.toBe(initialCameraDirection);
@@ -422,7 +425,9 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(scene).toHaveAttribute("data-focus-distance-au", "0.00204420");
   await page.getByRole("tab", { name: "Camera" }).click();
   await expect(cameraZoom).toHaveValue("0");
-  await expect(orientation).toHaveValue("sun-facing");
+  await expect(
+    orientation.getByRole("button", { name: "Sunlit side" }),
+  ).toHaveAttribute("aria-pressed", "true");
   const earthPrimeMeridianBefore = Number(
     await scene.getAttribute("data-focused-prime-meridian-deg"),
   );
@@ -471,7 +476,9 @@ test("renders solver state and advances time through the physics worker", async 
     },
   );
   await expect(cameraZoom).toHaveValue("0");
-  await expect(orientation).toHaveValue("sun-facing");
+  await expect(
+    orientation.getByRole("button", { name: "Sunlit side" }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(scene).toHaveAttribute("data-visible-body-labels", /[1-9]\d*/u);
 
   await page.getByRole("tab", { name: "Guides" }).click();

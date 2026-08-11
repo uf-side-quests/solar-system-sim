@@ -10,6 +10,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.9.0] - 2026-08-11
+
+### Added in 2.9.0
+
+- Added seven British ElevenLabs narration tracks for the eclipse story, with separate sequence context and complete provider, voice, model, and checksum provenance.
+- Added a nested-orbit opening that shows the physical Earth-Moon system in depth while a live wayfinder preserves the distant Sun's direction.
+
+### Changed in 2.9.0
+
+- Replaced the technical orientation list with seven direct, described View angle buttons for 3D, above, side, sunlit, parent, path, and orbital-plane views.
+- Moved View angle before Cool shots and collapsed the advanced Surface observer section so the primary camera actions stay visible.
+- Increased the eclipse opening to one simulated day per second so the Moon's motion around Earth is clear.
+
 ## [2.8.0] - 2026-08-11
 
 ### Added in 2.8.0

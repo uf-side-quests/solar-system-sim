@@ -182,6 +182,47 @@ const CAMERA_ZOOM_PRESETS = [
   { id: "detail", label: "Surface detail (16x)", zoom: 16 },
   { id: "inspection", label: "Inspection (64x)", zoom: 64 },
 ] as const;
+const CAMERA_ORIENTATION_OPTIONS = [
+  {
+    id: "perspective",
+    label: "3D view",
+    description: "A three-quarter view that shows depth.",
+  },
+  {
+    id: "overhead",
+    label: "Above",
+    description: "Look down from north of the orbital plane.",
+  },
+  {
+    id: "edge-on",
+    label: "Side",
+    description: "Look along the orbital plane.",
+  },
+  {
+    id: "sun-facing",
+    label: "Sunlit side",
+    description: "Look toward the side that faces the Sun.",
+  },
+  {
+    id: "parent-facing",
+    label: "Face parent",
+    description: "Look from the selected body toward its parent.",
+  },
+  {
+    id: "velocity",
+    label: "Along path",
+    description: "Look in the live direction of travel.",
+  },
+  {
+    id: "orbital-plane",
+    label: "Orbit plane",
+    description: "Align the view with this body's live orbit.",
+  },
+] as const satisfies readonly Readonly<{
+  id: Exclude<CameraOrientationPreset, "custom">;
+  label: string;
+  description: string;
+}>[];
 const SEMANTIC_ZOOM_LABELS: Readonly<Record<SemanticZoomLevel, string>> = {
   interstellar: "Interstellar",
   "oort-cloud": "Oort Cloud",
@@ -1575,7 +1616,7 @@ export function App() {
           ? ECLIPSE_STORY_TRANSITION_DURATION_MS
           : SCALE_TOUR_TRANSITION_DURATION_MS,
     );
-    if ("surfaceObserver" in step) {
+    if (step.surfaceObserver !== undefined) {
       setSurfaceObserverBodyId("earth");
       setSurfaceObserverTargetBodyId(step.surfaceObserver.targetBodyId);
       setSurfaceObserverLatitudeDeg(step.surfaceObserver.latitudeDeg);
@@ -1585,7 +1626,7 @@ export function App() {
     } else {
       setSurfaceObserverEnabled(false);
     }
-    if ("timeSeconds" in step) {
+    if (step.timeSeconds !== undefined) {
       manualDeltaSecondsRef.current = 0;
       directSeekTimeSecondsRef.current = step.timeSeconds;
       setSeeking(true);
@@ -1625,14 +1666,8 @@ export function App() {
 
   const activeTourStep =
     tourStepIndex === null ? undefined : activeTourSteps[tourStepIndex];
-  const activeScaleTourStep =
-    tourKind === "scale" && tourStepIndex !== null
-      ? SCALE_TOUR_STEPS[tourStepIndex]
-      : undefined;
   const activeEclipseSurfaceObserver =
-    tourKind === "eclipse" &&
-    activeTourStep !== undefined &&
-    "surfaceObserver" in activeTourStep;
+    tourKind === "eclipse" && activeTourStep?.surfaceObserver !== undefined;
   const activeCinematicShot =
     activeCinematicShotId === null
       ? undefined
@@ -1685,13 +1720,13 @@ export function App() {
   };
 
   useEffect(() => {
-    if (activeScaleTourStep === undefined || !audio.settings.narrationEnabled) {
+    if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
       audio.clearNarration();
       return;
     }
-    audio.loadNarration(activeScaleTourStep.narration.audioSource, tourPlaying);
+    audio.loadNarration(activeTourStep.narration.audioSource, tourPlaying);
   }, [
-    activeScaleTourStep?.id,
+    activeTourStep?.id,
     audio.clearNarration,
     audio.loadNarration,
     audio.settings.narrationEnabled,
@@ -2796,7 +2831,7 @@ export function App() {
               activeTourStep.timeRateSecondsPerSecond,
             )}
             data-tour-time-seconds={
-              "timeSeconds" in activeTourStep
+              activeTourStep.timeSeconds !== undefined
                 ? activeTourStep.timeSeconds.toFixed(3)
                 : "live"
             }
@@ -2824,7 +2859,7 @@ export function App() {
               <h2>{activeTourStep.title}</h2>
               <strong>{activeTourStep.scale}</strong>
               <p>{activeTourStep.description}</p>
-              {"timeUtc" in activeTourStep ? (
+              {activeTourStep.timeUtc !== undefined ? (
                 <time dateTime={activeTourStep.timeUtc}>
                   12 August 2026 · exact model time
                 </time>
@@ -3275,106 +3310,108 @@ export function App() {
             role="tabpanel"
             hidden={displayPanelTab !== "camera"}
           >
-            <h3>Surface observer</h3>
-            <div className="control-section surface-observer-controls">
-              <label>
-                Observer body
-                <select
-                  value={surfaceObserverBodyId}
-                  onChange={(event) => {
-                    const nextBodyId = event.currentTarget.value;
-                    setSurfaceObserverBodyId(nextBodyId);
-                    if (surfaceObserverTargetBodyId === nextBodyId) {
-                      setSurfaceObserverTargetBodyId("sun");
-                    }
-                    if (surfaceObserverEnabled) {
-                      navigateToFocus(nextBodyId);
-                    }
-                  }}
-                >
-                  {surfaceObserverBodies.map((body) => (
-                    <option key={body.id} value={body.id}>
-                      {body.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Look at
-                <select
-                  value={surfaceObserverTargetBodyId}
-                  onChange={(event) =>
-                    setSurfaceObserverTargetBodyId(event.currentTarget.value)
-                  }
-                >
-                  {majorBodySnapshot.bodies
-                    .filter((body) => body.id !== surfaceObserverBodyId)
-                    .map((body) => (
+            <details className="advanced-camera-section">
+              <summary>Surface observer</summary>
+              <div className="control-section surface-observer-controls">
+                <label>
+                  Observer body
+                  <select
+                    value={surfaceObserverBodyId}
+                    onChange={(event) => {
+                      const nextBodyId = event.currentTarget.value;
+                      setSurfaceObserverBodyId(nextBodyId);
+                      if (surfaceObserverTargetBodyId === nextBodyId) {
+                        setSurfaceObserverTargetBodyId("sun");
+                      }
+                      if (surfaceObserverEnabled) {
+                        navigateToFocus(nextBodyId);
+                      }
+                    }}
+                  >
+                    {surfaceObserverBodies.map((body) => (
                       <option key={body.id} value={body.id}>
                         {body.name}
                       </option>
                     ))}
-                </select>
-              </label>
-              <label>
-                Latitude
-                <input
-                  type="number"
-                  min="-90"
-                  max="90"
-                  step="0.0001"
-                  value={surfaceObserverLatitudeDeg}
-                  onChange={(event) => {
-                    const latitudeDeg = event.currentTarget.valueAsNumber;
-                    if (
-                      Number.isFinite(latitudeDeg) &&
-                      latitudeDeg >= -90 &&
-                      latitudeDeg <= 90
-                    ) {
-                      setSurfaceObserverLatitudeDeg(latitudeDeg);
+                  </select>
+                </label>
+                <label>
+                  Look at
+                  <select
+                    value={surfaceObserverTargetBodyId}
+                    onChange={(event) =>
+                      setSurfaceObserverTargetBodyId(event.currentTarget.value)
                     }
-                  }}
-                />
-              </label>
-              <label>
-                Longitude °E
-                <input
-                  type="number"
-                  min="-180"
-                  max="180"
-                  step="0.0001"
-                  value={surfaceObserverLongitudeDeg}
-                  onChange={(event) => {
-                    const longitudeDeg = event.currentTarget.valueAsNumber;
-                    if (
-                      Number.isFinite(longitudeDeg) &&
-                      longitudeDeg >= -180 &&
-                      longitudeDeg <= 180
-                    ) {
-                      setSurfaceObserverLongitudeDeg(longitudeDeg);
-                    }
-                  }}
-                />
-              </label>
-              <small className="surface-observer-control-note">
-                Planetographic coordinates on the sourced mean-radius reference
-                sphere. Giant planets are excluded because they have no solid
-                surface.
-              </small>
-              <button
-                type="button"
-                className="primary-action"
-                onClick={
-                  surfaceObserverEnabled
-                    ? exitSurfaceObserver
-                    : enterSurfaceObserver
-                }
-              >
-                {surfaceObserverEnabled
-                  ? "Exit surface view"
-                  : "Enter surface view"}
-              </button>
-            </div>
+                  >
+                    {majorBodySnapshot.bodies
+                      .filter((body) => body.id !== surfaceObserverBodyId)
+                      .map((body) => (
+                        <option key={body.id} value={body.id}>
+                          {body.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Latitude
+                  <input
+                    type="number"
+                    min="-90"
+                    max="90"
+                    step="0.0001"
+                    value={surfaceObserverLatitudeDeg}
+                    onChange={(event) => {
+                      const latitudeDeg = event.currentTarget.valueAsNumber;
+                      if (
+                        Number.isFinite(latitudeDeg) &&
+                        latitudeDeg >= -90 &&
+                        latitudeDeg <= 90
+                      ) {
+                        setSurfaceObserverLatitudeDeg(latitudeDeg);
+                      }
+                    }}
+                  />
+                </label>
+                <label>
+                  Longitude °E
+                  <input
+                    type="number"
+                    min="-180"
+                    max="180"
+                    step="0.0001"
+                    value={surfaceObserverLongitudeDeg}
+                    onChange={(event) => {
+                      const longitudeDeg = event.currentTarget.valueAsNumber;
+                      if (
+                        Number.isFinite(longitudeDeg) &&
+                        longitudeDeg >= -180 &&
+                        longitudeDeg <= 180
+                      ) {
+                        setSurfaceObserverLongitudeDeg(longitudeDeg);
+                      }
+                    }}
+                  />
+                </label>
+                <small className="surface-observer-control-note">
+                  Planetographic coordinates on the sourced mean-radius
+                  reference sphere. Giant planets are excluded because they have
+                  no solid surface.
+                </small>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={
+                    surfaceObserverEnabled
+                      ? exitSurfaceObserver
+                      : enterSurfaceObserver
+                  }
+                >
+                  {surfaceObserverEnabled
+                    ? "Exit surface view"
+                    : "Enter surface view"}
+                </button>
+              </div>
+            </details>
           </section>
 
           <section
@@ -3505,6 +3542,31 @@ export function App() {
           >
             <h3>{displayPanelTab === "camera" ? "Camera" : "Guides"}</h3>
             <div className="control-section">
+              <fieldset
+                className="orientation-picker camera-only"
+                disabled={viewMode === "schematic"}
+              >
+                <legend>View angle</legend>
+                <div className="orientation-grid">
+                  {CAMERA_ORIENTATION_OPTIONS.map((option) => (
+                    <button
+                      type="button"
+                      key={option.id}
+                      aria-label={option.label}
+                      aria-pressed={cameraOrientation === option.id}
+                      title={option.description}
+                      onClick={() => applyOrientationPreset(option.id)}
+                    >
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </button>
+                  ))}
+                </div>
+                <small className="orientation-help">
+                  Drag to look freely. Re-centre restores the selected angle.
+                  {cameraOrientation === "custom" ? " Custom view active." : ""}
+                </small>
+              </fieldset>
               <div className="cinematic-shot-picker camera-only">
                 <span>Cool shots</span>
                 <div className="cinematic-shot-grid">
@@ -3521,32 +3583,6 @@ export function App() {
                   ))}
                 </div>
               </div>
-              <label className="camera-only">
-                Orientation
-                <select
-                  value={cameraOrientation}
-                  disabled={viewMode === "schematic"}
-                  onChange={(event) =>
-                    applyOrientationPreset(
-                      event.currentTarget.value as Exclude<
-                        CameraOrientationPreset,
-                        "custom"
-                      >,
-                    )
-                  }
-                >
-                  <option value="perspective">Perspective</option>
-                  <option value="overhead">Ecliptic overhead</option>
-                  <option value="edge-on">Ecliptic edge-on</option>
-                  <option value="sun-facing">Face Sun</option>
-                  <option value="parent-facing">Face parent</option>
-                  <option value="velocity">Follow velocity</option>
-                  <option value="orbital-plane">Orbital plane</option>
-                  <option value="custom" disabled>
-                    Custom
-                  </option>
-                </select>
-              </label>
               <label className="switch-control camera-orbit-control camera-only">
                 <input
                   type="checkbox"

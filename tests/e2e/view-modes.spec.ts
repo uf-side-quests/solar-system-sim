@@ -119,11 +119,11 @@ test("switches between physical, orrery, and schematic views without changing ph
   await tacticalOverlay.check();
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "true");
   await page.getByRole("tab", { name: "Camera" }).click();
-  const orientation = page.getByRole("combobox", { name: "Orientation" });
+  const orientation = page.getByRole("group", { name: "View angle" });
   const sequenceBeforeVelocity = await scene.getAttribute(
     "data-camera-transition-sequence",
   );
-  await orientation.selectOption("velocity");
+  await orientation.getByRole("button", { name: "Along path" }).click();
   await expect
     .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
     .not.toBe(sequenceBeforeVelocity);

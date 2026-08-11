@@ -25,6 +25,10 @@ test("enters native fullscreen, hides every control surface, and restores the UI
 
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
+  await page
+    .getByRole("dialog", { name: "Display controls" })
+    .getByText("Surface observer", { exact: true })
+    .click();
   await page.getByRole("button", { name: "Enter surface view" }).click();
   await expect(
     page.getByRole("complementary", {

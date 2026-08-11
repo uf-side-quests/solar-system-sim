@@ -1,5 +1,33 @@
 import { expect, test } from "@playwright/test";
 
+test("shows direct view-angle actions before advanced camera settings", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+
+  const viewAngles = page.getByRole("group", { name: "View angle" });
+  await expect(viewAngles).toBeVisible();
+  await expect(viewAngles).toBeInViewport();
+  await expect(viewAngles.getByRole("button")).toHaveCount(7);
+  await expect(
+    viewAngles.getByRole("button", { name: "3D view" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("combobox", { name: "Observer body" }),
+  ).toBeHidden();
+
+  await page.screenshot({
+    path: testInfo.outputPath("direct-view-angle-controls.png"),
+    fullPage: true,
+  });
+});
+
 test("keeps the compact controls usable at narrow widths", async ({
   page,
 }, testInfo) => {
@@ -44,9 +72,7 @@ test("keeps the compact controls usable at narrow widths", async ({
     page.getByRole("region", { name: "Time controls" }),
   ).toBeHidden();
   await page.getByRole("tab", { name: "Camera" }).click();
-  await expect(
-    page.getByRole("combobox", { name: "Orientation" }),
-  ).toBeVisible();
+  await expect(page.getByRole("group", { name: "View angle" })).toBeVisible();
   const controlsOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth -

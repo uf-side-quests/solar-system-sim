@@ -1,6 +1,6 @@
 {
   "artifact": "solar-system-time-explorer.tour-narration",
-  "generatedAt": "2026-08-06T17:33:32.847Z",
+  "generatedAt": "2026-08-11T21:05:19.772Z",
   "provider": "ElevenLabs",
   "disclosure": "AI-generated speech from original educational scripts",
   "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
@@ -20,7 +20,8 @@
       "textSha256": "13ed1eba6b71b222d33072219abb939fc7729d0d4afd7094e7bb2f3eb4a28b3a",
       "contextSha256": "4d7fee2e16179a103955a1573dceeeeaae9c34246517fdd221532295847aed31",
       "audioSha256": "7c96292daf2f0f15f4a9de5e5ec9af85d1dc3e6a68ab8ed36d41ae6ff0eaef66",
-      "bytes": 347368
+      "bytes": 347368,
+      "sequence": "scale"
     },
     {
       "id": "moon-gap",
@@ -28,7 +29,8 @@
       "textSha256": "07df743c1ecfdc71a08472fa6ab9a119628a1c0d17c9fec4c3dd6b007c92ea5f",
       "contextSha256": "ffab7f7e35a536d300e8ac0567405dae7604977211dfef07f65696db1dcab5d0",
       "audioSha256": "6d7d1d0352e274c348b0d0e7386cdc73de5b903d0ef94ae761075416ee9c0b5c",
-      "bytes": 327306
+      "bytes": 327306,
+      "sequence": "scale"
     },
     {
       "id": "sun-atmosphere",
@@ -36,7 +38,8 @@
       "textSha256": "8dbd9f2b4c2ee9d1a57d2c20a449b3305d3e7dac43dc1bd7b4d379d86637367b",
       "contextSha256": "b30b4f372950e1984aeae5ebaf56a50f0612ecfea43ded49075692d3a4cabd49",
       "audioSha256": "f6bb34caf16bd003ad4ddc26026181f6bbb2c2240bbee25b22849b1093171e09",
-      "bytes": 337755
+      "bytes": 337755,
+      "sequence": "scale"
     },
     {
       "id": "sun-from-mars",
@@ -44,7 +47,8 @@
       "textSha256": "5610f33975a6e8d2fcd4c5a94511481b8785dd4eaf3918a3b0c0453aa425b2df",
       "contextSha256": "d67295386d500e90f276f09dfa34788e1274e97b24f8ae3e901abfc11adec593",
       "audioSha256": "47f8eb33b06eaef904bd62cfc69937ef460ec0dbd8b15c52921d33a4cfe39b25",
-      "bytes": 323544
+      "bytes": 323544,
+      "sequence": "scale"
     },
     {
       "id": "jupiter",
@@ -52,7 +56,8 @@
       "textSha256": "0d92039665d044c45fbabe5aad1752cedf0de9cdc8e2f018d841730fdb7ab78f",
       "contextSha256": "cc3daf64d0ae620d46b43b838b72b35611262cce42f2cb8cd8b10e94f6a35862",
       "audioSha256": "70d5652d7094d9818925ad78f8f6395c64fea8ce5bdd086d7218a8293440eb03",
-      "bytes": 335247
+      "bytes": 335247,
+      "sequence": "scale"
     },
     {
       "id": "jupiter-from-io",
@@ -60,7 +65,8 @@
       "textSha256": "5a4524ad60d286dc295b6550acb8d0b515def7529e96303b77157e9713b8ac26",
       "contextSha256": "10c93429a85f74d96ae0707f39ae1aa681bc0ce5576812db77fbb4c2cde9b1ed",
       "audioSha256": "1aea581e63a81d7fbdc06e2bc3ffb5343f46bf9ad24251a0385b863ba58704a9",
-      "bytes": 328142
+      "bytes": 328142,
+      "sequence": "scale"
     },
     {
       "id": "earth-from-jupiter",
@@ -68,7 +74,8 @@
       "textSha256": "ac6fb523066cdc388477fe04247c4f707b030a8c06b621dc3d80b20271baeba5",
       "contextSha256": "fd5fd2469304661cd045e516da9f0ce41ab11755c62c652dd61edf1b53b2cc30",
       "audioSha256": "feee1b76055d49aa0ad30d4250a7656a2bdaf2ef6cb8db7347f92e6f88de89f1",
-      "bytes": 361996
+      "bytes": 361996,
+      "sequence": "scale"
     },
     {
       "id": "saturn",
@@ -76,7 +83,8 @@
       "textSha256": "35c9441390fd2c9c945119ca5a4f480794a67b053fb9bb28302d9cc0dc5af379",
       "contextSha256": "ed5d79486b9c0c0caf78a5b60512772591a1c3724ad439f748e437e06204829c",
       "audioSha256": "d3f63ec7141a46ab7e91545ca439d043b2aecdc5d39a3b6bbb28155b8644e472",
-      "bytes": 359906
+      "bytes": 359906,
+      "sequence": "scale"
     },
     {
       "id": "saturn-from-titan",
@@ -84,7 +92,8 @@
       "textSha256": "8455a1d093a6e7223f0febea1f211f573c8a6b1a93a4d859ea805e884b67eef5",
       "contextSha256": "fd5ea3ecfb85081f50dd18e6762e3b92ba06a19824cba48dfee4468239af1ee5",
       "audioSha256": "e5477028681e38565d405a252987a8d482a3993f230ce78516c65b1937bd7b18",
-      "bytes": 301810
+      "bytes": 301810,
+      "sequence": "scale"
     },
     {
       "id": "neptune",
@@ -92,7 +101,8 @@
       "textSha256": "8c17ce0a321e95f6e838b40d99fa2147be44887df6e34e47c1cc2fc078fcb798",
       "contextSha256": "6aff9f811a044e3ee1216b38e1f7406a75cb4ca81c104906b8ab9f429c46e33d",
       "audioSha256": "bce9d8540f032157bf53eb178e2da853f4cb7d6c55a3b70bab0e4309a15e3e8f",
-      "bytes": 394179
+      "bytes": 394179,
+      "sequence": "scale"
     },
     {
       "id": "voyager-2",
@@ -100,7 +110,8 @@
       "textSha256": "dbed95f364983f16d22740651ad77d7414c87e42e895eeee3a515c728157622f",
       "contextSha256": "e422778a801d5f416179b6fc189de38058fc872c459f95d4b01c48c2eed99b56",
       "audioSha256": "29a05ed24da924f501a0cf9df933562e9a4cc846749c8d523caeb25510483365",
-      "bytes": 392507
+      "bytes": 392507,
+      "sequence": "scale"
     },
     {
       "id": "voyager-1",
@@ -108,7 +119,8 @@
       "textSha256": "35de86c1a1914cb34f45e3aee5662eeeb5b10753fcd977042d412062c449e10f",
       "contextSha256": "89959c5514e8df8a12ea79f754f733c041ad1c10e917c3c2be10ba621d718fdd",
       "audioSha256": "e9cbbb45da8e0b5caa4174a74ec1a2722d6b61c9fa144fdb09ec14c75c65d44a",
-      "bytes": 378715
+      "bytes": 378715,
+      "sequence": "scale"
     },
     {
       "id": "solar-system",
@@ -116,7 +128,8 @@
       "textSha256": "c832d83c9f99b9fedfcd9b0b91e99c28e854a815dbaedb4cc4395d0a3fb22d19",
       "contextSha256": "7b6089f185fae0a2b3ddd7fdc21ca6a9746fd910d84202e6fa8830b3827495cc",
       "audioSha256": "ccc9edcc63f18acd9da75de2554ce496f44de6f18f3831105149ea9f224ab870",
-      "bytes": 420093
+      "bytes": 420093,
+      "sequence": "scale"
     },
     {
       "id": "oort-cloud",
@@ -124,7 +137,8 @@
       "textSha256": "c054ff267da6ad53676734563279e322a32efdd869b603ca9e4423870ffbc620",
       "contextSha256": "c42b54fdb7653664023c8c445348592921da3b4316fdc5e52a35ab3a502d26c0",
       "audioSha256": "03e456fa9b26cb15c8fae56241bbf2fb4e511833a95a6c97de6ca7fa15337506",
-      "bytes": 393343
+      "bytes": 393343,
+      "sequence": "scale"
     },
     {
       "id": "alpha-centauri",
@@ -132,7 +146,71 @@
       "textSha256": "3ce8d21341e3777781502e20c3271989dec84a21f61134ea13b2bdd25fa5cdca",
       "contextSha256": "fc2222f7724c3bc00c008f4ff12f4b41df97cb4779dff1df7a737808706cf58e",
       "audioSha256": "332a318a859e8bb6109c07674a6fa352e852767d36be619db96fca6c59fcaf38",
-      "bytes": 425526
+      "bytes": 425526,
+      "sequence": "scale"
+    },
+    {
+      "id": "eclipse-alignment",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/eclipse-alignment.mp3",
+      "textSha256": "b775666fceb2dca480ecbd9ae5769c117d3642a9cb55b4d3f8d7477530b17559",
+      "contextSha256": "e446fa7927fd9cd72ee0dc3e02f282738ed7923d06c660d09a8db8945ba19249",
+      "audioSha256": "9b4e4167148ea8ec23f039b4a5d002c22a875c3a0c710c39342f29df0bed7647",
+      "bytes": 321454
+    },
+    {
+      "id": "london-before-contact",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/london-before-contact.mp3",
+      "textSha256": "67c415d72796429446d27a2ab63664a0db31d4fb55768c1c609d998e35efeaac",
+      "contextSha256": "5ec903d06eff5a32d7fda1cfbac11fad4789e8adbc77704ea00bf3ba82612dbb",
+      "audioSha256": "358a6186ab2647b5b978f89f6e775c29185779bb246da0506755419676f80965",
+      "bytes": 298884
+    },
+    {
+      "id": "london-first-contact",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/london-first-contact.mp3",
+      "textSha256": "1692e3d9b24b49ec97f3786d28f9465b2d4ab8957e8f0d07b0cb567891faf762",
+      "contextSha256": "04c5e788d22acecb997c8a2c8702ea9429ceee8aba0e4af3f7c2e921eab476aa",
+      "audioSha256": "8e2ee5168bb28a2ac9f249005f306e3fb5d66e191cbc80b5cf7e23c998a534d1",
+      "bytes": 294705
+    },
+    {
+      "id": "london-maximum",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/london-maximum.mp3",
+      "textSha256": "573a92f905ee55de52e30c8b2f3f512295e6e8e77f62f275ada242bf6a972dad",
+      "contextSha256": "c7daf4738563bbb786dda9680d8beaddce1ad715bf2967cc115ce2579aac3477",
+      "audioSha256": "6f5a40a5c9aed061049ead19907be5b4f8335f8e91182842b9336163ae14863e",
+      "bytes": 324380
+    },
+    {
+      "id": "shadow-from-moon",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/shadow-from-moon.mp3",
+      "textSha256": "19f729b98219bf85995511503b4d51386703791d2fe0cb0f493138c3bf5bc519",
+      "contextSha256": "1aeaf867a44ac3cde97726af0e74fe3f6e33947b1e35b6064cb70db37bde7288",
+      "audioSha256": "68ca65c717ae3e4a7f1a23f06a6d45921acd0be2fe6a9e69d56044592d62081b",
+      "bytes": 285092
+    },
+    {
+      "id": "spain-totality",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/spain-totality.mp3",
+      "textSha256": "aaa8d840d9817f90d076568882ef7de775f44607a188010a908e534ab27e4f66",
+      "contextSha256": "403335d67baee59af03d238317c41a2f8cbeb98509f8302ea294cdf601e7078f",
+      "audioSha256": "fd3ebbd56407597270f08476f2846514d41b960e3a89d02b6484bdcff2e58785",
+      "bytes": 302646
+    },
+    {
+      "id": "london-final-contact",
+      "sequence": "eclipse",
+      "audioSource": "/audio/tour/london-final-contact.mp3",
+      "textSha256": "f6d9562d7b7a9d576ee024af450a74c2fb1b708678aed4d78646628c78705c5b",
+      "contextSha256": "a147b68c99158485227051e24aecc2a2324133ba80bfa6cb81a1d2cc46fe6f6c",
+      "audioSha256": "1749a88d34896ea7cb7323abfcd6dbeabfe4c014f9612fadd40717b4f1450603",
+      "bytes": 238280
     }
   ]
 }

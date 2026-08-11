@@ -28,9 +28,7 @@ test("renders the live superposed Newtonian potential as contours and a 3D well"
 
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
-  await page
-    .getByRole("combobox", { name: "Orientation" })
-    .selectOption("overhead");
+  await page.getByRole("button", { name: "Above" }).click();
   await page.getByRole("tab", { name: "Guides" }).click();
   const gravityField = page.getByRole("combobox", { name: "Gravity field" });
   const gravityScale = page.getByRole("combobox", { name: "Gravity scale" });
@@ -78,9 +76,7 @@ test("renders the live superposed Newtonian potential as contours and a 3D well"
   await gravityScale.selectOption("absolute");
   await expect(scene).toHaveAttribute("data-gravity-well-scale", "absolute");
   await page.getByRole("tab", { name: "Camera" }).click();
-  await page
-    .getByRole("combobox", { name: "Orientation" })
-    .selectOption("perspective");
+  await page.getByRole("button", { name: "3D view" }).click();
   await page.getByRole("tab", { name: "Guides" }).click();
   await gravityField.selectOption("surface");
   await expect(scene).toHaveAttribute("data-gravity-well-mode", "surface");

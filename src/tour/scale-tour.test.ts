@@ -60,12 +60,15 @@ describe("Solar System scale tour", () => {
   });
 
   it("has one narration script for every scene and no orphan scripts", () => {
-    expect(tourNarrationData.map((entry) => entry.id)).toEqual(
+    const scaleNarration = tourNarrationData.filter(
+      (entry) => !("sequence" in entry),
+    );
+    expect(scaleNarration.map((entry) => entry.id)).toEqual(
       SCALE_TOUR_STEPS.map((step) => step.id),
     );
-    expect(
-      new Set(tourNarrationData.map((entry) => entry.audioSource)).size,
-    ).toBe(SCALE_TOUR_STEPS.length);
+    expect(new Set(scaleNarration.map((entry) => entry.audioSource)).size).toBe(
+      SCALE_TOUR_STEPS.length,
+    );
   });
 
   it("visits both Voyager probes with a true-scale spacecraft shot", () => {

@@ -82,9 +82,24 @@ async function existingManifest() {
   }
 }
 
+function sequenceId(entry) {
+  return entry.sequence ?? "scale";
+}
+
+function adjacentText(entries, index, offset) {
+  const adjacent = entries[index + offset];
+  if (
+    adjacent === undefined ||
+    sequenceId(adjacent) !== sequenceId(entries[index])
+  ) {
+    return undefined;
+  }
+  return adjacent.text;
+}
+
 function contextSha256(entries, index) {
   return sha256(
-    `${entries[index - 1]?.text ?? ""}\u0000${entries[index].text}\u0000${entries[index + 1]?.text ?? ""}`,
+    `${adjacentText(entries, index, -1) ?? ""}\u0000${entries[index].text}\u0000${adjacentText(entries, index, 1) ?? ""}`,
   );
 }
 
@@ -117,7 +132,11 @@ async function reusableEntry(entry, entries, index, manifest) {
   try {
     const audio = await readFile(outputPath);
     return sha256(audio) === previous.audioSha256
-      ? { ...previous, contextSha256: contextSha256(entries, index) }
+      ? {
+          ...previous,
+          sequence: sequenceId(entry),
+          contextSha256: contextSha256(entries, index),
+        }
       : undefined;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -143,8 +162,8 @@ async function synthesize(apiKey, entries, index) {
           text: entry.text,
           model_id: modelId,
           voice_settings: voiceSettings,
-          previous_text: entries[index - 1]?.text,
-          next_text: entries[index + 1]?.text,
+          previous_text: adjacentText(entries, index, -1),
+          next_text: adjacentText(entries, index, 1),
         }),
       },
     ),
@@ -163,6 +182,7 @@ async function synthesize(apiKey, entries, index) {
   await rename(temporaryPath, outputPath);
   return {
     id: entry.id,
+    sequence: sequenceId(entry),
     audioSource: entry.audioSource,
     textSha256: sha256(entry.text),
     contextSha256: contextSha256(entries, index),

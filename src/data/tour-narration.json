@@ -73,5 +73,47 @@
     "id": "alpha-centauri",
     "audioSource": "/audio/tour/alpha-centauri.mp3",
     "text": "Alpha Centauri lies 4.3 light-years, or about 272,000 astronomical units, away. Even the possible one-hundred-thousand-AU outer edge of the Oort Cloud reaches only about thirty-seven percent of that distance. Light takes 4.3 years to cross it. At Voyager 1's speed, the trip would take about 75,000 years, and Voyager is not heading there."
+  },
+  {
+    "id": "eclipse-alignment",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/eclipse-alignment.mp3",
+    "text": "Start with two orbits. The Moon circles Earth every twenty-seven point three days. Earth and Moon travel together around the Sun once each year. The blue curve shows the Moon's live physical orbit. The yellow guide points toward the Sun, about one hundred and fifty million kilometres away."
+  },
+  {
+    "id": "london-before-contact",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/london-before-contact.mp3",
+    "text": "Now stand in London ten minutes before first contact. The Sun and Moon each span about half a degree, although their true diameters differ greatly. The Moon approaches from the lower right. Certified eclipse glasses remain essential because the uncovered Sun is still dangerously bright."
+  },
+  {
+    "id": "london-first-contact",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/london-first-contact.mp3",
+    "text": "At six seventeen British Summer Time, the Moon's leading edge first touches the Sun. This is first contact. The overlap then grows for fifty-six minutes. The view uses London's live position and true apparent disc sizes. Neither body has display enlargement."
+  },
+  {
+    "id": "london-maximum",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/london-maximum.mp3",
+    "text": "At seven thirteen, London reaches maximum eclipse. NASA predicts about ninety-one point three percent of the solar disc hidden. This physical model shows about ninety-one percent. London remains outside totality, so a brilliant crescent survives low above the west-northwest horizon."
+  },
+  {
+    "id": "shadow-from-moon",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/shadow-from-moon.mp3",
+    "text": "Ride beside the Moon and look back toward Earth. The Moon's night side faces us, while its narrow central shadow crosses the North Atlantic. Earth turns beneath that moving shadow. Only places where the central cone reaches the surface see totality."
+  },
+  {
+    "id": "spain-totality",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/spain-totality.mp3",
+    "text": "On the centre line in northern Spain, the Moon is just large enough to cover the photosphere completely. The faint outer corona becomes visible for about one minute and forty-nine seconds. The disc sizes and alignment are physical. The detailed corona shape is an illustrative guide."
+  },
+  {
+    "id": "london-final-contact",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/london-final-contact.mp3",
+    "text": "Back in London, the Moon's trailing edge leaves the Sun at eight oh six. The eclipse has lasted one hour and forty-nine minutes. The Sun is only about three degrees above the western horizon, so a clear view toward sunset matters."
   }
 ]

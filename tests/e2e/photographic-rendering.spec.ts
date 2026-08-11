@@ -251,12 +251,16 @@ test("keeps both physical ring systems coherent across camera orientations", asy
     ["Uranus", "uranus"],
   ] as const) {
     await focusBody(page, scene, name, bodyId);
-    for (const orientation of ["sun-facing", "overhead", "edge-on"] as const) {
+    for (const [orientation, controlName] of [
+      ["sun-facing", "Sunlit side"],
+      ["overhead", "Above"],
+      ["edge-on", "Side"],
+    ] as const) {
       await page.getByRole("button", { name: "Display" }).click();
       await page.getByRole("tab", { name: "Camera" }).click();
       await page
-        .getByRole("combobox", { name: "Orientation" })
-        .selectOption(orientation);
+        .getByRole("button", { name: controlName, exact: true })
+        .click();
       await expect(scene).toHaveAttribute(
         "data-camera-orientation",
         orientation,
@@ -277,9 +281,7 @@ test("keeps both physical ring systems coherent across camera orientations", asy
   await focusBody(page, scene, "Saturn", "saturn");
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
-  await page
-    .getByRole("combobox", { name: "Orientation" })
-    .selectOption("sun-facing");
+  await page.getByRole("button", { name: "Sunlit side" }).click();
   await page.getByRole("button", { name: "Close" }).click();
   const zoomIn = page.getByRole("button", { name: "Zoom in" });
   await zoomIn.click();

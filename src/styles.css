@@ -1822,6 +1822,22 @@ h1 {
   font-weight: 600;
 }
 
+.advanced-camera-section summary {
+  padding: 0.75rem 0.9rem;
+  color: #dfe8f1;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.advanced-camera-section[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.advanced-camera-section .surface-observer-controls {
+  padding-top: 0.75rem;
+}
+
 .display-panel[data-active-tab="camera"] .guide-only,
 .display-panel[data-active-tab="guides"] .camera-only {
   display: none;
@@ -1964,6 +1980,65 @@ h1 {
   font-size: 0.68rem;
   line-height: 1.2;
   text-align: left;
+}
+
+.orientation-picker {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.65rem;
+  border: 1px solid rgba(133, 170, 202, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(9, 20, 31, 0.72);
+}
+
+.orientation-picker legend {
+  padding: 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.orientation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.orientation-grid button {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.48rem 0.55rem;
+  text-align: left;
+}
+
+.orientation-grid button strong {
+  color: #e9f5fd;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.orientation-grid button small,
+.orientation-help {
+  color: var(--muted);
+  font-size: 0.6rem;
+  line-height: 1.35;
+}
+
+.orientation-grid button[aria-pressed="true"] {
+  border-color: rgb(139 211 255 / 72%);
+  background: rgb(104 183 232 / 18%);
+  box-shadow: inset 0 0 0 1px rgb(139 211 255 / 18%);
+}
+
+.orientation-grid button[aria-pressed="true"] strong {
+  color: #bce8ff;
+}
+
+.orientation-picker:disabled {
+  opacity: 0.45;
 }
 
 .surface-observer-controls > button {
