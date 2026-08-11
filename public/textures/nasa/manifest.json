@@ -1,7 +1,7 @@
 {
   "schemaVersion": "2.0.0",
   "authority": "NASA, JPL, and USGS",
-  "generatedAt": "2026-08-07T14:36:05.834Z",
+  "generatedAt": "2026-08-11T15:52:55.569Z",
   "note": "Every file is derived from an explicit authority URL. Coverage and limitations distinguish measured composites, filled regions, and visualizations without inventing unknown terrain.",
   "assets": [
     {
@@ -552,18 +552,18 @@
       "classification": "observational-composite",
       "coverage": "global",
       "projection": "equirectangular",
-      "pageUrl": "https://photojournal.jpl.nasa.gov/catalog/PIA03781",
-      "assetUrl": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia03/pia03781/PIA03781.jpg",
+      "pageUrl": "https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_color_global_mosaic_1_4km",
+      "assetUrl": "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
       "credit": "NASA/JPL and USGS Astrogeology Science Center",
-      "limitations": "Galileo and Voyager global mosaic with resolution and color fidelity varying by source coverage.",
-      "sourceContentType": "image/jpeg",
+      "limitations": "Simple-cylindrical Galileo and Voyager global colour mosaic with resolution and colour fidelity varying by source coverage.",
+      "sourceContentType": "image/tiff",
       "contentType": "image/webp",
-      "sourceWidth": 8817,
-      "sourceHeight": 4382,
+      "sourceWidth": 11520,
+      "sourceHeight": 5760,
       "width": 4096,
-      "height": 2036,
-      "byteLength": 1888894,
-      "sha256": "8c0edc0db9074546aa415acec54a5038400acb4eaa3b38f2aae8729b277f44f9"
+      "height": 2048,
+      "byteLength": 1867622,
+      "sha256": "5b2533f29e4f816c5210cefa0ce8a2773887503367975e636bd415b6f4a5f15c"
     },
     {
       "id": "enceladus",

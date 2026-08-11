@@ -104,8 +104,17 @@ for (const [search, bodyId, geometryAttribute] of [
     await expect(scene).toHaveAttribute(geometryAttribute, "true");
     await expect(scene).toHaveAttribute(
       `data-${bodyId.replaceAll("-", "")}-visual-model`,
-      "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3",
+      bodyId === "death-star-2"
+        ? "cc-by-sketchfab-pbr-glb"
+        : "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3",
     );
+    if (bodyId === "death-star-2") {
+      await expect(scene).toHaveAttribute(
+        "data-deathstar2-model-loaded",
+        "true",
+        { timeout: 30_000 },
+      );
+    }
     await expect(page.getByRole("complementary")).toContainText(
       "Hypothetical live circular two-body orbit",
     );
@@ -147,6 +156,39 @@ for (const [search, bodyId, geometryAttribute] of [
       .toBeGreaterThan(280);
     await page.screenshot({
       path: testInfo.outputPath(`${bodyId}-close.png`),
+      animations: "disabled",
+    });
+    harness.assertNoBrowserErrors();
+  });
+}
+
+for (const [search, bodyId, distanceText] of [
+  ["Deep Space Nine (fictional)", "deep-space-nine", "Distance from Callisto"],
+  ["USS Defiant (fictional)", "uss-defiant", "Distance from Deep Space Nine"],
+] as const) {
+  test(`renders the licensed ${search} model at physical scale`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const harness = await openPausedScene(page);
+    const { scene } = harness;
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    await focus.fill(search);
+    await focus.press("Enter");
+    await expect(scene).toHaveAttribute("data-focus-body", bodyId);
+    await expect(scene).toHaveAttribute(
+      `data-${bodyId.replaceAll("-", "")}-model-loaded`,
+      "true",
+      { timeout: 30_000 },
+    );
+    await expect(scene).toHaveAttribute(
+      `data-${bodyId.replaceAll("-", "")}-geometry-visible`,
+      "true",
+    );
+    await expect(page.getByRole("complementary")).toContainText(distanceText);
+    await expect(page.getByRole("complementary")).toContainText("Sketchfab");
+    await page.screenshot({
+      path: testInfo.outputPath(`${bodyId}.png`),
       animations: "disabled",
     });
     harness.assertNoBrowserErrors();

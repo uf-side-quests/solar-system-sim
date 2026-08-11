@@ -21,6 +21,10 @@ test("renders Discovery One and presents every cinematic shot", async ({
     /-?\d+(?:\.\d+)?/u,
     { timeout: 30_000 },
   );
+  await expect(scene).not.toHaveAttribute(
+    "data-discoveryone-model-loaded",
+    "true",
+  );
 
   await selectFocus(
     page.getByRole("combobox", { name: "Focus" }),
@@ -34,11 +38,12 @@ test("renders Discovery One and presents every cinematic shot", async ({
   );
   await expect(scene).toHaveAttribute(
     "data-discovery-one-visual-model",
-    "original-procedural-model-from-open-museum-photography-v1",
+    "cc-by-sketchfab-licensed-glb",
   );
   await expect(scene).toHaveAttribute(
-    "data-discovery-one-exterior-materials",
-    "opaque-two-sided-depth-writing",
+    "data-discoveryone-model-loaded",
+    "true",
+    { timeout: 30_000 },
   );
   await expect(scene).toHaveAttribute(
     "data-discovery-one-geometry-visible",

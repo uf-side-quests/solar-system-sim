@@ -157,6 +157,12 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await expect(focus).toHaveValue("Death Star II (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
   await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("Deep Space Nine (fictional)");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await expect(focus).toHaveValue("USS Defiant (fictional)");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Home" }).click();
   await expect(focus).toHaveValue("Solar System");

@@ -134,7 +134,15 @@ import {
   DISCOVERY_ONE_PARENT_BODY_ID,
   discoveryOneState,
 } from "./discovery-one";
-import { createDiscoveryOneModel } from "./discovery-one-model";
+import {
+  DEEP_SPACE_NINE_BODY_ID,
+  DEEP_SPACE_NINE_OBJECTS,
+  deepSpaceNineObjectStateById,
+  deepSpaceNineParentBodyId,
+  isDeepSpaceNineObjectId,
+  USS_DEFIANT_BODY_ID,
+} from "./deep-space-nine";
+import { fictionalModelAssets } from "./fictional-model-assets";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import { surfaceObserverViewpoint } from "./observer-camera";
 import {
@@ -225,6 +233,11 @@ const NAVIGATION_MAP_RANGES = [
   { value: "100000", label: "100k AU" },
   { value: "300000", label: "300k AU" },
 ] as const;
+const sourcedModelAssets = [...spacecraftAssets, ...fictionalModelAssets];
+const sourcedModelAssetByBodyId: ReadonlyMap<
+  string,
+  (typeof sourcedModelAssets)[number]
+> = new Map(sourcedModelAssets.map((asset) => [asset.bodyId, asset]));
 
 function voyagerEarthPointingQuaternion(
   probePosition: Vector3,
@@ -342,6 +355,12 @@ function spacecraftBoundingRadiusM(bodyId: string): number | undefined {
   }
   if (bodyId === DISCOVERY_ONE_BODY_ID) {
     return DISCOVERY_ONE_BOUNDING_RADIUS_M;
+  }
+  const deepSpaceNineObject = DEEP_SPACE_NINE_OBJECTS.find(
+    (object) => object.id === bodyId,
+  );
+  if (deepSpaceNineObject !== undefined) {
+    return deepSpaceNineObject.maximumDimensionM / 2;
   }
   const fictionalOrbiter = fictionalOrbiterById.get(
     isFictionalOrbiterId(bodyId) ? bodyId : "death-star-1",
@@ -486,6 +505,9 @@ function bodyStateById(
   if (bodyId === DISCOVERY_ONE_BODY_ID) {
     return discoveryOneState(state);
   }
+  if (isDeepSpaceNineObjectId(bodyId)) {
+    return deepSpaceNineObjectStateById(state, bodyId);
+  }
   if (isFictionalOrbiterId(bodyId)) {
     return fictionalOrbiterStateById(state, bodyId);
   }
@@ -507,6 +529,7 @@ function gravityFieldExtentAu(
     isOperationalSpacecraftBodyId(focusBodyId) ||
     focusBodyId === JOVIAN_MONOLITH_BODY_ID ||
     focusBodyId === DISCOVERY_ONE_BODY_ID ||
+    isDeepSpaceNineObjectId(focusBodyId) ||
     isFictionalOrbiterId(focusBodyId)
   ) {
     return 0.000_001;
@@ -542,12 +565,14 @@ function parentBodyId(bodyId: string): string | undefined {
         ? "jupiter"
         : bodyId === DISCOVERY_ONE_BODY_ID
           ? DISCOVERY_ONE_PARENT_BODY_ID
-          : isFictionalOrbiterId(bodyId)
-            ? fictionalOrbiterById.get(bodyId)?.parentBodyId
-            : bodyId === "jwst" || isVoyagerBodyId(bodyId)
-              ? "sun"
-              : (knownSatelliteById.get(bodyId)?.parentId ??
-                PARENT_BODY_ID[bodyId]);
+          : isDeepSpaceNineObjectId(bodyId)
+            ? deepSpaceNineParentBodyId(bodyId)
+            : isFictionalOrbiterId(bodyId)
+              ? fictionalOrbiterById.get(bodyId)?.parentBodyId
+              : bodyId === "jwst" || isVoyagerBodyId(bodyId)
+                ? "sun"
+                : (knownSatelliteById.get(bodyId)?.parentId ??
+                  PARENT_BODY_ID[bodyId]);
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -1266,21 +1291,10 @@ export function SolarSystemScene({
       .map((value) => value.toFixed(3))
       .join(",");
 
-    const discoveryOneGroup = createDiscoveryOneModel();
+    const discoveryOneGroup = new Group();
+    discoveryOneGroup.name = "Discovery One licensed model anchor";
     discoveryOneGroup.visible = false;
     scene.add(discoveryOneGroup);
-    discoveryOneGroup.traverse((object) => {
-      if (object.type !== "Mesh") {
-        return;
-      }
-      const modelMesh = object as Mesh;
-      additionalSelectableMeshes.push(modelMesh);
-      geometries.push(modelMesh.geometry);
-      const objectMaterials = Array.isArray(modelMesh.material)
-        ? modelMesh.material
-        : [modelMesh.material];
-      materials.push(...objectMaterials);
-    });
     const discoveryOneLabel = document.createElement("button");
     discoveryOneLabel.type = "button";
     discoveryOneLabel.className = "body-label fictional-object-label";
@@ -1300,15 +1314,8 @@ export function SolarSystemScene({
     discoveryOneMarker.className = "orrery-marker";
     discoveryOneMarker.hidden = true;
     markerLayer.append(discoveryOneMarker);
-    container.dataset["discoveryOneVisualModel"] = String(
-      discoveryOneGroup.userData["visualSource"],
-    );
-    container.dataset["discoveryOneExteriorMaterials"] = String(
-      discoveryOneGroup.userData["exteriorMaterialContract"],
-    );
-    container.dataset["discoveryOneExteriorMaterialCount"] = String(
-      discoveryOneGroup.userData["exteriorMaterialCount"],
-    );
+    container.dataset["discoveryOneVisualModel"] =
+      "cc-by-sketchfab-licensed-glb";
     container.dataset["discoveryOnePhysics"] =
       "authored-massless-circular-two-body-orbit-around-io";
 
@@ -1316,7 +1323,14 @@ export function SolarSystemScene({
     const fictionalOrbiterLabels = new Map<string, HTMLButtonElement>();
     const fictionalOrbiterMarkers = new Map<string, HTMLSpanElement>();
     for (const orbiter of FICTIONAL_ORBITERS) {
-      const group = createDeathStarModel(orbiter);
+      const group =
+        orbiter.id === "death-star-2"
+          ? new Group()
+          : createDeathStarModel(orbiter);
+      if (orbiter.id === "death-star-2") {
+        group.name = "Death Star II licensed model anchor";
+        group.userData["visualSource"] = "cc-by-sketchfab-pbr-glb";
+      }
       group.visible = false;
       scene.add(group);
       fictionalOrbiterGroups.set(orbiter.id, group);
@@ -1371,6 +1385,38 @@ export function SolarSystemScene({
     container.dataset["fictionalOrbiterCount"] = String(
       FICTIONAL_ORBITERS.length,
     );
+
+    const deepSpaceNineGroups = new Map<string, Group>();
+    const deepSpaceNineLabels = new Map<string, HTMLButtonElement>();
+    const deepSpaceNineMarkers = new Map<string, HTMLSpanElement>();
+    for (const object of DEEP_SPACE_NINE_OBJECTS) {
+      const group = new Group();
+      group.name = `${object.name} licensed model anchor`;
+      group.visible = false;
+      scene.add(group);
+      deepSpaceNineGroups.set(object.id, group);
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "body-label fictional-object-label";
+      label.textContent = object.name;
+      label.dataset["bodyId"] = object.id;
+      label.setAttribute("aria-label", `Focus ${object.name}`);
+      label.title = "Click to select; double-click to focus";
+      label.addEventListener("click", () => onSelectBody(object.id));
+      label.addEventListener("dblclick", () => onFocusBody(object.id));
+      label.hidden = true;
+      labelLayer.append(label);
+      deepSpaceNineLabels.set(object.id, label);
+      const marker = document.createElement("span");
+      marker.className = "orrery-marker";
+      marker.hidden = true;
+      markerLayer.append(marker);
+      deepSpaceNineMarkers.set(object.id, marker);
+    }
+    container.dataset["deepSpaceNinePresentation"] =
+      "licensed-models-hypothetical-jovian-exhibit";
+    container.dataset["ussDefiantMotion"] =
+      "explicit-fictional-scripted-defence-patrol-no-invented-gravity";
 
     const zodiacGroup = new Group();
     zodiacGroup.name = "Tropical zodiac reference on the J2000 ecliptic";
@@ -2488,129 +2534,169 @@ float saturnRingTransmission(vec3 surfacePosition) {
       "physical-lm-flags-alsep-retroreflectors-lrv";
     container.dataset["apolloTraverseAuthority"] = "NASA-LROC-PDS";
 
-    const spacecraftGroups = new Map<string, Group>();
-    const spacecraftSelectableMeshes: Mesh[] = [];
-    const spacecraftModelStatus = document.createElement("span");
-    spacecraftModelStatus.className = "scene-error";
-    spacecraftModelStatus.setAttribute("role", "alert");
-    spacecraftModelStatus.hidden = true;
-    container.append(spacecraftModelStatus);
+    const sourcedModelGroups = new Map<string, Group>();
+    const sourcedModelSelectableMeshes: Mesh[] = [];
+    const sourcedModelStatus = document.createElement("span");
+    sourcedModelStatus.className = "scene-error";
+    sourcedModelStatus.setAttribute("role", "alert");
+    sourcedModelStatus.hidden = true;
+    container.append(sourcedModelStatus);
     const gltfLoader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath("/draco/");
     dracoLoader.setWorkerLimit(2);
     gltfLoader.setDRACOLoader(dracoLoader);
     let modelLoadingActive = true;
-    const modelLoadPromises = spacecraftAssets.map(async (asset) => {
-      const group = new Group();
+    for (const asset of sourcedModelAssets) {
+      const existingGroup =
+        asset.bodyId === DISCOVERY_ONE_BODY_ID
+          ? discoveryOneGroup
+          : isFictionalOrbiterId(asset.bodyId)
+            ? fictionalOrbiterGroups.get(asset.bodyId)
+            : isDeepSpaceNineObjectId(asset.bodyId)
+              ? deepSpaceNineGroups.get(asset.bodyId)
+              : undefined;
+      const group = existingGroup ?? new Group();
       group.name = `${asset.bodyId} sourced 3D model`;
       group.visible = false;
-      spacecraftGroups.set(asset.bodyId, group);
-      scene.add(group);
-      try {
-        const gltf = await gltfLoader.loadAsync(asset.modelUrl);
-        const model = gltf.scene;
-        if (!modelLoadingActive) {
+      sourcedModelGroups.set(asset.bodyId, group);
+      if (existingGroup === undefined) {
+        scene.add(group);
+      }
+    }
+    const modelLoadPromises = new Map<string, Promise<void>>();
+    let sourcedModelsLoadedCount = 0;
+    const loadSourcedModel = (asset: (typeof sourcedModelAssets)[number]) => {
+      const activePromise = modelLoadPromises.get(asset.bodyId);
+      if (activePromise !== undefined) {
+        return activePromise;
+      }
+      const group = sourcedModelGroups.get(asset.bodyId);
+      if (group === undefined) {
+        throw new Error(`${asset.bodyId} sourced model group is unavailable`);
+      }
+      const loadPromise = (async (): Promise<void> => {
+        try {
+          const gltf = await gltfLoader.loadAsync(asset.modelUrl);
+          const model = gltf.scene;
+          if (!modelLoadingActive) {
+            model.traverse((object) => {
+              if (object.type === "Mesh") {
+                const mesh = object as Mesh;
+                mesh.geometry.dispose();
+                const loadedMaterials = Array.isArray(mesh.material)
+                  ? mesh.material
+                  : [mesh.material];
+                for (const material of loadedMaterials) material.dispose();
+              }
+            });
+            return;
+          }
+          model.updateMatrixWorld(true);
+          const exteriorMaterialReport =
+            asset.bodyId === ROADSTER_BODY_ID
+              ? enforceOpaqueTwoSidedExterior(model)
+              : undefined;
+          const sourceBounds = new Box3().setFromObject(model);
+          const sourceSize = new Vector3();
+          const sourceCenter = new Vector3();
+          sourceBounds.getSize(sourceSize);
+          sourceBounds.getCenter(sourceCenter);
+          const sourceMaximumDimension = Math.max(
+            sourceSize.x,
+            sourceSize.y,
+            sourceSize.z,
+          );
+          if (
+            !Number.isFinite(sourceMaximumDimension) ||
+            sourceMaximumDimension <= 0
+          ) {
+            throw new Error(
+              `${asset.bodyId} model has invalid source dimensions`,
+            );
+          }
+          const physicalScale =
+            asset.maximumDimensionM /
+            ASTRONOMICAL_UNIT_M /
+            sourceMaximumDimension;
+          model.scale.setScalar(physicalScale);
+          model.position.copy(sourceCenter).multiplyScalar(-physicalScale);
           model.traverse((object) => {
+            object.userData["bodyId"] = asset.bodyId;
             if (object.type === "Mesh") {
               const mesh = object as Mesh;
-              mesh.geometry.dispose();
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              sourcedModelSelectableMeshes.push(mesh);
+              geometries.push(mesh.geometry);
               const loadedMaterials = Array.isArray(mesh.material)
                 ? mesh.material
                 : [mesh.material];
-              for (const material of loadedMaterials) material.dispose();
-            }
-          });
-          return;
-        }
-        model.updateMatrixWorld(true);
-        const exteriorMaterialReport =
-          asset.bodyId === ROADSTER_BODY_ID
-            ? enforceOpaqueTwoSidedExterior(model)
-            : undefined;
-        const sourceBounds = new Box3().setFromObject(model);
-        const sourceSize = new Vector3();
-        const sourceCenter = new Vector3();
-        sourceBounds.getSize(sourceSize);
-        sourceBounds.getCenter(sourceCenter);
-        const sourceMaximumDimension = Math.max(
-          sourceSize.x,
-          sourceSize.y,
-          sourceSize.z,
-        );
-        if (
-          !Number.isFinite(sourceMaximumDimension) ||
-          sourceMaximumDimension <= 0
-        ) {
-          throw new Error(
-            `${asset.bodyId} model has invalid source dimensions`,
-          );
-        }
-        const physicalScale =
-          asset.maximumDimensionM /
-          ASTRONOMICAL_UNIT_M /
-          sourceMaximumDimension;
-        model.scale.setScalar(physicalScale);
-        model.position.copy(sourceCenter).multiplyScalar(-physicalScale);
-        model.traverse((object) => {
-          object.userData["bodyId"] = asset.bodyId;
-          if (object.type === "Mesh") {
-            const mesh = object as Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            spacecraftSelectableMeshes.push(mesh);
-            geometries.push(mesh.geometry);
-            const loadedMaterials = Array.isArray(mesh.material)
-              ? mesh.material
-              : [mesh.material];
-            for (const material of loadedMaterials) {
-              materials.push(material);
-              for (const propertyName of Object.keys(material)) {
-                const value: unknown = Reflect.get(material, propertyName);
-                if (value instanceof Texture) {
-                  textures.push(value as Texture);
+              for (const material of loadedMaterials) {
+                materials.push(material);
+                for (const propertyName of Object.keys(material)) {
+                  const value: unknown = Reflect.get(material, propertyName);
+                  if (value instanceof Texture) {
+                    textures.push(value as Texture);
+                  }
                 }
               }
             }
+          });
+          group.add(model);
+          container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
+            "true";
+          if (asset.bodyId === ROADSTER_BODY_ID) {
+            container.dataset["roadsterModelProvenance"] =
+              "mit-spacedock-community-model";
+            container.dataset["roadsterExteriorMaterials"] =
+              "opaque-two-sided-depth-writing";
+            container.dataset["roadsterExteriorMaterialCount"] = String(
+              exteriorMaterialReport?.materialCount ?? 0,
+            );
           }
-        });
-        group.add(model);
-        container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
-          "true";
-        if (asset.bodyId === ROADSTER_BODY_ID) {
-          container.dataset["roadsterModelProvenance"] =
-            "mit-spacedock-community-model";
-          container.dataset["roadsterExteriorMaterials"] =
-            "opaque-two-sided-depth-writing";
-          container.dataset["roadsterExteriorMaterialCount"] = String(
-            exteriorMaterialReport?.materialCount ?? 0,
+          if (
+            fictionalModelAssets.some((entry) => entry.bodyId === asset.bodyId)
+          ) {
+            container.dataset[
+              `${asset.bodyId.replaceAll("-", "")}ModelProvenance`
+            ] = "licensed-free-source-model";
+          }
+          sourcedModelsLoadedCount += 1;
+          container.dataset["sourcedModelsLoaded"] = String(
+            sourcedModelsLoadedCount,
           );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          sourcedModelStatus.hidden = false;
+          sourcedModelStatus.textContent = `Sourced 3D model failed to load: ${message}`;
+          container.dataset["sourcedModelError"] = message;
+          throw error;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        spacecraftModelStatus.hidden = false;
-        spacecraftModelStatus.textContent = `Official spacecraft model failed to load: ${message}`;
-        container.dataset["spacecraftModelError"] = message;
-        throw error;
+      })();
+      modelLoadPromises.set(asset.bodyId, loadPromise);
+      return loadPromise;
+    };
+    const ensureSourcedModel = (bodyId: string): void => {
+      const asset = sourcedModelAssetByBodyId.get(bodyId);
+      if (asset !== undefined) {
+        void loadSourcedModel(asset).catch(() => undefined);
       }
-    });
-    void Promise.all(modelLoadPromises)
-      .then(() => {
-        container.dataset["spacecraftModelsLoaded"] = String(
-          spacecraftAssets.length,
-        );
-      })
-      .catch(() => undefined);
-    if (!spacecraftGroups.has(ROADSTER_BODY_ID)) {
+    };
+    for (const asset of spacecraftAssets) {
+      ensureSourcedModel(asset.bodyId);
+    }
+    if (!sourcedModelGroups.has(ROADSTER_BODY_ID)) {
       throw new Error("Roadster sourced model group is unavailable");
     }
-    const issGroup = spacecraftGroups.get(ISS_BODY_ID);
+    const issGroup = sourcedModelGroups.get(ISS_BODY_ID);
     if (issGroup === undefined) {
       throw new Error("ISS official model group is unavailable");
     }
     const voyagerGroups = new Map(
       voyagerSnapshot.probes.map((probe) => {
-        const group = spacecraftGroups.get(probe.id);
+        const group = sourcedModelGroups.get(probe.id);
         if (group === undefined) {
           throw new Error(`${probe.name} official model group is unavailable`);
         }
@@ -2725,6 +2811,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       ...FICTIONAL_ORBITERS.map((orbiter) => ({
         id: orbiter.id,
         name: orbiter.name,
+        group: "Fictional references",
+      })),
+      ...DEEP_SPACE_NINE_OBJECTS.map((object) => ({
+        id: object.id,
+        name: object.name,
         group: "Fictional references",
       })),
     ];
@@ -2913,6 +3004,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (bodyId === DISCOVERY_ONE_BODY_ID) {
         return "Discovery One · fictional 2001 / 2010 spacecraft in orbit around Io";
       }
+      if (isDeepSpaceNineObjectId(bodyId)) {
+        return bodyId === DEEP_SPACE_NINE_BODY_ID
+          ? "Deep Space Nine · fictional station in a hypothetical Callisto exhibit orbit"
+          : "USS Defiant · fictional spacecraft on a scripted defensive patrol around Deep Space Nine";
+      }
       const voyager = isVoyagerBodyId(bodyId)
         ? voyagerById.get(bodyId)
         : undefined;
@@ -2955,7 +3051,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         .intersectObjects(
           [
             ...bodyMeshes.values(),
-            ...spacecraftSelectableMeshes,
+            ...sourcedModelSelectableMeshes,
             ...additionalSelectableMeshes,
           ],
           true,
@@ -3947,13 +4043,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
         requestedFocusBodyId === DISCOVERY_ONE_BODY_ID;
       const isFictionalOrbiterFocus =
         isFictionalOrbiterId(requestedFocusBodyId);
+      const isDeepSpaceNineObjectFocus =
+        isDeepSpaceNineObjectId(requestedFocusBodyId);
       const isSpacecraftFocus =
         isIssFocus ||
         isVoyagerFocus ||
         isOperationalSpacecraftFocus ||
         isJovianMonolithFocus ||
         isDiscoveryOneFocus ||
-        isFictionalOrbiterFocus;
+        isFictionalOrbiterFocus ||
+        isDeepSpaceNineObjectFocus;
       const focusState = bodyStateById(current, requestedFocusBodyId);
       if (
         (focusDefinition === undefined &&
@@ -3963,7 +4062,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
           !isOperationalSpacecraftFocus &&
           !isJovianMonolithFocus &&
           !isDiscoveryOneFocus &&
-          !isFictionalOrbiterFocus) ||
+          !isFictionalOrbiterFocus &&
+          !isDeepSpaceNineObjectFocus) ||
         focusState === undefined
       ) {
         throw new Error(`Focus body ${requestedFocusBodyId} is unavailable`);
@@ -4795,6 +4895,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (activeVisualQuality !== lastVisualQuality) {
         applyVisualQuality(activeVisualQuality);
       }
+      const detailedModelBodyIds = new Set([
+        focusBodyIdRef.current,
+        selectedBodyIdRef.current,
+      ]);
+      if (
+        detailedModelBodyIds.has(DEEP_SPACE_NINE_BODY_ID) ||
+        detailedModelBodyIds.has(USS_DEFIANT_BODY_ID)
+      ) {
+        detailedModelBodyIds.add(DEEP_SPACE_NINE_BODY_ID);
+        detailedModelBodyIds.add(USS_DEFIANT_BODY_ID);
+      }
+      for (const bodyId of detailedModelBodyIds) {
+        if (bodyId !== null) {
+          ensureSourcedModel(bodyId);
+        }
+      }
       const requestedFrame = frameRef.current;
       if (clearTrailsTokenRef.current !== lastClearTrailsToken) {
         lastClearTrailsToken = clearTrailsTokenRef.current;
@@ -4983,6 +5099,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           DISCOVERY_ONE_BODY_ID,
           scenePosition(discoveryState.positionM),
         );
+        for (const object of DEEP_SPACE_NINE_OBJECTS) {
+          const objectState = deepSpaceNineObjectStateById(current, object.id);
+          sceneBodyPositions.set(
+            object.id,
+            scenePosition(objectState.positionM),
+          );
+        }
         const gravityMode = gravityWellModeRef.current;
         const gravityFocusId = focusBodyIdRef.current;
         const gravityCenterState = bodyStateById(
@@ -5289,6 +5412,48 @@ float saturnRingTransmission(vec3 surfacePosition) {
           1_000
         ).toFixed(3);
 
+        for (const object of DEEP_SPACE_NINE_OBJECTS) {
+          const group = deepSpaceNineGroups.get(object.id);
+          const objectState = deepSpaceNineObjectStateById(current, object.id);
+          const position = sceneBodyPositions.get(object.id);
+          const parentId = deepSpaceNineParentBodyId(object.id);
+          const parentPosition = sceneBodyPositions.get(parentId);
+          const parentState =
+            parentId === DEEP_SPACE_NINE_BODY_ID
+              ? deepSpaceNineObjectStateById(current, DEEP_SPACE_NINE_BODY_ID)
+              : bodyStateById(current, parentId);
+          if (
+            group === undefined ||
+            position === undefined ||
+            parentPosition === undefined ||
+            parentState === undefined
+          ) {
+            throw new Error(`${object.name} scene state is unavailable`);
+          }
+          group.position.copy(position);
+          const radial = position.clone().sub(parentPosition).normalize();
+          const relativeVelocity = icrfToScene({
+            x: objectState.velocityMps[0] - parentState.velocityMps[0],
+            y: objectState.velocityMps[1] - parentState.velocityMps[1],
+            z: objectState.velocityMps[2] - parentState.velocityMps[2],
+          }).normalize();
+          const normal = radial.clone().cross(relativeVelocity).normalize();
+          if (object.id === USS_DEFIANT_BODY_ID) {
+            group.up.copy(normal);
+            group.lookAt(position.clone().add(relativeVelocity));
+          } else {
+            group.quaternion.setFromRotationMatrix(
+              new Matrix4().makeBasis(relativeVelocity, normal, radial),
+            );
+          }
+          container.dataset[
+            `${object.id.replaceAll("-", "")}DistanceFromParentKm`
+          ] = (
+            (position.distanceTo(parentPosition) * ASTRONOMICAL_UNIT_M) /
+            1_000
+          ).toFixed(3);
+        }
+
         const issState = bodyStateById(current, ISS_BODY_ID);
         const earthStateForIss = bodyStateById(current, ISS_PARENT_BODY_ID);
         if (issState === undefined || earthStateForIss === undefined) {
@@ -5361,7 +5526,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         container.dataset["voyagerAntennaTarget"] = "earth";
         for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
           const spacecraftPosition = sceneBodyPositions.get(spacecraft.id);
-          const group = spacecraftGroups.get(spacecraft.id);
+          const group = sourcedModelGroups.get(spacecraft.id);
           if (group === undefined) {
             throw new Error(
               `${spacecraft.name} official model group is unavailable`,
@@ -6878,7 +7043,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         (tacticalFocusId === ISS_BODY_ID ||
           isVoyagerBodyId(tacticalFocusId) ||
           isOperationalSpacecraftBodyId(tacticalFocusId))
-          ? spacecraftGroups.get(tacticalFocusId)
+          ? sourcedModelGroups.get(tacticalFocusId)
           : tacticalFocusId === null
             ? undefined
             : bodyMeshes.get(tacticalFocusId);
@@ -7368,6 +7533,89 @@ float saturnRingTransmission(vec3 surfacePosition) {
         container.dataset[`${datasetPrefix}GeometryVisible`] =
           String(geometryVisible);
       }
+      for (const object of DEEP_SPACE_NINE_OBJECTS) {
+        const group = deepSpaceNineGroups.get(object.id);
+        const label = deepSpaceNineLabels.get(object.id);
+        const marker = deepSpaceNineMarkers.get(object.id);
+        if (
+          group === undefined ||
+          label === undefined ||
+          marker === undefined
+        ) {
+          throw new Error(`${object.name} scene objects are unavailable`);
+        }
+        const objectState =
+          current === undefined
+            ? undefined
+            : deepSpaceNineObjectStateById(current, object.id);
+        if (objectState === undefined) {
+          group.visible = false;
+          label.hidden = true;
+          marker.hidden = true;
+          continue;
+        }
+        const position = scenePosition(objectState.positionM);
+        const projected = position.clone().project(camera);
+        const cameraDistance = Math.max(
+          camera.position.distanceTo(position),
+          1e-15,
+        );
+        const radiusAu = object.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
+        const radiusPixels =
+          (radiusAu / cameraDistance) *
+          (container.clientHeight /
+            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          camera.zoom;
+        const inCameraFrustum =
+          projected.z >= -1 &&
+          projected.z <= 1 &&
+          Math.abs(projected.x) <= 1 &&
+          Math.abs(projected.y) <= 1;
+        const layerVisible = currentVisibility.spacecraft;
+        const geometryVisible =
+          layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        group.visible = geometryVisible;
+        const labelVisible =
+          showLabelsRef.current &&
+          layerVisible &&
+          inCameraFrustum &&
+          (focusBodyIdRef.current === object.id ||
+            selectedBodyIdRef.current === object.id);
+        label.hidden = !labelVisible;
+        label.classList.toggle(
+          "is-selected",
+          selectedBodyIdRef.current === object.id,
+        );
+        label.classList.toggle(
+          "is-focused",
+          focusBodyIdRef.current === object.id,
+        );
+        label.setAttribute(
+          "aria-pressed",
+          String(selectedBodyIdRef.current === object.id),
+        );
+        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
+        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        if (labelVisible) {
+          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleLabelCount += 1;
+        }
+        const markerVisible =
+          viewModeRef.current === "orrery" &&
+          layerVisible &&
+          inCameraFrustum &&
+          !geometryVisible;
+        marker.hidden = !markerVisible;
+        if (markerVisible) {
+          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          visibleOrreryMarkerCount += 1;
+        }
+        const datasetPrefix = object.id.replaceAll("-", "");
+        container.dataset[`${datasetPrefix}RadiusPixels`] =
+          radiusPixels.toFixed(3);
+        container.dataset[`${datasetPrefix}GeometryVisible`] =
+          String(geometryVisible);
+      }
       const issState =
         current === undefined ? undefined : bodyStateById(current, ISS_BODY_ID);
       if (issState !== undefined && current !== undefined) {
@@ -7542,7 +7790,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["voyagerModelScale"] = "physical";
       container.dataset["voyagerPhysics"] = "REBOUND-massless-test-particle";
       for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
-        const group = spacecraftGroups.get(spacecraft.id);
+        const group = sourcedModelGroups.get(spacecraft.id);
         const label = operationalSpacecraftLabels.get(spacecraft.id);
         const marker = operationalSpacecraftMarkers.get(spacecraft.id);
         if (
@@ -7892,7 +8140,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         texture.dispose();
       }
       container.removeChild(rangeLegend);
-      container.removeChild(spacecraftModelStatus);
+      container.removeChild(sourcedModelStatus);
       container.removeChild(cameraJourney);
       container.removeChild(bodyHoverTooltip);
       for (const { element } of zodiacLabels) {

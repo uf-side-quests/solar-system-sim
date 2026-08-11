@@ -114,18 +114,55 @@ Users redistributing these assets should follow the NASA media usage guidelines:
 
 ## Fictional references
 
-The Jovian Monolith, Discovery One, and two Death Star visualizations are original fan-reference models.
-Discovery One uses original procedural Three.js geometry based on openly licensed museum photography rather than a redistributed third-party model.
+The Jovian Monolith and Death Star I are original fan-reference models.
+Discovery One, Death Star II, Deep Space Nine, and the USS Defiant use the free source models listed below.
+The installed GLB files were converted and optimised for browser delivery through the Objaverse archive.
+Each SHA-256 value identifies the exact derived file in this repository.
+
+### Discovery One
+
+- Creator: uperesito
+- Licence: Creative Commons Attribution 4.0
+- Source: <https://sketchfab.com/3d-models/discovery-1-3c0b0c7bb5364305a04b74382f944935>
+- Archive: <https://objaverse.allenai.org/>
+- Installed SHA-256: `b2cc068f824a5812b29045c10cd43f6d282a01244ed9b5ceec95ae02185498ac`
+
+### Death Star II
+
+- Creator: N8
+- Licence: Creative Commons Attribution 4.0
+- Source: <https://sketchfab.com/3d-models/death-star-ii-17ccca0dbb6b4e338fa999202f9e6685>
+- Archive: <https://objaverse.allenai.org/>
+- Installed SHA-256: `c721f3f11d2d6dee1497efca0c401de60df6de0b1fe8325069b8ee4b8ae126b3`
+
+### Deep Space Nine
+
+- Creator: neilken
+- Licence: Creative Commons Attribution 4.0
+- Source: <https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa>
+- Archive: <https://objaverse.allenai.org/>
+- Installed SHA-256: `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`
+
+### USS Defiant
+
+- Creator: morenostefanuto
+- Licence: Sketchfab Free Standard
+- Source: <https://sketchfab.com/3d-models/defiant-170220edebe0462ba477772c3325679a>
+- Archive: <https://objaverse.allenai.org/>
+- Installed SHA-256: `4f9e0ced7ea55a0390946a8d1f2371a7a3bcf0f8e943ba9bb059a38e88e7b3cc`
+
 The story places Discovery in orbit around Io but does not publish precise osculating elements, so the application identifies its authored massless circular orbit as fictional.
-The Death Star surfaces use original generated PBR texture atlases with authored Three.js geometry; no film, game, or third-party Death Star mesh or texture is distributed.
-No Lucasfilm, Disney, MGM, or Warner Bros model or texture asset is included.
+Death Star I uses an original generated PBR texture atlas and authored Three.js geometry.
 The Death Star names and designs remain the property of Lucasfilm Ltd.; their official descriptive references are the Star Wars Databank pages.
-The installed stations are clearly labelled fictional, use hypothetical massless two-body paths, and do not affect the physical Solar System simulation.
+Star Trek names and designs remain the property of their respective rights holders.
+The installed fictional objects use explicit hypothetical or scripted massless paths and do not affect the physical Solar System simulation.
 
 - Death Star: <https://www.starwars.com/databank/death-star>
 - Death Star II: <https://www.starwars.com/databank/death-star-ii>
 - AFI Catalog, 2010: <https://catalog.afi.com/Film/57233-2010>
 - Wikimedia Commons Discovery One museum photography: <https://commons.wikimedia.org/wiki/Category:Discovery_One>
+- StarTrek.com Defiant design history: <https://www.startrek.com/news/designing-the-defiant>
+- Deep Space Nine station reference: <https://memory-alpha.fandom.com/wiki/Terok_Nor_type>
 
 ## ESA Hipparcos catalogue
 

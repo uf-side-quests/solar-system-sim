@@ -97,9 +97,25 @@ import {
   DISCOVERY_ONE_NAME,
   DISCOVERY_ONE_ORBITAL_ALTITUDE_M,
   DISCOVERY_ONE_PARENT_BODY_ID,
-  DISCOVERY_ONE_SOURCE_URL,
   discoveryOneState,
 } from "./scene/discovery-one";
+import {
+  DEEP_SPACE_NINE_BODY_ID,
+  DEEP_SPACE_NINE_DIAMETER_M,
+  DEEP_SPACE_NINE_NAME,
+  DEEP_SPACE_NINE_OBJECTS,
+  DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M,
+  DEEP_SPACE_NINE_SOURCE_URL,
+  deepSpaceNineObjectStateById,
+  deepSpaceNineParentBodyId,
+  isDeepSpaceNineObjectId,
+  USS_DEFIANT_LENGTH_M,
+  USS_DEFIANT_NAME,
+  USS_DEFIANT_PATROL_PERIOD_SECONDS,
+  USS_DEFIANT_PATROL_RADIUS_M,
+  USS_DEFIANT_SOURCE_URL,
+} from "./scene/deep-space-nine";
+import { fictionalModelAssetByBodyId } from "./scene/fictional-model-assets";
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
 import {
@@ -307,6 +323,14 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     label: orbiter.name,
     group: "Fictional references",
     searchText: `${orbiter.name} Star Wars ${orbiter.parentBodyId} fictional battle station`,
+    disabled: false,
+  })),
+  ...DEEP_SPACE_NINE_OBJECTS.map((object) => ({
+    id: object.id,
+    key: object.id,
+    label: object.name,
+    group: "Fictional references",
+    searchText: `${object.name} Star Trek DS9 Defiant Callisto Jupiter fictional station spacecraft`,
     disabled: false,
   })),
 ];
@@ -1320,6 +1344,9 @@ export function App() {
       (isFictionalOrbiterId(selectedBodyId)
         ? fictionalOrbiterById.get(selectedBodyId)?.parentBodyId
         : undefined) ??
+      (isDeepSpaceNineObjectId(selectedBodyId)
+        ? deepSpaceNineParentBodyId(selectedBodyId)
+        : undefined) ??
       knownSatelliteById.get(selectedBodyId)?.parentId ??
       PARENT_BODY_ID[selectedBodyId] ??
       "";
@@ -1732,13 +1759,16 @@ export function App() {
     const isJovianMonolith = bodyId === JOVIAN_MONOLITH_BODY_ID;
     const isDiscoveryOne = bodyId === DISCOVERY_ONE_BODY_ID;
     const isFictionalOrbiter = isFictionalOrbiterId(bodyId);
+    const isDeepSpaceNineObject = isDeepSpaceNineObjectId(bodyId);
     const bodyState = isJovianMonolith
       ? jovianMonolithState(state)
       : isDiscoveryOne
         ? discoveryOneState(state)
         : isFictionalOrbiter
           ? fictionalOrbiterStateById(state, bodyId)
-          : state.bodies.find((body) => body.id === bodyId);
+          : isDeepSpaceNineObject
+            ? deepSpaceNineObjectStateById(state, bodyId)
+            : state.bodies.find((body) => body.id === bodyId);
     const knownSatellite = knownSatelliteById.get(bodyId);
     const isIss = bodyId === ISS_BODY_ID;
     const voyager = voyagerById.get(
@@ -1758,7 +1788,8 @@ export function App() {
         !isOperationalSpacecraft &&
         !isJovianMonolith &&
         !isDiscoveryOne &&
-        !isFictionalOrbiter)
+        !isFictionalOrbiter &&
+        !isDeepSpaceNineObject)
     ) {
       return undefined;
     }
@@ -1768,13 +1799,15 @@ export function App() {
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : isFictionalOrbiter
           ? fictionalOrbiterById.get(bodyId)?.parentBodyId
-          : definition === undefined
-            ? isIss
-              ? ISS_PARENT_BODY_ID
-              : isVoyager
-                ? "sun"
-                : (PARENT_BODY_ID[bodyId] ?? knownSatellite?.parentId)
-            : PARENT_BODY_ID[bodyId];
+          : isDeepSpaceNineObject
+            ? deepSpaceNineParentBodyId(bodyId)
+            : definition === undefined
+              ? isIss
+                ? ISS_PARENT_BODY_ID
+                : isVoyager
+                  ? "sun"
+                  : (PARENT_BODY_ID[bodyId] ?? knownSatellite?.parentId)
+              : PARENT_BODY_ID[bodyId];
     const parentState = state.bodies.find((body) => body.id === parentId);
     const parentDefinition = majorBodySnapshot.bodies.find(
       (body) => body.id === parentId,
@@ -1817,10 +1850,13 @@ export function App() {
       };
     }
     if (isDiscoveryOne) {
+      const asset = fictionalModelAssetByBodyId.get(DISCOVERY_ONE_BODY_ID);
+      if (asset === undefined) {
+        throw new Error("Discovery One licensed model metadata is unavailable");
+      }
       return {
         name: DISCOVERY_ONE_NAME,
-        surface:
-          "Original detailed physical-scale reconstruction based on openly licensed museum photography",
+        surface: `${asset.credit} · physical scale`,
         parentName: parentDefinition?.name,
         distance:
           parentState === undefined
@@ -1839,8 +1875,8 @@ export function App() {
         composition: {
           summary:
             "Fictional crewed spacecraft with command sphere, long truss spine and nuclear propulsion module",
-          authority: "AFI Catalog - 2010",
-          sourceUrl: DISCOVERY_ONE_SOURCE_URL,
+          authority: "AFI Catalog story reference and CC model attribution",
+          sourceUrl: asset.pageUrl,
         },
         dimensionsM: `${DISCOVERY_ONE_LENGTH_M.toFixed(1)} m long · ${DISCOVERY_ONE_MAXIMUM_DIAMETER_M.toFixed(1)} m maximum diameter`,
         ephemerisStatus: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
@@ -1851,12 +1887,15 @@ export function App() {
       if (orbiter === undefined) {
         throw new Error(`Fictional orbiter ${bodyId} is unavailable`);
       }
+      const licensedAsset = fictionalModelAssetByBodyId.get(bodyId);
       return {
         name: orbiter.name,
         surface:
-          orbiter.constructionState === "complete"
-            ? "Original high-detail complete battle-station visualization · physical scale"
-            : "Original high-detail incomplete battle-station visualization with layered exposed construction · physical scale",
+          licensedAsset !== undefined
+            ? `${licensedAsset.credit} · physical scale`
+            : orbiter.constructionState === "complete"
+              ? "Original high-detail complete battle-station visualization · physical scale"
+              : "Original high-detail incomplete battle-station visualization with layered exposed construction · physical scale",
         parentName: parentDefinition?.name,
         distance:
           parentState === undefined
@@ -1878,12 +1917,65 @@ export function App() {
         composition: {
           summary:
             "Fictional armoured space station; no real mass or material properties are assigned",
-          authority: "Star Wars Databank",
-          sourceUrl: orbiter.sourceUrl,
+          authority:
+            licensedAsset === undefined
+              ? "Star Wars Databank"
+              : "Star Wars Databank and CC model attribution",
+          sourceUrl: licensedAsset?.pageUrl ?? orbiter.sourceUrl,
         },
         dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString()} km diameter`,
         ephemerisStatus:
           "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+      };
+    }
+    if (isDeepSpaceNineObject) {
+      const asset = fictionalModelAssetByBodyId.get(bodyId);
+      if (asset === undefined) {
+        throw new Error(`${bodyId} licensed model metadata is unavailable`);
+      }
+      const isStation = bodyId === DEEP_SPACE_NINE_BODY_ID;
+      const displayParentState = isStation
+        ? parentState
+        : deepSpaceNineObjectStateById(state, DEEP_SPACE_NINE_BODY_ID);
+      return {
+        name: isStation ? DEEP_SPACE_NINE_NAME : USS_DEFIANT_NAME,
+        surface: `${asset.credit} · physical scale`,
+        parentName: isStation ? parentDefinition?.name : DEEP_SPACE_NINE_NAME,
+        distance:
+          displayParentState === undefined
+            ? undefined
+            : formatDistance(
+                bodyDistanceM(bodyState, displayParentState),
+                semanticZoom,
+              ),
+        distanceLabel: isStation
+          ? "Distance from Callisto"
+          : "Distance from Deep Space Nine",
+        speed:
+          displayParentState === undefined
+            ? undefined
+            : bodyRelativeSpeedMps(bodyState, displayParentState) / 1_000,
+        speedLabel: isStation
+          ? "Speed relative to Callisto"
+          : "Patrol speed relative to Deep Space Nine",
+        mass: "Fictional · treated as a massless visualization",
+        composition: {
+          summary: isStation
+            ? "Fictional Cardassian-built orbital station with docking rings and pylons"
+            : "Fictional Starfleet escort spacecraft with a compact armoured hull",
+          authority: isStation
+            ? "Star Trek reference and CC model attribution"
+            : "StarTrek.com and free model attribution",
+          sourceUrl: isStation
+            ? DEEP_SPACE_NINE_SOURCE_URL
+            : USS_DEFIANT_SOURCE_URL,
+        },
+        dimensionsM: isStation
+          ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString()} m diameter`
+          : `${USS_DEFIANT_LENGTH_M.toFixed(2)} m long`,
+        ephemerisStatus: isStation
+          ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
+          : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
       };
     }
     if (definition === undefined) {
@@ -2075,11 +2167,17 @@ export function App() {
     (isFictionalOrbiterId(focusBodyId)
       ? fictionalOrbiterById.get(focusBodyId)?.parentBodyId
       : undefined) ??
+    (isDeepSpaceNineObjectId(focusBodyId)
+      ? deepSpaceNineParentBodyId(focusBodyId)
+      : undefined) ??
     focusedKnownSatellite?.parentId ??
     PARENT_BODY_ID[focusBodyId];
-  const focusedParentName = majorBodySnapshot.bodies.find(
-    (body) => body.id === focusedParentId,
-  )?.name;
+  const focusedParentName =
+    majorBodySnapshot.bodies.find((body) => body.id === focusedParentId)
+      ?.name ??
+    (focusedParentId === DEEP_SPACE_NINE_BODY_ID
+      ? DEEP_SPACE_NINE_NAME
+      : undefined);
   const outsideValidatedWindow =
     Math.abs(state?.timeSeconds ?? 0) > 365 * DAY_SECONDS;
 
@@ -2250,6 +2348,11 @@ export function App() {
                     : undefined) ??
                   (isFictionalOrbiterId(focusBodyId)
                     ? fictionalOrbiterById.get(focusBodyId)?.name
+                    : undefined) ??
+                  (isDeepSpaceNineObjectId(focusBodyId)
+                    ? focusBodyId === DEEP_SPACE_NINE_BODY_ID
+                      ? DEEP_SPACE_NINE_NAME
+                      : USS_DEFIANT_NAME
                     : undefined) ??
                   focusBodyId}
               </strong>

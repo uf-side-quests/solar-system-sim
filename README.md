@@ -96,13 +96,20 @@ Jupiter's halo, main ring, two gossamer rings and Thebe extension, plus Neptune'
 Reality mode preserves those very low optical depths; Orrery mode applies a declared bounded visibility gain so the dusty systems can be inspected without widening their measured radial structure.
 These dusty systems remain appropriately faint in Reality; Orrery applies a disclosed visibility gain so their measured locations can be studied without widening them.
 
-Two original high-detail Death Star references orbit Callisto and Ganymede at physical scale, using an integrated PBR hull, recessed superlaser geometry, and a dense unfinished machinery interior rather than protruding display bands or flat placeholder shapes.
+Two high-detail Death Star references orbit Callisto and Ganymede at physical scale.
+Death Star I uses the original integrated model.
+Death Star II uses an optimised CC BY model with complete colour, normal, occlusion, metallic, roughness, and emissive maps.
 
-An original physical-scale Discovery One reconstruction orbits Io, where 2010 places the ship.
+An optimised CC BY physical-scale Discovery One model orbits Io, where 2010 places the ship.
 Its command sphere, pod bays, truss spine, external tanks, high-gain antenna, and propulsion module are lit by the same inverse-square Sun source as the real objects.
 Because no precise trajectory is published, its displayed 400 kilometre circular orbit is clearly identified as an authored massless two-body reference rather than historical ephemeris.
-Their original geometry uses a generated industrial PBR hull treatment, recessed superlaser assemblies, equatorial infrastructure, and exposed construction structure for the incomplete second station.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
+
+Deep Space Nine uses a high-detail CC BY model at its 1.45 kilometre reference diameter.
+The application places it in a clearly labelled hypothetical circular exhibit orbit around Callisto because its fictional Bajoran system is outside this Solar System model.
+The USS Defiant uses a textured high-detail free model at its 170.68 metre production reference length.
+It follows an explicit 30 minute defensive patrol around the station.
+The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square Sun-position point lighting with smooth focus-distance exposure adaptation, so outer planets receive the correct weaker incident flux without becoming unreadable.
 Atmosphere shells use body-specific Rayleigh and Mie phase approximations driven by the live Sun direction, so the dark hemisphere does not receive a false bright rim.

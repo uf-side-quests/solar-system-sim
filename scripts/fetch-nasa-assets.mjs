@@ -309,12 +309,13 @@ const directResources = [
     classification: "observational-composite",
     coverage: "global",
     projection: "equirectangular",
-    pageUrl: "https://photojournal.jpl.nasa.gov/catalog/PIA03781",
+    pageUrl:
+      "https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_color_global_mosaic_1_4km",
     assetUrl:
-      "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia03/pia03781/PIA03781.jpg",
+      "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
     credit: "NASA/JPL and USGS Astrogeology Science Center",
     limitations:
-      "Galileo and Voyager global mosaic with resolution and color fidelity varying by source coverage.",
+      "Simple-cylindrical Galileo and Voyager global colour mosaic with resolution and colour fidelity varying by source coverage.",
   },
   {
     id: "enceladus",

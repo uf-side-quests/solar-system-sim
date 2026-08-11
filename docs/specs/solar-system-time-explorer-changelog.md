@@ -314,7 +314,7 @@ Initial target requirements draft for implementation.
 ### Added
 
 - Added Jupiter's five PDS dust-ring components and Neptune's five named ring structures with measured radii, widths and optical depths, plus an Orrery-only visibility gain for the exceptionally faint dust.
-- Added original physical-scale Death Star I and incomplete Death Star II models on disclosed hypothetical massless circular paths around Callisto and Ganymede.
+- Added the original physical-scale Death Star I and a licensed Death Star II model on disclosed hypothetical massless circular paths around Callisto and Ganymede.
 - Added physical-scale Apollo descent stages, flags, ALSEP equipment, retroreflectors and applicable lunar rovers at all six landing sites.
 - Added a reproducible NASA LROC PDS traverse snapshot for every available Apollo 11, 12 and 14 CDR/LMP path segment, projected into local metre offsets without invented route geometry.
 
