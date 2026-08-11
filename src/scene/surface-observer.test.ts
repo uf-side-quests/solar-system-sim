@@ -9,6 +9,7 @@ import {
 } from "../physics/solar-system";
 import { bodyOrientationQuaternion } from "./orientation";
 import {
+  discObscurationFraction,
   surfaceHorizonPoint,
   surfaceObserverBodies,
   surfaceObserverFrame,
@@ -89,6 +90,7 @@ describe("surface observer", () => {
       bodies: [
         bodyState("earth", [0, 0, 0]),
         bodyState("sun", icrfMetresFromSceneDirection(subsolarDirection)),
+        bodyState("moon", [384_400_000, 0, 0]),
       ],
     };
     const frame = surfaceObserverFrame(state, {
@@ -153,6 +155,7 @@ describe("surface observer", () => {
     expect(frame.targetIlluminatedFraction).toBeLessThanOrEqual(1);
     expect(Number.isFinite(frame.targetNorthPolePositionAngleDeg)).toBe(true);
     expect(Number.isFinite(frame.brightLimbPositionAngleDeg)).toBe(true);
+    expect(frame.solarEclipse).toBeDefined();
 
     expect(() =>
       surfaceObserverFrame(initialState(), {
@@ -162,5 +165,13 @@ describe("surface observer", () => {
         targetBodyId: "sun",
       }),
     ).toThrow("no supported solid surface");
+  });
+
+  it("calculates visible solar-disc area from two apparent circles", () => {
+    expect(discObscurationFraction(1, 1, 2)).toBe(0);
+    expect(discObscurationFraction(1, 1, 0)).toBe(1);
+    expect(discObscurationFraction(1, 0.5, 0)).toBeCloseTo(0.25, 12);
+    expect(discObscurationFraction(0.5, 1, 0)).toBe(1);
+    expect(discObscurationFraction(1, 1, 1)).toBeCloseTo(0.391, 3);
   });
 });

@@ -60,6 +60,14 @@ export type SurfaceObserverFrame = Readonly<{
   solarHorizonEvents: SolarHorizonEvents;
   geometricHorizonDistanceM: number;
   horizonCentralAngleRad: number;
+  solarEclipse: SolarEclipseObservation | undefined;
+}>;
+
+export type SolarEclipseObservation = Readonly<{
+  moonAngularDiameterDeg: number;
+  sunAngularDiameterDeg: number;
+  centerSeparationDeg: number;
+  obscurationFraction: number;
 }>;
 
 function stateBody(state: SimulationState, bodyId: string) {
@@ -95,6 +103,53 @@ function angularDiameterDeg(radiusM: number, centerDistanceM: number): number {
     throw new Error("Surface observer target must be outside its own radius");
   }
   return 2 * Math.asin(radiusM / centerDistanceM) * RAD_TO_DEG;
+}
+
+export function discObscurationFraction(
+  sourceRadius: number,
+  occultingRadius: number,
+  centerSeparation: number,
+): number {
+  if (
+    !Number.isFinite(sourceRadius) ||
+    !Number.isFinite(occultingRadius) ||
+    !Number.isFinite(centerSeparation) ||
+    sourceRadius <= 0 ||
+    occultingRadius <= 0 ||
+    centerSeparation < 0
+  ) {
+    throw new Error("Disc overlap inputs must be finite and physically valid");
+  }
+  if (centerSeparation >= sourceRadius + occultingRadius) {
+    return 0;
+  }
+  if (centerSeparation <= Math.abs(sourceRadius - occultingRadius)) {
+    return Math.min(1, (occultingRadius / sourceRadius) ** 2);
+  }
+  const sourceTerm = Math.acos(
+    (centerSeparation ** 2 + sourceRadius ** 2 - occultingRadius ** 2) /
+      (2 * centerSeparation * sourceRadius),
+  );
+  const occultingTerm = Math.acos(
+    (centerSeparation ** 2 + occultingRadius ** 2 - sourceRadius ** 2) /
+      (2 * centerSeparation * occultingRadius),
+  );
+  const sharedTriangleArea =
+    0.5 *
+    Math.sqrt(
+      Math.max(
+        0,
+        (-centerSeparation + sourceRadius + occultingRadius) *
+          (centerSeparation + sourceRadius - occultingRadius) *
+          (centerSeparation - sourceRadius + occultingRadius) *
+          (centerSeparation + sourceRadius + occultingRadius),
+      ),
+    );
+  const overlapArea =
+    sourceRadius ** 2 * sourceTerm +
+    occultingRadius ** 2 * occultingTerm -
+    sharedTriangleArea;
+  return Math.max(0, Math.min(1, overlapArea / (Math.PI * sourceRadius ** 2)));
 }
 
 function horizontalCoordinates(
@@ -337,6 +392,47 @@ export function surfaceObserverFrame(
     observerDefinition.meanRadiusM /
       (observerDefinition.meanRadiusM + eyeHeightM),
   );
+  let solarEclipse: SolarEclipseObservation | undefined;
+  if (configuration.bodyId === "earth") {
+    const moonDefinition = majorBodyById.get("moon");
+    if (moonDefinition === undefined) {
+      throw new Error("Solar eclipse geometry requires the Moon definition");
+    }
+    const moonState = stateBody(state, "moon");
+    const moonCenter = scenePosition(moonState.positionM);
+    const moonDirection = moonCenter.clone().sub(observerPositionAu);
+    const moonAngularDiameterDeg = angularDiameterDeg(
+      moonDefinition.meanRadiusM,
+      moonDirection.length() * ASTRONOMICAL_UNIT_M,
+    );
+    const sunAngularDiameterDeg = angularDiameterDeg(
+      sunDefinition.meanRadiusM,
+      sunDirection.length() * ASTRONOMICAL_UNIT_M,
+    );
+    const centerSeparationDeg =
+      Math.acos(
+        Math.max(
+          -1,
+          Math.min(
+            1,
+            moonDirection
+              .clone()
+              .normalize()
+              .dot(sunDirection.clone().normalize()),
+          ),
+        ),
+      ) * RAD_TO_DEG;
+    solarEclipse = {
+      moonAngularDiameterDeg,
+      sunAngularDiameterDeg,
+      centerSeparationDeg,
+      obscurationFraction: discObscurationFraction(
+        sunAngularDiameterDeg / 2,
+        moonAngularDiameterDeg / 2,
+        centerSeparationDeg,
+      ),
+    };
+  }
   return {
     observerName: observerDefinition.name,
     targetName: targetDefinition.name,
@@ -366,6 +462,7 @@ export function surfaceObserverFrame(
     solarHorizonEvents: solarHorizonEvents(latitudeRad, solarDeclinationRad),
     geometricHorizonDistanceM,
     horizonCentralAngleRad,
+    solarEclipse,
   };
 }
 

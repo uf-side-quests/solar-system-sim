@@ -482,12 +482,34 @@ function createSolarCoronaTexture(): CanvasTexture {
     center,
     size * 0.49,
   );
-  corona.addColorStop(0, "rgba(255, 244, 217, 0.36)");
-  corona.addColorStop(0.42, "rgba(255, 213, 154, 0.11)");
-  corona.addColorStop(0.72, "rgba(255, 190, 125, 0.025)");
-  corona.addColorStop(1, "rgba(255, 180, 115, 0)");
+  corona.addColorStop(0, "rgba(255, 255, 250, 0.7)");
+  corona.addColorStop(0.3, "rgba(232, 244, 255, 0.24)");
+  corona.addColorStop(0.68, "rgba(205, 225, 244, 0.055)");
+  corona.addColorStop(1, "rgba(190, 216, 240, 0)");
   context.fillStyle = corona;
   context.fillRect(0, 0, size, size);
+
+  for (let index = 0; index < 72; index += 1) {
+    const angle = (index / 72) * Math.PI * 2 + Math.sin(index * 4.17) * 0.035;
+    const length = size * (0.29 + ((index * 37) % 19) / 190);
+    const startRadius = size * (0.12 + ((index * 11) % 7) / 700);
+    const startX = center + Math.cos(angle) * startRadius;
+    const startY = center + Math.sin(angle) * startRadius;
+    const endX = center + Math.cos(angle) * length;
+    const endY = center + Math.sin(angle) * length;
+    const bend = Math.sin(index * 2.31) * size * 0.018;
+    context.beginPath();
+    context.moveTo(startX, startY);
+    context.quadraticCurveTo(
+      center + Math.cos(angle) * length * 0.56 - Math.sin(angle) * bend,
+      center + Math.sin(angle) * length * 0.56 + Math.cos(angle) * bend,
+      endX,
+      endY,
+    );
+    context.strokeStyle = `rgba(225, 242, 255, ${String(0.018 + ((index * 13) % 9) / 450)})`;
+    context.lineWidth = 0.6 + ((index * 17) % 6) * 0.28;
+    context.stroke();
+  }
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -1922,7 +1944,7 @@ export function SolarSystemScene({
 
         const coronaMaterial = new SpriteMaterial({
           map: solarCoronaTexture,
-          color: 0xfff0d4,
+          color: 0xf2f8ff,
           transparent: true,
           opacity:
             VISUAL_QUALITY_PROFILES[visualQualityRef.current].coronaOpacity,
@@ -1936,7 +1958,7 @@ export function SolarSystemScene({
         const corona = new Sprite(coronaMaterial);
         corona.name = "Sun procedural corona presentation";
         corona.userData["bodyId"] = body.id;
-        corona.scale.set(2.12, 2.12, 1);
+        corona.scale.set(5.4, 5.4, 1);
         corona.renderOrder = -1;
         mesh.add(corona);
 
@@ -6029,6 +6051,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         delete container.dataset["surfaceFreeLook"];
         delete container.dataset["surfaceLookAzimuthDeg"];
         delete container.dataset["surfaceLookAltitudeDeg"];
+        delete container.dataset["solarEclipseMoonDiameterDeg"];
+        delete container.dataset["solarEclipseSunDiameterDeg"];
+        delete container.dataset["solarEclipseSeparationDeg"];
+        delete container.dataset["solarEclipseObscuration"];
       } else {
         interruptCameraTransition();
         controls.enabled = false;
@@ -6165,6 +6191,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
           observation.targetAngularDiameterDeg.toFixed(9);
         container.dataset["surfaceLocalSolarTimeHours"] =
           observation.localSolarTimeHours.toFixed(9);
+        if (observation.solarEclipse === undefined) {
+          delete container.dataset["solarEclipseMoonDiameterDeg"];
+          delete container.dataset["solarEclipseSunDiameterDeg"];
+          delete container.dataset["solarEclipseSeparationDeg"];
+          delete container.dataset["solarEclipseObscuration"];
+        } else {
+          container.dataset["solarEclipseMoonDiameterDeg"] =
+            observation.solarEclipse.moonAngularDiameterDeg.toFixed(9);
+          container.dataset["solarEclipseSunDiameterDeg"] =
+            observation.solarEclipse.sunAngularDiameterDeg.toFixed(9);
+          container.dataset["solarEclipseSeparationDeg"] =
+            observation.solarEclipse.centerSeparationDeg.toFixed(9);
+          container.dataset["solarEclipseObscuration"] =
+            observation.solarEclipse.obscurationFraction.toFixed(9);
+        }
         container.dataset["surfaceHorizonModel"] =
           "mean-radius-geometric-no-refraction";
         container.dataset["surfaceHorizonVisible"] = "true";
@@ -8016,6 +8057,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         container.dataset["earthMoonSeparationPixels"] =
           separationPixels.toFixed(2);
+      }
+      if (solarCoronaMaterial !== undefined) {
+        const profileOpacity =
+          VISUAL_QUALITY_PROFILES[visualQualityRef.current].coronaOpacity;
+        const obscuration =
+          latestSurfaceObservation?.solarEclipse?.obscurationFraction ?? 0;
+        const eclipseBoost = Math.max(
+          0,
+          Math.min(1, (obscuration - 0.985) / 0.014),
+        );
+        solarCoronaMaterial.opacity =
+          profileOpacity + (0.82 - profileOpacity) * eclipseBoost;
+        container.dataset["solarCoronaEclipseBoost"] = eclipseBoost.toFixed(4);
       }
       renderer.render(scene, camera);
       container.dataset["renderFrameIntervalMs"] =

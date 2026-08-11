@@ -131,6 +131,34 @@ p {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.app-shell.is-eclipse-story {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app-shell.is-eclipse-story .command-bar,
+.app-shell.is-eclipse-story
+  .workspace
+  > :is(
+    .focus-breadcrumb,
+    .status-cluster,
+    .camera-dock,
+    .surface-observer-hud,
+    .selected-body-detail,
+    .display-panel,
+    .timeline-dock
+  ),
+.app-shell.is-eclipse-story .reality-navigation-map {
+  display: none !important;
+}
+
+.app-shell.is-eclipse-story .scene[data-surface-observer-body] .body-label {
+  display: none !important;
+}
+
+.app-shell.is-eclipse-story .scale-tour {
+  bottom: 0.85rem;
+}
+
 .app-shell.is-immersive .command-bar,
 .app-shell.is-immersive
   .workspace
@@ -1656,6 +1684,41 @@ h1 {
   color: #b9e8cb;
   font-size: 0.66rem;
   line-height: 1.35;
+}
+
+.tour-copy time {
+  color: #c8d8e4;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.eclipse-live-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid rgb(255 208 115 / 22%);
+  border-radius: 0.65rem;
+  background: rgb(255 190 72 / 6%);
+}
+
+.eclipse-live-metrics span {
+  display: grid;
+  gap: 0.1rem;
+  color: #fff0ca;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.eclipse-live-metrics small {
+  color: #9eb1bf;
+  font-size: 0.58rem;
+}
+
+.eclipse-story-launch-button {
+  color: #1b1205;
+  border-color: rgb(255 216 139 / 75%);
+  background: linear-gradient(135deg, #ffd98a, #ffad5b);
 }
 
 .tour-actions {

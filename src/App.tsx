@@ -142,9 +142,18 @@ import type {
 } from "./scene/view-mode";
 import type { WayfinderMode } from "./scene/wayfinder";
 import {
+  ECLIPSE_PATH_SOURCE_URL,
+  ECLIPSE_SOURCE_URL,
+  ECLIPSE_STORY_STEP_DURATION_MS,
+  ECLIPSE_STORY_STEPS,
+  ECLIPSE_STORY_TRANSITION_DURATION_MS,
+  type EclipseStoryStep,
+} from "./eclipse/eclipse-story";
+import {
   SCALE_TOUR_STEP_DURATION_MS,
   SCALE_TOUR_STEPS,
   SCALE_TOUR_TRANSITION_DURATION_MS,
+  type ScaleTourStep,
 } from "./tour/scale-tour";
 import { CINEMATIC_SHOTS, type CinematicShot } from "./tour/cinematic-shots";
 
@@ -162,6 +171,8 @@ const DEFAULT_CAMERA_ZOOM = 1;
 const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
 type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
+type GuidedTourKind = "scale" | "eclipse";
+type GuidedTourStep = ScaleTourStep | EclipseStoryStep;
 
 const CAMERA_ZOOM_PRESETS = [
   { id: "system", label: "System context (0.063x)", zoom: 0.0625 },
@@ -742,6 +753,7 @@ export function App() {
     string | undefined
   >();
   const [orientationPresetToken, setOrientationPresetToken] = useState(0);
+  const [tourKind, setTourKind] = useState<GuidedTourKind | null>(null);
   const [tourStepIndex, setTourStepIndex] = useState<number | null>(null);
   const [tourPlaying, setTourPlaying] = useState(false);
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
@@ -1154,6 +1166,7 @@ export function App() {
       if (event.key === "Escape" && tourStepIndex !== null) {
         event.preventDefault();
         setTourPlaying(false);
+        setTourKind(null);
         setTourStepIndex(null);
         setPlaying(false);
         return;
@@ -1214,6 +1227,7 @@ export function App() {
       setActiveCinematicShotId(null);
       setApolloInspectionSiteId(null);
       setTourPlaying(false);
+      setTourKind(null);
       setTourStepIndex(null);
       if (tourStepIndex !== null) {
         setPlaying(false);
@@ -1288,6 +1302,7 @@ export function App() {
     setSurfaceObserverEnabled(false);
     setActiveCinematicShotId(null);
     setTourPlaying(false);
+    setTourKind(null);
     setTourStepIndex(null);
     setPlaying(false);
     const previousBodyId = focusHistoryRef.current.pop();
@@ -1397,18 +1412,37 @@ export function App() {
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
     );
+    setTourKind("scale");
+    setTourStepIndex(0);
+    setTourPresentationToken((current) => current + 1);
+  };
+
+  const startEclipseStory = (): void => {
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    setControlPanelOpen(false);
+    setOrbitViewEnabled(false);
+    setTourPlaying(!reducedMotion);
+    setTourTransitionDurationMs(
+      reducedMotion ? 0 : ECLIPSE_STORY_TRANSITION_DURATION_MS,
+    );
+    setTourKind("eclipse");
     setTourStepIndex(0);
     setTourPresentationToken((current) => current + 1);
   };
 
   const exitScaleTour = (): void => {
     setTourPlaying(false);
+    setTourKind(null);
     setTourStepIndex(null);
+    setSurfaceObserverEnabled(false);
     setPlaying(false);
   };
 
   const enterSurfaceObserver = (): void => {
     setTourPlaying(false);
+    setTourKind(null);
     setTourStepIndex(null);
     setOrbitViewEnabled(false);
     setViewMode("reality");
@@ -1452,6 +1486,7 @@ export function App() {
       throw new Error(`Apollo landing site ${siteId} has no installed data`);
     }
     setTourPlaying(false);
+    setTourKind(null);
     setTourStepIndex(null);
     setOrbitViewEnabled(false);
     setShowApolloSites(true);
@@ -1476,6 +1511,13 @@ export function App() {
     setResetViewToken((current) => current + 1);
   };
 
+  const activeTourSteps: readonly GuidedTourStep[] =
+    tourKind === "eclipse" ? ECLIPSE_STORY_STEPS : SCALE_TOUR_STEPS;
+  const activeTourStepDurationMs =
+    tourKind === "eclipse"
+      ? ECLIPSE_STORY_STEP_DURATION_MS
+      : SCALE_TOUR_STEP_DURATION_MS;
+
   const advanceScaleTour = (direction: -1 | 1): void => {
     if (tourStepIndex === null) {
       return;
@@ -1485,7 +1527,7 @@ export function App() {
       setTourStepIndex(0);
       return;
     }
-    if (next >= SCALE_TOUR_STEPS.length) {
+    if (next >= activeTourSteps.length) {
       exitScaleTour();
       return;
     }
@@ -1496,7 +1538,7 @@ export function App() {
     if (tourStepIndex === null) {
       return;
     }
-    const step = SCALE_TOUR_STEPS[tourStepIndex];
+    const step = activeTourSteps[tourStepIndex];
     if (step === undefined) {
       throw new Error(
         `Scale tour step ${String(tourStepIndex)} is unavailable`,
@@ -1529,15 +1571,32 @@ export function App() {
     setTourTransitionDurationMs(
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? 0
-        : SCALE_TOUR_TRANSITION_DURATION_MS,
+        : tourKind === "eclipse"
+          ? ECLIPSE_STORY_TRANSITION_DURATION_MS
+          : SCALE_TOUR_TRANSITION_DURATION_MS,
     );
+    if ("surfaceObserver" in step) {
+      setSurfaceObserverBodyId("earth");
+      setSurfaceObserverTargetBodyId(step.surfaceObserver.targetBodyId);
+      setSurfaceObserverLatitudeDeg(step.surfaceObserver.latitudeDeg);
+      setSurfaceObserverLongitudeDeg(step.surfaceObserver.longitudeDeg);
+      setSurfaceObserverEnabled(true);
+      setSurfaceObserverLookResetToken((current) => current + 1);
+    } else {
+      setSurfaceObserverEnabled(false);
+    }
+    if ("timeSeconds" in step) {
+      manualDeltaSecondsRef.current = 0;
+      directSeekTimeSecondsRef.current = step.timeSeconds;
+      setSeeking(true);
+    }
     focusHistoryRef.current = [];
     focusBodyIdRef.current = step.focusBodyId;
     setFocusBodyId(step.focusBodyId);
     setSelectedBodyId(step.focusBodyId);
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-  }, [tourPresentationToken, tourStepIndex]);
+  }, [tourKind, tourPresentationToken, tourStepIndex]);
 
   useEffect(() => {
     if (tourStepIndex !== null) {
@@ -1550,17 +1609,30 @@ export function App() {
       return;
     }
     const timer = window.setTimeout(() => {
-      if (tourStepIndex === SCALE_TOUR_STEPS.length - 1) {
+      if (tourStepIndex === activeTourSteps.length - 1) {
         setTourPlaying(false);
         return;
       }
       setTourStepIndex(tourStepIndex + 1);
-    }, SCALE_TOUR_STEP_DURATION_MS);
+    }, activeTourStepDurationMs);
     return () => window.clearTimeout(timer);
-  }, [tourPlaying, tourStepIndex]);
+  }, [
+    activeTourStepDurationMs,
+    activeTourSteps.length,
+    tourPlaying,
+    tourStepIndex,
+  ]);
 
   const activeTourStep =
-    tourStepIndex === null ? undefined : SCALE_TOUR_STEPS[tourStepIndex];
+    tourStepIndex === null ? undefined : activeTourSteps[tourStepIndex];
+  const activeScaleTourStep =
+    tourKind === "scale" && tourStepIndex !== null
+      ? SCALE_TOUR_STEPS[tourStepIndex]
+      : undefined;
+  const activeEclipseSurfaceObserver =
+    tourKind === "eclipse" &&
+    activeTourStep !== undefined &&
+    "surfaceObserver" in activeTourStep;
   const activeCinematicShot =
     activeCinematicShotId === null
       ? undefined
@@ -1580,6 +1652,7 @@ export function App() {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
     setTourPlaying(false);
+    setTourKind(null);
     setTourStepIndex(null);
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
@@ -1612,13 +1685,13 @@ export function App() {
   };
 
   useEffect(() => {
-    if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
+    if (activeScaleTourStep === undefined || !audio.settings.narrationEnabled) {
       audio.clearNarration();
       return;
     }
-    audio.loadNarration(activeTourStep.narration.audioSource, tourPlaying);
+    audio.loadNarration(activeScaleTourStep.narration.audioSource, tourPlaying);
   }, [
-    activeTourStep?.id,
+    activeScaleTourStep?.id,
     audio.clearNarration,
     audio.loadNarration,
     audio.settings.narrationEnabled,
@@ -2184,7 +2257,7 @@ export function App() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -2246,6 +2319,7 @@ export function App() {
                   onClick={() => {
                     setActiveCinematicShotId(null);
                     setTourPlaying(false);
+                    setTourKind(null);
                     setTourStepIndex(null);
                     setSurfaceObserverEnabled(false);
                     if (mode === "schematic") {
@@ -2436,7 +2510,9 @@ export function App() {
               }
               showTacticalOverlay={showTacticalOverlay}
               showOrbitGuides={showOrbitGuides}
-              wayfinderMode={wayfinderMode}
+              wayfinderMode={
+                activeEclipseSurfaceObserver ? "off" : wayfinderMode
+              }
               orbitGuideScope={
                 activeTourStep?.overlays.orbitGuideScope ?? "all"
               }
@@ -2547,10 +2623,17 @@ export function App() {
             >
               Scale tour
             </button>
+            <button
+              type="button"
+              className="eclipse-story-launch-button"
+              onClick={startEclipseStory}
+            >
+              Eclipse story
+            </button>
           </div>
         </nav>
 
-        {surfaceObservation === undefined ? null : (
+        {surfaceObservation === undefined || tourKind === "eclipse" ? null : (
           <aside
             className="surface-observer-hud"
             aria-label="Surface observer measurements"
@@ -2692,7 +2775,12 @@ export function App() {
             className="scale-tour"
             role="dialog"
             aria-modal="false"
-            aria-label="Scale of the Solar System tour"
+            aria-label={
+              tourKind === "eclipse"
+                ? "12 August 2026 eclipse story"
+                : "Scale of the Solar System tour"
+            }
+            data-tour-kind={tourKind ?? "scale"}
             data-tour-step={activeTourStep.id}
             data-tour-playing={String(tourPlaying)}
             data-tour-narration-state={audio.narrationStatus}
@@ -2707,10 +2795,16 @@ export function App() {
             data-tour-time-rate-seconds-per-second={String(
               activeTourStep.timeRateSecondsPerSecond,
             )}
+            data-tour-time-seconds={
+              "timeSeconds" in activeTourStep
+                ? activeTourStep.timeSeconds.toFixed(3)
+                : "live"
+            }
           >
             <div className="tour-progress-heading">
               <span>
-                Scale tour {tourStepIndex + 1} of {SCALE_TOUR_STEPS.length}
+                {tourKind === "eclipse" ? "Eclipse story" : "Scale tour"}{" "}
+                {tourStepIndex + 1} of {activeTourSteps.length}
               </span>
               <button type="button" onClick={exitScaleTour}>
                 Exit
@@ -2721,7 +2815,7 @@ export function App() {
                 key={`${activeTourStep.id}-${String(tourPlaying)}`}
                 className={tourPlaying ? "is-playing" : undefined}
                 style={{
-                  animationDuration: `${String(SCALE_TOUR_STEP_DURATION_MS)}ms`,
+                  animationDuration: `${String(activeTourStepDurationMs)}ms`,
                 }}
               />
             </div>
@@ -2730,11 +2824,58 @@ export function App() {
               <h2>{activeTourStep.title}</h2>
               <strong>{activeTourStep.scale}</strong>
               <p>{activeTourStep.description}</p>
+              {"timeUtc" in activeTourStep ? (
+                <time dateTime={activeTourStep.timeUtc}>
+                  12 August 2026 · exact model time
+                </time>
+              ) : null}
+              {tourKind === "eclipse" &&
+              surfaceObservation?.solarEclipse !== undefined ? (
+                <div
+                  className="eclipse-live-metrics"
+                  aria-label="Live eclipse geometry"
+                >
+                  <span>
+                    <small>Sun altitude</small>
+                    {surfaceObservation.sunAltitudeDeg.toFixed(2)}°
+                  </span>
+                  <span>
+                    <small>Disc separation</small>
+                    {surfaceObservation.solarEclipse.centerSeparationDeg.toFixed(
+                      3,
+                    )}
+                    °
+                  </span>
+                  <span>
+                    <small>Sun hidden</small>
+                    {(
+                      surfaceObservation.solarEclipse.obscurationFraction * 100
+                    ).toFixed(1)}
+                    %
+                  </span>
+                </div>
+              ) : null}
               <small className="tour-motion">
                 Motion · {activeTourStep.timeRateLabel}
               </small>
               <small className="tour-visual-key">
                 {activeTourStep.visualKey}
+                {tourKind === "eclipse" ? (
+                  <>
+                    {" · "}
+                    <a
+                      href={
+                        activeTourStep.id === "spain-totality"
+                          ? ECLIPSE_PATH_SOURCE_URL
+                          : ECLIPSE_SOURCE_URL
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      NASA data
+                    </a>
+                  </>
+                ) : null}
               </small>
             </div>
             <div className="tour-actions">
@@ -2756,14 +2897,20 @@ export function App() {
                   setTourPresentationToken((current) => current + 1);
                 }}
               >
-                {tourPlaying ? "Pause tour" : "Resume tour"}
+                {tourPlaying
+                  ? tourKind === "eclipse"
+                    ? "Pause story"
+                    : "Pause tour"
+                  : tourKind === "eclipse"
+                    ? "Resume story"
+                    : "Resume tour"}
               </button>
               <button
                 type="button"
                 className="primary-action"
                 onClick={() => advanceScaleTour(1)}
               >
-                {tourStepIndex === SCALE_TOUR_STEPS.length - 1
+                {tourStepIndex === activeTourSteps.length - 1
                   ? "Finish"
                   : "Next"}
               </button>

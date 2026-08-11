@@ -10,6 +10,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.8.0] - 2026-08-11
+
+### Added in 2.8.0
+
+- Added a seven-scene story for the 12 August 2026 solar eclipse with London contact times, physical apparent sizes, live topocentric disc overlap, and a northern Spain totality comparison.
+- Added exact observer coordinates, local solar altitude, live obscuration diagnostics, true-scale Earth-Moon alignment, and a Moon-to-Earth viewpoint.
+- Added a restrained illustrative corona for totality and explicit eye-safety, optical-zoom, model, and source disclosures.
+- Added unit and installed-Chrome checks for event circumstances, physical circle overlap, every story scene, and seven screenshot records.
+
 ## [2.7.2] - 2026-08-08
 
 ### Changed in 2.7.2
