@@ -1614,6 +1614,23 @@ h1 {
   letter-spacing: normal;
 }
 
+.tour-heading-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.scale-tour.is-minimised {
+  width: min(22rem, calc(100% - 1.7rem));
+}
+
+.scale-tour.is-minimised .tour-progress {
+  margin-bottom: 0.65rem;
+}
+
+.scale-tour.is-minimised :is(.tour-copy, .tour-actions) {
+  display: none;
+}
+
 .tour-progress {
   height: 2px;
   margin: 0 0.8rem;

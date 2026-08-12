@@ -46,6 +46,16 @@ test("shows every eclipse phase with live physical geometry", async ({
     name: /Physics-driven Solar System/u,
   });
   await expect(story).toHaveAttribute("data-tour-kind", "eclipse");
+  await expect(story).toHaveAttribute("data-tour-minimised", "false");
+  await story.getByRole("button", { name: "Minimise" }).click();
+  await expect(story).toHaveAttribute("data-tour-minimised", "true");
+  await expect(story.getByRole("heading")).toBeHidden();
+  await page.screenshot({
+    path: testInfo.outputPath("eclipse-story-minimised.png"),
+    fullPage: true,
+  });
+  await story.getByRole("button", { name: "Restore" }).click();
+  await expect(story).toHaveAttribute("data-tour-minimised", "false");
 
   for (const [index, [stepId, title]] of STORY_SCENES.entries()) {
     await expect(story).toHaveAttribute("data-tour-step", stepId);

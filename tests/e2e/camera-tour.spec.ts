@@ -83,6 +83,16 @@ test("keeps escape navigation visible and guides the user through scale", async 
     name: "Scale of the Solar System tour",
   });
   await expect(tour).toBeVisible();
+  await expect(tour).toHaveAttribute("data-tour-minimised", "false");
+  await tour.getByRole("button", { name: "Minimise" }).click();
+  await expect(tour).toHaveAttribute("data-tour-minimised", "true");
+  await expect(tour.getByRole("heading")).toBeHidden();
+  await page.screenshot({
+    path: testInfo.outputPath("scale-tour-minimised.png"),
+    fullPage: true,
+  });
+  await tour.getByRole("button", { name: "Restore" }).click();
+  await expect(tour).toHaveAttribute("data-tour-minimised", "false");
   await expect(tour).toHaveAttribute("data-tour-step", "earth");
   await expect(tour).toHaveAttribute(
     "data-tour-time-rate-seconds-per-second",

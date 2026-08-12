@@ -797,6 +797,7 @@ export function App() {
   const [tourKind, setTourKind] = useState<GuidedTourKind | null>(null);
   const [tourStepIndex, setTourStepIndex] = useState<number | null>(null);
   const [tourPlaying, setTourPlaying] = useState(false);
+  const [tourMinimised, setTourMinimised] = useState(false);
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
   const [tourTransitionDurationMs, setTourTransitionDurationMs] = useState(0);
@@ -1442,6 +1443,7 @@ export function App() {
     setControlPanelOpen(false);
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
+    setTourMinimised(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -1457,6 +1459,7 @@ export function App() {
     ).matches;
     setControlPanelOpen(false);
     setOrbitViewEnabled(false);
+    setTourMinimised(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : ECLIPSE_STORY_TRANSITION_DURATION_MS,
@@ -1470,6 +1473,7 @@ export function App() {
     setTourPlaying(false);
     setTourKind(null);
     setTourStepIndex(null);
+    setTourMinimised(false);
     setSurfaceObserverEnabled(false);
     setPlaying(false);
   };
@@ -2806,7 +2810,7 @@ export function App() {
 
         {activeTourStep === undefined || tourStepIndex === null ? null : (
           <aside
-            className="scale-tour"
+            className={tourMinimised ? "scale-tour is-minimised" : "scale-tour"}
             role="dialog"
             aria-modal="false"
             aria-label={
@@ -2817,6 +2821,7 @@ export function App() {
             data-tour-kind={tourKind ?? "scale"}
             data-tour-step={activeTourStep.id}
             data-tour-playing={String(tourPlaying)}
+            data-tour-minimised={String(tourMinimised)}
             data-tour-narration-state={audio.narrationStatus}
             data-tour-observer={
               activeTourStep.cameraTargetBodyId === undefined
@@ -2840,9 +2845,18 @@ export function App() {
                 {tourKind === "eclipse" ? "Eclipse story" : "Scale tour"}{" "}
                 {tourStepIndex + 1} of {activeTourSteps.length}
               </span>
-              <button type="button" onClick={exitScaleTour}>
-                Exit
-              </button>
+              <div className="tour-heading-actions">
+                <button
+                  type="button"
+                  aria-expanded={!tourMinimised}
+                  onClick={() => setTourMinimised((current) => !current)}
+                >
+                  {tourMinimised ? "Restore" : "Minimise"}
+                </button>
+                <button type="button" onClick={exitScaleTour}>
+                  Exit
+                </button>
+              </div>
             </div>
             <div className="tour-progress" aria-hidden="true">
               <span
