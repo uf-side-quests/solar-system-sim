@@ -4,6 +4,7 @@ import {
   formatViewpointSpeed,
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
+  sampleOrientationTransition,
   sampleCameraTransition,
 } from "./camera-transition";
 
@@ -13,6 +14,23 @@ describe("camera transition", () => {
     expect(formatViewpointSpeed(12_500)).toBe("12.5 km/s");
     expect(formatViewpointSpeed(299_792_458 * 2.5)).toBe("2.5× light speed");
     expect(() => formatViewpointSpeed(-1)).toThrow(/non-negative/u);
+  });
+
+  it("eases a local orientation change without overshoot", () => {
+    expect(sampleOrientationTransition(0, 1_200)).toEqual({
+      settled: false,
+      progress: 0,
+    });
+    expect(sampleOrientationTransition(600, 1_200).progress).toBe(0.5);
+    expect(sampleOrientationTransition(1_200, 1_200)).toEqual({
+      settled: true,
+      progress: 1,
+    });
+  });
+
+  it("rejects invalid local orientation timing", () => {
+    expect(() => sampleOrientationTransition(-1, 1_200)).toThrow(/elapsed/u);
+    expect(() => sampleOrientationTransition(0, 0)).toThrow(/duration/u);
   });
 
   it("orients, departs, crosses the overview continuously, and settles into the authored shot", () => {

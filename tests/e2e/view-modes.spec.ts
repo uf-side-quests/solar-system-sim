@@ -123,18 +123,25 @@ test("switches between physical, orrery, and schematic views without changing ph
   const sequenceBeforeVelocity = await scene.getAttribute(
     "data-camera-transition-sequence",
   );
+  const distanceBeforeVelocity = Number(
+    await scene.getAttribute("data-camera-distance-au"),
+  );
   await orientation.getByRole("button", { name: "Along path" }).click();
-  await expect
-    .poll(async () => scene.getAttribute("data-camera-transition-sequence"))
-    .not.toBe(sequenceBeforeVelocity);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-sequence",
+    sequenceBeforeVelocity ?? "",
+  );
   await expect(scene).toHaveAttribute("data-camera-orientation", "velocity");
   await expect(scene).toHaveAttribute(
-    "data-camera-transition-phase",
+    "data-orientation-transition-phase",
     "settled",
     {
-      timeout: 10_000,
+      timeout: 5_000,
     },
   );
+  expect(
+    Number(await scene.getAttribute("data-camera-distance-au")),
+  ).toBeCloseTo(distanceBeforeVelocity, 8);
   await expect(scene).toHaveAttribute("data-camera-tracking", "continuous", {
     timeout: 10_000,
   });

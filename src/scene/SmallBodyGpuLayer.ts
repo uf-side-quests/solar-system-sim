@@ -482,6 +482,7 @@ export class SmallBodyGpuLayer {
   readonly #maximumCategoryDrawCount: number;
   readonly #computeChunkSize: number;
   readonly #format: GPUTextureFormat;
+  readonly #onDeviceError: (message: string) => void;
   readonly #viewProjection = new Matrix4();
   readonly #lastRenderedViewProjection = new Float32Array(16).fill(Number.NaN);
   #renderTarget: GPUTexture;
@@ -510,6 +511,8 @@ export class SmallBodyGpuLayer {
   #trailClearToken = 0;
   #historyValid = false;
   #lastTrailTimeSeconds: number | undefined;
+  #submittedCameraRevision = 0;
+  #presentedCameraRevision = 0;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -535,6 +538,7 @@ export class SmallBodyGpuLayer {
     computeChunkSize: number,
     format: GPUTextureFormat,
     renderTarget: GPUTexture,
+    onDeviceError: (message: string) => void,
   ) {
     this.#canvas = canvas;
     this.#context = context;
@@ -559,6 +563,7 @@ export class SmallBodyGpuLayer {
     this.#computeChunkSize = computeChunkSize;
     this.#format = format;
     this.#renderTarget = renderTarget;
+    this.#onDeviceError = onDeviceError;
   }
 
   public static async create(
@@ -777,6 +782,7 @@ export class SmallBodyGpuLayer {
         : snapshot.manifest.counts.total,
       format,
       renderTarget,
+      onDeviceError,
     );
     canvas.dataset["gpuFallbackAdapter"] = String(
       adapter.info.isFallbackAdapter,
@@ -1101,6 +1107,34 @@ export class SmallBodyGpuLayer {
       { width: this.#canvas.width, height: this.#canvas.height },
     );
     this.#device.queue.submit([encoder.finish()]);
+    if (cameraChanged) {
+      const submittedCameraRevision = ++this.#submittedCameraRevision;
+      this.#canvas.dataset["submittedCameraRevision"] = String(
+        submittedCameraRevision,
+      );
+      void this.#device.queue.onSubmittedWorkDone().then(
+        () => {
+          if (
+            !this.#disposed &&
+            submittedCameraRevision > this.#presentedCameraRevision
+          ) {
+            this.#presentedCameraRevision = submittedCameraRevision;
+            this.#canvas.dataset["presentedCameraRevision"] = String(
+              submittedCameraRevision,
+            );
+          }
+        },
+        (cause: unknown) => {
+          if (!this.#disposed) {
+            this.#onDeviceError(
+              `WebGPU frame completion failed: ${
+                cause instanceof Error ? cause.message : String(cause)
+              }`,
+            );
+          }
+        },
+      );
+    }
     this.#canvas.dataset["presentation"] = "direct-webgpu";
     this.#canvas.dataset["visibilityFraction"] =
       asteroidVisibilityFraction.toFixed(8);

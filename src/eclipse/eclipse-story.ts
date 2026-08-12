@@ -64,6 +64,7 @@ export type EclipseStoryStep = Readonly<{
   cameraTargetBodyId?: string;
   orientation: Exclude<CameraOrientationPreset, "custom">;
   cameraDistanceAu: number | "observer-separation";
+  observerCameraStyle?: "surface-facing" | "limb";
   transitionOverviewAnchorBodyId: string;
   transitionOverviewDistanceAu: number;
   cameraZoom: number;
@@ -115,12 +116,12 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     id: "eclipse-alignment",
     focusBodyId: "earth",
     orientation: "perspective",
-    cameraDistanceAu: 0.007,
+    cameraDistanceAu: 0.009,
     transitionOverviewAnchorBodyId: "earth",
     transitionOverviewDistanceAu: 0.012,
-    cameraZoom: 1,
-    timeRateSecondsPerSecond: 86_400,
-    timeRateLabel: "1 day per second · the Moon completes almost one orbit",
+    cameraZoom: 1.5,
+    timeRateSecondsPerSecond: 3_600,
+    timeRateLabel: "1 hour per second · the Moon advances along its orbit",
     timeUtc: "2026-08-12T17:45:53.800Z",
     timeSeconds: simulationSecondsForUtc("2026-08-12T17:45:53.800Z"),
     viewMode: "reality",
@@ -129,13 +130,13 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
       ...noDecorativeOverlays,
       orbitGuides: true,
     },
-    eyebrow: "One orbit inside another",
-    title: "The Moon orbits Earth as both circle the Sun",
+    eyebrow: "Establish the three bodies",
+    title: "The eclipse begins when the Moon crosses the Sun-Earth line",
     scale: "Moon: 384,000 km away · Sun: 150 million km away",
     description:
-      "The three-quarter view shows the Moon's orbit around Earth. Earth and Moon also travel together around the Sun. Their two orbit sizes cannot both resolve in one true-scale view.",
+      "This three-quarter view keeps Earth and Moon separate on screen. The yellow guide fixes the Sun's direction while the Moon advances along its physical orbit.",
     visualKey:
-      "Physical Earth-Moon sizes · thin blue curve is the lunar orbit · yellow guide points to the distant Sun",
+      "Physical Earth-Moon sizes · thin blue curve is the lunar orbit · yellow guide gives the Sun direction",
     narration: narrationFor("eclipse-alignment"),
   },
   {
@@ -227,14 +228,42 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     narration: narrationFor("london-maximum"),
   },
   {
+    id: "shadow-axis",
+    focusBodyId: "earth",
+    orientation: "perspective",
+    cameraDistanceAu: 0.009,
+    transitionOverviewAnchorBodyId: "earth",
+    transitionOverviewDistanceAu: 0.012,
+    cameraZoom: 1.5,
+    timeRateSecondsPerSecond: 60,
+    timeRateLabel: "1 minute per second · the shadow moves across Earth",
+    timeUtc: "2026-08-12T17:45:53.800Z",
+    timeSeconds: simulationSecondsForUtc("2026-08-12T17:45:53.800Z"),
+    viewMode: "reality",
+    bodyVisibilityPercent: 0,
+    overlays: {
+      ...noDecorativeOverlays,
+      orbitGuides: true,
+    },
+    eyebrow: "Return to the same line",
+    title: "Pull back: the Moon has reached the Sun-Earth line",
+    scale: "The same three-quarter direction returns after the London view",
+    description:
+      "We leave London and return to the opening three-body view. The yellow guide shows the Sun direction, while the Moon now crosses that line beside Earth.",
+    visualKey:
+      "Physical sizes and separation · Moon, Earth, and Sun direction shown together",
+    narration: narrationFor("shadow-axis"),
+  },
+  {
     id: "shadow-from-moon",
     focusBodyId: "moon",
     cameraTargetBodyId: "earth",
+    observerCameraStyle: "limb",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
     transitionOverviewAnchorBodyId: "moon",
     transitionOverviewDistanceAu: 0.006,
-    cameraZoom: 5,
+    cameraZoom: 4,
     timeRateSecondsPerSecond: 60,
     timeRateLabel:
       "1 minute per second · Earth turns beneath the Moon's shadow",
@@ -243,13 +272,13 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: noDecorativeOverlays,
-    eyebrow: "Ride with the Moon",
-    title: "Earth fills the sky beyond the lunar night side",
+    eyebrow: "Move to the lunar horizon",
+    title: "Look from above the Moon's limb toward Earth",
     scale: "The central shadow crosses the North Atlantic",
     description:
-      "The camera sits just above the Moon and looks along the shadow toward Earth. Earth's rotation carries different places through the shadow while the Moon continues along its orbit.",
+      "The camera now enters a low lunar orbit, 350 kilometres above the Moon's sunlit limb. Earth stays ahead, and the horizon fixes the shadow direction.",
     visualKey:
-      "Physical Earth-Moon separation · 5× optical view · no body enlargement",
+      "Physical Earth-Moon separation · 4× optical view · lunar horizon in the lower frame",
     narration: narrationFor("shadow-from-moon"),
   },
   {

@@ -1234,13 +1234,6 @@ export function App() {
   ): void => {
     setCameraOrientation(preset);
     setOrientationPresetToken((current) => current + 1);
-    setTourTransitionDurationMs(
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? 0
-        : ORIENTATION_CAMERA_TRANSITION_DURATION_MS,
-    );
-    setResetViewToken((current) => current + 1);
-    setTourTransitionSequence((current) => current + 1);
   };
 
   const handleSceneOrientationChange = useCallback(
@@ -2561,6 +2554,12 @@ export function App() {
                   : activeCinematicShot?.cameraDistanceAu
               }
               cameraTargetBodyId={activeCameraTargetBodyId}
+              observerCameraStyle={
+                tourKind === "eclipse"
+                  ? ((activeTourStep as EclipseStoryStep | undefined)
+                      ?.observerCameraStyle ?? "surface-facing")
+                  : "surface-facing"
+              }
               cameraTransitionSequence={tourTransitionSequence}
               cameraTransitionDurationMs={tourTransitionDurationMs}
               cameraTransitionAutoFrame={

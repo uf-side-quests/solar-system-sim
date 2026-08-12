@@ -14,6 +14,11 @@ export type DirectCameraTransitionSample = Readonly<{
   segmentProgress: number;
 }>;
 
+export type OrientationTransitionSample = Readonly<{
+  settled: boolean;
+  progress: number;
+}>;
+
 const AUTHORED_ORIENTATION_END = 0.3;
 const OUTBOUND_END = 0.5;
 const INBOUND_START = 0.75;
@@ -143,5 +148,26 @@ export function sampleDirectCameraTransition(
   return {
     phase: flightProgress < DIRECT_ARRIVAL_START ? "travelling" : "arriving",
     segmentProgress: smootherStep(flightProgress),
+  };
+}
+
+export function sampleOrientationTransition(
+  elapsedMs: number,
+  durationMs: number,
+): OrientationTransitionSample {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    throw new Error(
+      "Orientation transition elapsed time must be finite and non-negative",
+    );
+  }
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error(
+      "Orientation transition duration must be positive and finite",
+    );
+  }
+  const progress = Math.min(1, elapsedMs / durationMs);
+  return {
+    settled: progress >= 1,
+    progress: smootherStep(progress),
   };
 }

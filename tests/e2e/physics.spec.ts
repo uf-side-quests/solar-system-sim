@@ -207,8 +207,26 @@ test("renders solver state and advances time through the physics worker", async 
   await expect(scene).toHaveAttribute("data-camera-zoom", "2.38");
   await zoomPreset.selectOption("fit");
 
+  const orientationDistanceAu = Number(
+    await scene.getAttribute("data-camera-distance-au"),
+  );
+  const travelSequenceBeforeOrientation = await scene.getAttribute(
+    "data-camera-transition-sequence",
+  );
   await orientation.getByRole("button", { name: "Above" }).click();
   await expect(scene).toHaveAttribute("data-camera-orientation", "overhead");
+  await expect(scene).toHaveAttribute(
+    "data-orientation-transition-phase",
+    "settled",
+    { timeout: 5_000 },
+  );
+  expect(
+    Number(await scene.getAttribute("data-camera-distance-au")),
+  ).toBeCloseTo(orientationDistanceAu, 8);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-sequence",
+    travelSequenceBeforeOrientation ?? "",
+  );
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-ecliptic-north-dot")),
@@ -326,6 +344,13 @@ test("renders solver state and advances time through the physics worker", async 
   const initialCameraDirection = await scene.getAttribute(
     "data-camera-direction",
   );
+  const cameraRevisionBeforeManualRotation = await smallBodyCanvas.getAttribute(
+    "data-presented-camera-revision",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("camera-before-manual-rotation.png"),
+    fullPage: true,
+  });
   const viewCanvas = page.locator("canvas.major-body-layer");
   await viewCanvas.scrollIntoViewIfNeeded();
   const viewBounds = await viewCanvas.boundingBox();
@@ -349,6 +374,15 @@ test("renders solver state and advances time through the physics worker", async 
     .poll(async () => scene.getAttribute("data-camera-direction"))
     .not.toBe(initialCameraDirection);
   await expect
+    .poll(async () =>
+      smallBodyCanvas.getAttribute("data-presented-camera-revision"),
+    )
+    .not.toBe(cameraRevisionBeforeManualRotation);
+  await page.screenshot({
+    path: testInfo.outputPath("camera-after-manual-rotation.png"),
+    fullPage: true,
+  });
+  await expect
     .poll(async () => (await readCanvasPixels(smallBodyCanvas)).positionHash, {
       timeout: 15_000,
     })
@@ -359,8 +393,16 @@ test("renders solver state and advances time through the physics worker", async 
   );
   expect(wideVisibilityFraction).toBeGreaterThan(0);
   expect(wideVisibilityFraction).toBeLessThan(0.01);
+  const cameraRevisionBeforeWheel = await smallBodyCanvas.getAttribute(
+    "data-presented-camera-revision",
+  );
   await viewCanvas.hover();
   await page.mouse.wheel(0, -1_600);
+  await expect
+    .poll(async () =>
+      smallBodyCanvas.getAttribute("data-presented-camera-revision"),
+    )
+    .not.toBe(cameraRevisionBeforeWheel);
   await expect
     .poll(async () =>
       Number(await smallBodyCanvas.getAttribute("data-visibility-fraction")),

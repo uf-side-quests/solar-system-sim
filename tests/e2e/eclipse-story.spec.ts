@@ -1,11 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 const STORY_SCENES = [
-  ["eclipse-alignment", "The Moon orbits Earth as both circle the Sun"],
+  [
+    "eclipse-alignment",
+    "The eclipse begins when the Moon crosses the Sun-Earth line",
+  ],
   ["london-before-contact", "The Moon is ten minutes from first contact"],
   ["london-first-contact", "First contact: the Moon touches the Sun"],
   ["london-maximum", "Maximum: about 91% of the Sun is hidden"],
-  ["shadow-from-moon", "Earth fills the sky beyond the lunar night side"],
+  ["shadow-axis", "Pull back: the Moon has reached the Sun-Earth line"],
+  ["shadow-from-moon", "Look from above the Moon's limb toward Earth"],
   ["spain-totality", "On the centre line, the Moon covers the Sun"],
   ["london-final-contact", "Final contact arrives just above the horizon"],
 ] as const;
@@ -116,6 +120,15 @@ test("shows every eclipse phase with live physical geometry", async ({
       expect(
         Number(await scene.getAttribute("data-solar-eclipse-obscuration")),
       ).toBeGreaterThan(0.99);
+    }
+    if (stepId === "shadow-from-moon") {
+      await expect(scene).toHaveAttribute("data-camera-observer-body", "moon");
+      await expect(scene).toHaveAttribute("data-camera-target-body", "earth");
+      await expect(scene).toHaveAttribute("data-camera-observer-style", "limb");
+      await expect(scene).toHaveAttribute(
+        "data-camera-observer-altitude-km",
+        "350.000",
+      );
     }
 
     await page.waitForTimeout(500);

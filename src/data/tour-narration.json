@@ -78,7 +78,7 @@
     "id": "eclipse-alignment",
     "sequence": "eclipse",
     "audioSource": "/audio/tour/eclipse-alignment.mp3",
-    "text": "Start with two orbits. The Moon circles Earth every twenty-seven point three days. Earth and Moon travel together around the Sun once each year. The blue curve shows the Moon's live physical orbit. The yellow guide points toward the Sun, about one hundred and fifty million kilometres away."
+    "text": "Start with a three-quarter view of Earth and the Moon. This angle keeps both bodies separate on screen. The yellow guide fixes the direction of the distant Sun. The Moon passes across that Sun-Earth line as it completes its twenty-seven point three day orbit. Keep this geometry in mind for the close views."
   },
   {
     "id": "london-before-contact",
@@ -99,10 +99,16 @@
     "text": "At seven thirteen, London reaches maximum eclipse. NASA predicts about ninety-one point three percent of the solar disc hidden. This physical model shows about ninety-one percent. London remains outside totality, so a brilliant crescent survives low above the west-northwest horizon."
   },
   {
+    "id": "shadow-axis",
+    "sequence": "eclipse",
+    "audioSource": "/audio/tour/shadow-axis.mp3",
+    "text": "Now leave London and pull back to the opening three-body view. The yellow guide again fixes the Sun's direction. The Moon has reached that Sun-Earth line, but its central shadow is much narrower than Earth. Only the small region where that shadow touches the surface can see a total eclipse."
+  },
+  {
     "id": "shadow-from-moon",
     "sequence": "eclipse",
     "audioSource": "/audio/tour/shadow-from-moon.mp3",
-    "text": "Ride beside the Moon and look back toward Earth. The Moon's night side faces us, while its narrow central shadow crosses the North Atlantic. Earth turns beneath that moving shadow. Only places where the central cone reaches the surface see totality."
+    "text": "We now move into a low lunar orbit, three hundred and fifty kilometres above the Moon's sunlit limb. The lunar horizon stays at the bottom of the view, so the direction remains clear. Earth lies ahead along the same shadow line and turns beneath the moving shadow."
   },
   {
     "id": "spain-totality",

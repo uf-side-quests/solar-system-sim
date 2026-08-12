@@ -27,8 +27,8 @@ describe("12 August 2026 eclipse story", () => {
   });
 
   it("keeps every view in the same physical renderer", () => {
-    expect(ECLIPSE_STORY_STEPS).toHaveLength(7);
-    expect(new Set(ECLIPSE_STORY_STEPS.map((step) => step.id)).size).toBe(7);
+    expect(ECLIPSE_STORY_STEPS).toHaveLength(8);
+    expect(new Set(ECLIPSE_STORY_STEPS.map((step) => step.id)).size).toBe(8);
     for (const step of ECLIPSE_STORY_STEPS) {
       expect(step.viewMode, step.id).toBe("reality");
       expect(step.bodyVisibilityPercent, step.id).toBe(0);
@@ -42,14 +42,29 @@ describe("12 August 2026 eclipse story", () => {
     }
   });
 
-  it("starts with the nested Earth-Moon and solar orbits", () => {
+  it("starts with the Sun-Moon-Earth alignment and visible lunar motion", () => {
     const opening = ECLIPSE_STORY_STEPS[0];
     expect(opening?.orientation).toBe("perspective");
-    expect(opening?.timeRateSecondsPerSecond).toBe(86_400);
+    expect(opening?.timeRateSecondsPerSecond).toBe(3_600);
     expect(opening?.overlays.orbitGuides).toBe(true);
     expect(opening?.overlays.moonTrail).toBe(false);
-    expect(opening?.title).toContain("Moon orbits Earth");
-    expect(opening?.description).toContain("around the Sun");
+    expect(opening?.title).toContain("Sun-Earth line");
+    expect(opening?.description).toContain("Earth and Moon separate");
+  });
+
+  it("bridges the London view to a physical lunar-limb view", () => {
+    const shadowAxis = ECLIPSE_STORY_STEPS.find(
+      (step) => step.id === "shadow-axis",
+    );
+    const lunarLimb = ECLIPSE_STORY_STEPS.find(
+      (step) => step.id === "shadow-from-moon",
+    );
+    expect(shadowAxis?.orientation).toBe("perspective");
+    expect(shadowAxis?.focusBodyId).toBe("earth");
+    expect(shadowAxis?.overlays.orbitGuides).toBe(true);
+    expect(lunarLimb?.focusBodyId).toBe("moon");
+    expect(lunarLimb?.cameraTargetBodyId).toBe("earth");
+    expect(lunarLimb?.observerCameraStyle).toBe("limb");
   });
 
   it("uses surface views for each contact phase and totality comparison", () => {

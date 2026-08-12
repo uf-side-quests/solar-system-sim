@@ -111,6 +111,7 @@ import {
   formatViewpointSpeed,
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
+  sampleOrientationTransition,
   sampleCameraTransition,
 } from "./camera-transition";
 import {
@@ -144,7 +145,10 @@ import {
 } from "./deep-space-nine";
 import { fictionalModelAssets } from "./fictional-model-assets";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
-import { surfaceObserverViewpoint } from "./observer-camera";
+import {
+  limbObserverViewpoint,
+  surfaceObserverViewpoint,
+} from "./observer-camera";
 import {
   DISCRETE_RING_SYSTEMS,
   discreteRingSystemExtent,
@@ -310,6 +314,7 @@ const LABEL_HALF_HEIGHT_PX = 9;
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
+const ORIENTATION_PRESET_TRANSITION_DURATION_MS = 1_200;
 const ALPHA_CENTAURI_DISTANCE_AU = 272_000;
 const VOYAGER_1_HELIOPAUSE_AU = 122;
 const VOYAGER_2_HELIOPAUSE_AU = 119;
@@ -631,6 +636,7 @@ type SolarSystemSceneProps = Readonly<{
   cameraZoom: number;
   cameraDistanceOverrideAu: number | undefined;
   cameraTargetBodyId: string | undefined;
+  observerCameraStyle: "surface-facing" | "limb";
   cameraTransitionSequence: number;
   cameraTransitionDurationMs: number;
   cameraTransitionAutoFrame: boolean;
@@ -687,6 +693,7 @@ export function SolarSystemScene({
   cameraZoom,
   cameraDistanceOverrideAu,
   cameraTargetBodyId,
+  observerCameraStyle,
   cameraTransitionSequence,
   cameraTransitionDurationMs,
   cameraTransitionAutoFrame,
@@ -740,6 +747,7 @@ export function SolarSystemScene({
   const cameraZoomRef = useRef(cameraZoom);
   const cameraDistanceOverrideAuRef = useRef(cameraDistanceOverrideAu);
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
+  const observerCameraStyleRef = useRef(observerCameraStyle);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
   const cameraTransitionAutoFrameRef = useRef(cameraTransitionAutoFrame);
@@ -791,6 +799,7 @@ export function SolarSystemScene({
   cameraZoomRef.current = cameraZoom;
   cameraDistanceOverrideAuRef.current = cameraDistanceOverrideAu;
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
+  observerCameraStyleRef.current = observerCameraStyle;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
   cameraTransitionAutoFrameRef.current = cameraTransitionAutoFrame;
@@ -3649,6 +3658,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
           smoothedSpeedMps: number;
         }
       | undefined;
+    let activeOrientationTransition:
+      | {
+          startedAtMs: number;
+          startOffset: Vector3;
+          endOffset: Vector3;
+          startUp: Vector3;
+          endUp: Vector3;
+        }
+      | undefined;
     let lastCameraZoom = Number.NaN;
     let viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
     let lastReportedViewZoom = Number.NaN;
@@ -3926,11 +3944,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       lastMoonTrailTime = exactState.timeSeconds;
     };
 
-    const observerViewpoint = (
+    const observerCameraPose = (
       observerBodyId: string,
       observerState: BodyState,
       targetPosition: Vector3,
-    ): Vector3 => {
+    ): Readonly<{ position: Vector3; up: Vector3 }> => {
       const observerDefinition = majorBodyById.get(observerBodyId);
       if (observerDefinition === undefined) {
         throw new Error(
@@ -3938,14 +3956,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
       }
       const observerCenter = scenePosition(observerState.positionM);
-      const viewpoint = surfaceObserverViewpoint(
-        observerCenter,
-        targetPosition,
-        observerDefinition.meanRadiusM,
-      );
+      const viewpoint =
+        observerCameraStyleRef.current === "limb"
+          ? limbObserverViewpoint(
+              observerCenter,
+              targetPosition,
+              observerDefinition.meanRadiusM,
+              ECLIPTIC_NORTH,
+              350_000,
+              -30,
+            )
+          : surfaceObserverViewpoint(
+              observerCenter,
+              targetPosition,
+              observerDefinition.meanRadiusM,
+            );
       container.dataset["cameraObserverAltitudeKm"] =
         viewpoint.altitudeKm.toFixed(3);
-      return viewpoint.position;
+      container.dataset["cameraObserverStyle"] = observerCameraStyleRef.current;
+      return {
+        position: viewpoint.position,
+        up:
+          observerCameraStyleRef.current === "limb"
+            ? viewpoint.up
+            : ECLIPTIC_NORTH,
+      };
     };
 
     const parentFacingCameraDirection = (
@@ -4046,6 +4081,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         delete container.dataset["cameraObserverBody"];
         delete container.dataset["cameraTargetBody"];
         delete container.dataset["cameraObserverAltitudeKm"];
+        delete container.dataset["cameraObserverStyle"];
         return;
       }
       if (applyApolloInspectionCamera()) {
@@ -4103,16 +4139,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
       camera.near = isSpacecraftFocus
         ? 0.05 / ASTRONOMICAL_UNIT_M
-        : DEFAULT_CAMERA_NEAR_AU;
+        : requestedTargetBodyId !== undefined &&
+            observerCameraStyleRef.current === "limb"
+          ? 100 / ASTRONOMICAL_UNIT_M
+          : DEFAULT_CAMERA_NEAR_AU;
       camera.far = DEFAULT_CAMERA_FAR_AU;
       camera.updateProjectionMatrix();
       if (targetState !== undefined && requestedTargetBodyId !== undefined) {
         const targetPosition = scenePosition(targetState.positionM);
-        const observerPosition = observerViewpoint(
+        const observerPose = observerCameraPose(
           requestedFocusBodyId,
           focusState,
           targetPosition,
         );
+        const observerPosition = observerPose.position;
         const observerDistance = observerPosition.distanceTo(targetPosition);
         if (!Number.isFinite(observerDistance) || observerDistance <= 0) {
           throw new Error(
@@ -4120,7 +4160,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           );
         }
         camera.position.copy(observerPosition);
-        camera.up.copy(ECLIPTIC_NORTH);
+        camera.up.copy(observerPose.up);
         controls.target.copy(targetPosition);
         controls.minDistance = camera.near * 2;
         controls.maxDistance = DEFAULT_CAMERA_FAR_AU * 0.9;
@@ -4134,6 +4174,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       delete container.dataset["cameraObserverBody"];
       delete container.dataset["cameraTargetBody"];
       delete container.dataset["cameraObserverAltitudeKm"];
+      delete container.dataset["cameraObserverStyle"];
       const focusDistance =
         cameraDistanceOverrideAuRef.current ??
         (requestedFocusBodyId === "sun"
@@ -4224,15 +4265,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           );
         }
         const targetPosition = scenePosition(targetState.positionM);
-        camera.position.copy(
-          observerViewpoint(
-            requestedFocusBodyId,
-            observerState,
-            targetPosition,
-          ),
+        const observerPose = observerCameraPose(
+          requestedFocusBodyId,
+          observerState,
+          targetPosition,
         );
+        camera.position.copy(observerPose.position);
         controls.target.copy(targetPosition);
-        camera.up.copy(ECLIPTIC_NORTH);
+        camera.up.copy(observerPose.up);
         camera.lookAt(controls.target);
         controls.update();
         container.dataset["cameraOrientation"] = "observer-facing";
@@ -4344,6 +4384,66 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraOrientation"] = preset;
     };
 
+    const beginOrientationTransition = (
+      preset: Exclude<CameraOrientationPreset, "custom">,
+      requestedFocusBodyId: string | null,
+      current: SimulationState | undefined,
+    ): void => {
+      const startTarget = controls.target.clone();
+      const startOffset = camera.position.clone().sub(startTarget);
+      const startUp = camera.up.clone();
+      applyOrientationPreset(preset, requestedFocusBodyId, current);
+      const endOffset = camera.position.clone().sub(controls.target);
+      const endUp = camera.up.clone();
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        activeOrientationTransition = undefined;
+        container.dataset["orientationTransitionPhase"] = "settled";
+        return;
+      }
+      camera.position.copy(startTarget).add(startOffset);
+      controls.target.copy(startTarget);
+      camera.up.copy(startUp);
+      camera.lookAt(startTarget);
+      activeOrientationTransition = {
+        startedAtMs: performance.now(),
+        startOffset,
+        endOffset,
+        startUp,
+        endUp,
+      };
+      container.dataset["orientationTransitionPhase"] = "rotating";
+      container.dataset["orientationTransitionDurationMs"] = String(
+        ORIENTATION_PRESET_TRANSITION_DURATION_MS,
+      );
+    };
+
+    const updateOrientationTransition = (nowMs: number): void => {
+      const transition = activeOrientationTransition;
+      if (transition === undefined) {
+        return;
+      }
+      const sample = sampleOrientationTransition(
+        Math.max(0, nowMs - transition.startedAtMs),
+        ORIENTATION_PRESET_TRANSITION_DURATION_MS,
+      );
+      const target = controls.target.clone();
+      interpolateCameraPositionAroundAnchor(
+        camera.position,
+        target.clone().add(transition.startOffset),
+        target.clone().add(transition.endOffset),
+        target,
+        sample.progress,
+      );
+      camera.up
+        .lerpVectors(transition.startUp, transition.endUp, sample.progress)
+        .normalize();
+      camera.lookAt(target);
+      if (sample.settled) {
+        activeOrientationTransition = undefined;
+        container.dataset["orientationTransitionPhase"] = "settled";
+      }
+    };
+
     const completeCameraTransition = (): void => {
       if (activeCameraTransition === undefined) {
         return;
@@ -4383,9 +4483,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
     };
 
     interruptCameraTransition = (): void => {
-      if (activeCameraTransition === undefined) {
-        return;
+      if (activeOrientationTransition !== undefined) {
+        activeOrientationTransition = undefined;
+        container.dataset["orientationTransitionPhase"] = "interrupted";
       }
+      if (activeCameraTransition === undefined) return;
       const sequence = activeCameraTransition.sequence;
       activeCameraTransition = undefined;
       controls.enabled = true;
@@ -4411,6 +4513,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (activeCameraTransition !== undefined) {
         completeCameraTransition();
       }
+      activeOrientationTransition = undefined;
       const startPosition = camera.position.clone();
       const startTarget = controls.target.clone();
       const startUp = camera.up.clone();
@@ -4686,13 +4789,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
             targetState !== undefined &&
             transition.destinationTargetBodyId !== undefined
           ) {
-            transition.endPosition.copy(
-              observerViewpoint(
-                transition.destinationFocusBodyId,
-                focusState,
-                transition.endTarget,
-              ),
+            const observerPose = observerCameraPose(
+              transition.destinationFocusBodyId,
+              focusState,
+              transition.endTarget,
             );
+            transition.endPosition.copy(observerPose.position);
+            transition.endUp.copy(observerPose.up);
           } else {
             transition.endPosition
               .copy(transition.endTarget)
@@ -5793,6 +5896,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 requestedPreset === "parent-facing" ||
                 requestedPreset === "velocity" ||
                 requestedPreset === "orbital-plane";
+              const orientationChangePending =
+                orientationPresetTokenRef.current !==
+                lastOrientationPresetToken;
               const continuouslyTracked =
                 orbitTrackingEnabled ||
                 requestedTargetBodyId !== undefined ||
@@ -5802,15 +5908,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 targetState !== undefined
               ) {
                 const targetPosition = scenePosition(targetState.positionM);
-                camera.position.copy(
-                  observerViewpoint(
-                    requestedFocusBodyId,
-                    focusState,
-                    targetPosition,
-                  ),
+                const observerPose = observerCameraPose(
+                  requestedFocusBodyId,
+                  focusState,
+                  targetPosition,
                 );
+                camera.position.copy(observerPose.position);
                 controls.target.copy(targetPosition);
-                camera.up.copy(ECLIPTIC_NORTH);
+                camera.up.copy(observerPose.up);
                 camera.lookAt(targetPosition);
                 container.dataset["cameraOrientation"] = "observer-facing";
                 container.dataset["cameraObserverBody"] = requestedFocusBodyId;
@@ -5819,6 +5924,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   .distanceTo(targetPosition)
                   .toFixed(8);
               } else if (orbitTrackingEnabled) {
+                const trackingDelta = focusPosition
+                  .clone()
+                  .sub(controls.target);
+                camera.position.add(trackingDelta);
+                controls.target.copy(focusPosition);
+              } else if (
+                orientationChangePending ||
+                activeOrientationTransition !== undefined
+              ) {
                 const trackingDelta = focusPosition
                   .clone()
                   .sub(controls.target);
@@ -5908,7 +6022,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       ) {
         lastOrientationPresetToken = orientationPresetTokenRef.current;
         if (activeCameraTransition === undefined) {
-          applyOrientationPreset(
+          beginOrientationTransition(
             orientationPresetRef.current,
             focusBodyIdRef.current,
             current,
@@ -5924,6 +6038,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         surfaceFreeLook = false;
         lastSurfaceConfigurationKey = "";
         updateCameraTransition(renderNowMs, current);
+        if (activeCameraTransition === undefined) {
+          updateOrientationTransition(renderNowMs);
+        }
         controls.update();
         const requestedOrbitBodyId = focusBodyIdRef.current;
         const requestedOrbitConfiguration = orbitConfigurationRef.current;
