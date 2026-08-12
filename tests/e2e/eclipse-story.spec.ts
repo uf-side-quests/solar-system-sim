@@ -139,6 +139,39 @@ test("shows every eclipse phase with live physical geometry", async ({
         "data-camera-observer-altitude-km",
         "350.000",
       );
+      await expect(scene).toHaveAttribute(
+        "data-eclipse-shadow-visible",
+        "true",
+      );
+      expect(
+        Number(await scene.getAttribute("data-eclipse-umbra-radius-km")),
+      ).toBeGreaterThan(0);
+      expect(
+        Number(await scene.getAttribute("data-eclipse-penumbra-radius-km")),
+      ).toBeGreaterThan(1_000);
+      await expect(page.locator(".eclipse-shadow-locator")).toBeVisible();
+      const initialShadowX = Number(
+        await scene.getAttribute("data-eclipse-shadow-screen-x"),
+      );
+      const initialShadowY = Number(
+        await scene.getAttribute("data-eclipse-shadow-screen-y"),
+      );
+      await story.getByRole("button", { name: "Resume story" }).click();
+      await expect
+        .poll(async () => {
+          const nextShadowX = Number(
+            await scene.getAttribute("data-eclipse-shadow-screen-x"),
+          );
+          const nextShadowY = Number(
+            await scene.getAttribute("data-eclipse-shadow-screen-y"),
+          );
+          return Math.hypot(
+            nextShadowX - initialShadowX,
+            nextShadowY - initialShadowY,
+          );
+        })
+        .toBeGreaterThan(1);
+      await story.getByRole("button", { name: "Pause story" }).click();
     }
 
     await page.waitForTimeout(500);

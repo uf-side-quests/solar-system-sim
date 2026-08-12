@@ -8,6 +8,7 @@ test("shows direct view-angle actions before advanced camera settings", async ({
   await expect(page.locator("canvas.major-body-layer")).toBeVisible({
     timeout: 30_000,
   });
+  await expect(page.locator(".global-simulation-clock")).toContainText("UTC");
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
 

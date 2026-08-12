@@ -9,6 +9,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
+  CircleGeometry,
   Color,
   DoubleSide,
   DynamicDrawUsage,
@@ -21,6 +22,7 @@ import {
   Matrix4,
   Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   Points,
@@ -660,6 +662,7 @@ type SolarSystemSceneProps = Readonly<{
   visualQuality: VisualQuality;
   deepSpacePresentation:
     "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale" | undefined;
+  eclipseShadowVisible: boolean;
   onSelectBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
@@ -716,6 +719,7 @@ export function SolarSystemScene({
   surfaceObserverLookResetToken,
   visualQuality,
   deepSpacePresentation,
+  eclipseShadowVisible,
   onSelectBody,
   onFocusBody,
   onOrientationChange,
@@ -748,6 +752,7 @@ export function SolarSystemScene({
   const cameraDistanceOverrideAuRef = useRef(cameraDistanceOverrideAu);
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
   const observerCameraStyleRef = useRef(observerCameraStyle);
+  const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
   const cameraTransitionAutoFrameRef = useRef(cameraTransitionAutoFrame);
@@ -800,6 +805,7 @@ export function SolarSystemScene({
   cameraDistanceOverrideAuRef.current = cameraDistanceOverrideAu;
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
   observerCameraStyleRef.current = observerCameraStyle;
+  eclipseShadowVisibleRef.current = eclipseShadowVisible;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
   cameraTransitionAutoFrameRef.current = cameraTransitionAutoFrame;
@@ -1271,6 +1277,47 @@ export function SolarSystemScene({
     const materials: Material[] = [starMaterial];
     const geometries: BufferGeometry[] = [unitSphere, starGeometry];
     const textures: Texture[] = [];
+
+    const eclipseShadowGroup = new Group();
+    eclipseShadowGroup.name = "Calculated lunar shadow on Earth";
+    eclipseShadowGroup.visible = false;
+    scene.add(eclipseShadowGroup);
+    const eclipsePenumbraGeometry = new CircleGeometry(1, 128);
+    const eclipseUmbraGeometry = new CircleGeometry(1, 128);
+    const eclipsePenumbraMaterial = new MeshBasicMaterial({
+      color: 0x10151b,
+      opacity: 0.28,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const eclipseUmbraMaterial = new MeshBasicMaterial({
+      color: 0x000000,
+      opacity: 0.82,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+    });
+    const eclipsePenumbraMesh = new Mesh(
+      eclipsePenumbraGeometry,
+      eclipsePenumbraMaterial,
+    );
+    const eclipseUmbraMesh = new Mesh(
+      eclipseUmbraGeometry,
+      eclipseUmbraMaterial,
+    );
+    eclipsePenumbraMesh.renderOrder = 8;
+    eclipseUmbraMesh.renderOrder = 9;
+    eclipseShadowGroup.add(eclipsePenumbraMesh, eclipseUmbraMesh);
+    geometries.push(eclipsePenumbraGeometry, eclipseUmbraGeometry);
+    materials.push(eclipsePenumbraMaterial, eclipseUmbraMaterial);
+    const eclipseShadowLocator = document.createElement("span");
+    eclipseShadowLocator.className = "eclipse-shadow-locator";
+    eclipseShadowLocator.textContent = "Umbra";
+    eclipseShadowLocator.hidden = true;
+    labelLayer.append(eclipseShadowLocator);
 
     const monolithGeometry = new BoxGeometry(
       JOVIAN_MONOLITH_DIMENSIONS_M.thickness / ASTRONOMICAL_UNIT_M,
@@ -5430,6 +5477,109 @@ float saturnRingTransmission(vec3 surfacePosition) {
           }
         }
 
+        const earthStateForEclipse = bodyStateById(current, "earth");
+        const moonStateForEclipse = bodyStateById(current, "moon");
+        const sunStateForEclipse = bodyStateById(current, "sun");
+        const earthDefinitionForEclipse = majorBodyById.get("earth");
+        const moonDefinitionForEclipse = majorBodyById.get("moon");
+        const sunDefinitionForEclipse = majorBodyById.get("sun");
+        if (
+          eclipseShadowVisibleRef.current &&
+          earthStateForEclipse !== undefined &&
+          moonStateForEclipse !== undefined &&
+          sunStateForEclipse !== undefined &&
+          earthDefinitionForEclipse !== undefined &&
+          moonDefinitionForEclipse !== undefined &&
+          sunDefinitionForEclipse !== undefined
+        ) {
+          const earthPosition = scenePosition(earthStateForEclipse.positionM);
+          const moonPosition = scenePosition(moonStateForEclipse.positionM);
+          const sunPosition = scenePosition(sunStateForEclipse.positionM);
+          const shadowDirection = moonPosition
+            .clone()
+            .sub(sunPosition)
+            .normalize();
+          const moonToEarth = earthPosition.clone().sub(moonPosition);
+          const alongAxisAu = moonToEarth.dot(shadowDirection);
+          const closestAxisPoint = moonPosition
+            .clone()
+            .addScaledVector(shadowDirection, alongAxisAu);
+          const axisOffsetAu = closestAxisPoint.distanceTo(earthPosition);
+          const earthRadiusAu =
+            earthDefinitionForEclipse.meanRadiusM / ASTRONOMICAL_UNIT_M;
+          const intersectsEarth =
+            alongAxisAu > 0 && axisOffsetAu < earthRadiusAu;
+          if (intersectsEarth) {
+            const surfaceOffsetAu = Math.sqrt(
+              earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
+            );
+            const footprintPosition = closestAxisPoint
+              .clone()
+              .sub(shadowDirection.clone().multiplyScalar(surfaceOffsetAu));
+            const outwardNormal = footprintPosition
+              .clone()
+              .sub(earthPosition)
+              .normalize();
+            const moonSunDistanceM =
+              moonPosition.distanceTo(sunPosition) * ASTRONOMICAL_UNIT_M;
+            const moonEarthDistanceM =
+              moonPosition.distanceTo(earthPosition) * ASTRONOMICAL_UNIT_M;
+            const umbraRadiusM = Math.max(
+              0,
+              moonDefinitionForEclipse.meanRadiusM -
+                ((sunDefinitionForEclipse.meanRadiusM -
+                  moonDefinitionForEclipse.meanRadiusM) *
+                  moonEarthDistanceM) /
+                  moonSunDistanceM,
+            );
+            const penumbraRadiusM =
+              moonDefinitionForEclipse.meanRadiusM +
+              ((sunDefinitionForEclipse.meanRadiusM +
+                moonDefinitionForEclipse.meanRadiusM) *
+                moonEarthDistanceM) /
+                moonSunDistanceM;
+            eclipseShadowGroup.position.copy(
+              footprintPosition.addScaledVector(
+                outwardNormal,
+                earthRadiusAu * 0.003,
+              ),
+            );
+            eclipseShadowGroup.quaternion.setFromUnitVectors(
+              new Vector3(0, 0, 1),
+              outwardNormal,
+            );
+            eclipseUmbraMesh.scale.setScalar(
+              Math.max(
+                umbraRadiusM / ASTRONOMICAL_UNIT_M,
+                earthRadiusAu * 0.008,
+              ),
+            );
+            eclipsePenumbraMesh.scale.setScalar(
+              penumbraRadiusM / ASTRONOMICAL_UNIT_M,
+            );
+            eclipseShadowGroup.visible = true;
+            container.dataset["eclipseShadowVisible"] = "true";
+            container.dataset["eclipseUmbraRadiusKm"] = (
+              umbraRadiusM / 1_000
+            ).toFixed(3);
+            container.dataset["eclipsePenumbraRadiusKm"] = (
+              penumbraRadiusM / 1_000
+            ).toFixed(3);
+            container.dataset["eclipseShadowAxisOffsetKm"] = (
+              (axisOffsetAu * ASTRONOMICAL_UNIT_M) /
+              1_000
+            ).toFixed(3);
+          } else {
+            eclipseShadowGroup.visible = false;
+            eclipseShadowLocator.hidden = true;
+            container.dataset["eclipseShadowVisible"] = "false";
+          }
+        } else {
+          eclipseShadowGroup.visible = false;
+          eclipseShadowLocator.hidden = true;
+          container.dataset["eclipseShadowVisible"] = "false";
+        }
+
         const monolithState = jovianMonolithState(current);
         const jupiterStateForMonolith = bodyStateById(current, "jupiter");
         const ioStateForMonolith = bodyStateById(current, "io");
@@ -8187,6 +8337,26 @@ float saturnRingTransmission(vec3 surfacePosition) {
         solarCoronaMaterial.opacity =
           profileOpacity + (0.82 - profileOpacity) * eclipseBoost;
         container.dataset["solarCoronaEclipseBoost"] = eclipseBoost.toFixed(4);
+      }
+      if (eclipseShadowGroup.visible) {
+        const projectedFootprint = eclipseShadowGroup.position
+          .clone()
+          .project(camera);
+        const footprintOnScreen =
+          projectedFootprint.z >= -1 &&
+          projectedFootprint.z <= 1 &&
+          Math.abs(projectedFootprint.x) <= 1 &&
+          Math.abs(projectedFootprint.y) <= 1;
+        eclipseShadowLocator.hidden = !footprintOnScreen;
+        if (footprintOnScreen) {
+          const screenX =
+            ((projectedFootprint.x + 1) * container.clientWidth) / 2;
+          const screenY =
+            ((-projectedFootprint.y + 1) * container.clientHeight) / 2;
+          eclipseShadowLocator.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          container.dataset["eclipseShadowScreenX"] = screenX.toFixed(2);
+          container.dataset["eclipseShadowScreenY"] = screenY.toFixed(2);
+        }
       }
       renderer.render(scene, camera);
       container.dataset["renderFrameIntervalMs"] =

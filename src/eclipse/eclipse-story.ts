@@ -263,10 +263,10 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     cameraDistanceAu: "observer-separation",
     transitionOverviewAnchorBodyId: "moon",
     transitionOverviewDistanceAu: 0.006,
-    cameraZoom: 4,
-    timeRateSecondsPerSecond: 60,
+    cameraZoom: 6,
+    timeRateSecondsPerSecond: 120,
     timeRateLabel:
-      "1 minute per second · Earth turns beneath the Moon's shadow",
+      "2 minutes per second · the umbra crosses the rotating Earth",
     timeUtc: "2026-08-12T17:45:53.800Z",
     timeSeconds: simulationSecondsForUtc("2026-08-12T17:45:53.800Z"),
     viewMode: "reality",
@@ -276,9 +276,9 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     title: "Look from above the Moon's limb toward Earth",
     scale: "The central shadow crosses the North Atlantic",
     description:
-      "The camera now enters a low lunar orbit, 350 kilometres above the Moon's sunlit limb. Earth stays ahead, and the horizon fixes the shadow direction.",
+      "The camera enters a low lunar orbit, 350 kilometres above the Moon's sunlit limb. The dark umbra now moves across the rotating Earth.",
     visualKey:
-      "Physical Earth-Moon separation · 4× optical view · lunar horizon in the lower frame",
+      "Physical Earth-Moon separation · true-size shadow · locator marks its centre · lunar horizon below",
     narration: narrationFor("shadow-from-moon"),
   },
   {

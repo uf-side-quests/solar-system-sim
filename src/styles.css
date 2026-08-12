@@ -901,6 +901,27 @@ h1 {
   translate: -50% -50%;
 }
 
+.eclipse-shadow-locator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 19;
+  width: 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  color: #ffe4a6;
+  border: 1px solid rgb(255 218 145 / 88%);
+  border-radius: 50%;
+  box-shadow: 0 0 0.65rem rgb(255 194 91 / 25%);
+  font-size: 0.48rem;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
 .focus-breadcrumb,
 .status-cluster {
   position: absolute;
@@ -936,6 +957,27 @@ h1 {
 
 .status-cluster {
   right: 0.9rem;
+}
+
+.global-simulation-clock {
+  position: absolute;
+  z-index: 8;
+  top: 3.5rem;
+  right: 0.9rem;
+  padding: 0.25rem 0.42rem;
+  color: #9eb5c6;
+  border: 1px solid rgb(115 153 181 / 18%);
+  border-radius: 0.45rem;
+  background: rgb(5 11 18 / 58%);
+  backdrop-filter: blur(8px);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.025em;
+  pointer-events: none;
+}
+
+.app-shell.is-immersive .global-simulation-clock {
+  display: none;
 }
 
 .gravity-field-legend {

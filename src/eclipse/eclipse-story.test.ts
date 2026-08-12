@@ -65,6 +65,8 @@ describe("12 August 2026 eclipse story", () => {
     expect(lunarLimb?.focusBodyId).toBe("moon");
     expect(lunarLimb?.cameraTargetBodyId).toBe("earth");
     expect(lunarLimb?.observerCameraStyle).toBe("limb");
+    expect(lunarLimb?.cameraZoom).toBe(6);
+    expect(lunarLimb?.timeRateSecondsPerSecond).toBe(120);
   });
 
   it("uses surface views for each contact phase and totality comparison", () => {

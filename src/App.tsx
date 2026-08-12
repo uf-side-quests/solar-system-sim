@@ -32,6 +32,10 @@ import {
   majorBodySystem,
 } from "./physics/solar-system";
 import {
+  formatSimulationDateUtc,
+  simulationDateUtc,
+} from "./physics/simulation-date";
+import {
   isVoyagerBodyId,
   voyagerById,
   voyagerSnapshot,
@@ -259,6 +263,7 @@ const VIEW_MODE_OPTIONS = [
 const TIME_RATES = [
   { label: "1 second / second", secondsPerSecond: 1 },
   { label: "1 minute / second", secondsPerSecond: 60 },
+  { label: "2 minutes / second", secondsPerSecond: 120 },
   { label: "10 minutes / second", secondsPerSecond: 600 },
   { label: "1 hour / second", secondsPerSecond: 3_600 },
   { label: "1 day / second", secondsPerSecond: DAY_SECONDS },
@@ -266,7 +271,7 @@ const TIME_RATES = [
   { label: "30 days / second", secondsPerSecond: 30 * DAY_SECONDS },
   { label: "1 year / second", secondsPerSecond: 365.25 * DAY_SECONDS },
 ] as const;
-const USER_TIME_RATE_INDEXES = [0, 1, 3, 4, 5, 6, 7] as const;
+const USER_TIME_RATE_INDEXES = [0, 1, 4, 5, 6, 7, 8] as const;
 const PLANET_FOCUS_ORDER = [
   "mercury",
   "venus",
@@ -2489,6 +2494,14 @@ export function App() {
           </span>
         </div>
 
+        <time
+          className="global-simulation-clock"
+          dateTime={simulationDateUtc(state?.timeSeconds ?? 0).toISOString()}
+          data-time-seconds={(state?.timeSeconds ?? 0).toFixed(3)}
+        >
+          {formatSimulationDateUtc(state?.timeSeconds ?? 0)}
+        </time>
+
         {error !== undefined ? (
           <p className="error" role="alert">
             Simulation stopped: {error}{" "}
@@ -2600,6 +2613,7 @@ export function App() {
               surfaceObserverLookResetToken={surfaceObserverLookResetToken}
               visualQuality={visualQuality}
               deepSpacePresentation={activeTourStep?.presentation}
+              eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
               onSelectBody={handleSceneBodySelection}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}

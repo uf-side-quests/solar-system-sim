@@ -1,6 +1,6 @@
 {
   "artifact": "solar-system-time-explorer.tour-narration",
-  "generatedAt": "2026-08-11T23:40:41.557Z",
+  "generatedAt": "2026-08-12T10:21:38.770Z",
   "provider": "ElevenLabs",
   "disclosure": "AI-generated speech from original educational scripts",
   "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
@@ -190,27 +190,27 @@
       "sequence": "eclipse",
       "audioSource": "/audio/tour/shadow-axis.mp3",
       "textSha256": "b394bb26ff10a002b9825a8a7f879e76872046aa14c0ce65f65a23605d860f36",
-      "contextSha256": "a4f89f86065dd7bd77c5cb6f354fbabddddb5cd799075c403678fbbc8e39f651",
-      "audioSha256": "bb04e12dd92d54030c2e0f55b05526774df0229135101f3cad31693133ddb75b",
-      "bytes": 308079
+      "contextSha256": "460e7660dc3b2713cf32fb7745f6d86205638a32a3a3abf793fa268edd1ea24c",
+      "audioSha256": "588ace54a6783e831b8c6e2ae87ba43be9b1a7d4b217ed5824ac5a0e5e55fd5a",
+      "bytes": 317693
     },
     {
       "id": "shadow-from-moon",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/shadow-from-moon.mp3",
-      "textSha256": "af1e05c133f3a633dd204e0c22b158ff80e0166ac89ee8266db7bc5611cbdeae",
-      "contextSha256": "71cb6da3a44ab7395f6a8d93f514d001482cb1064214fb3cd1402b47fed3cc88",
-      "audioSha256": "fe20178ffe0a0037772ffd4a9fc293591bec309289dd3db28d7223359c09253b",
-      "bytes": 287182
+      "textSha256": "770aa96309e6eacc40e8397e5d5680454812beab228c196094f798702761406c",
+      "contextSha256": "6d9980bcd7ef391ff3afc682432ace8329d56a4e624de7654dff15a6932219dd",
+      "audioSha256": "b6c6fb636816dd5affbaa4957a7fd39bebd3972ecdae4130b844e7caa40582c4",
+      "bytes": 278404
     },
     {
       "id": "spain-totality",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/spain-totality.mp3",
       "textSha256": "aaa8d840d9817f90d076568882ef7de775f44607a188010a908e534ab27e4f66",
-      "contextSha256": "c1edd0204de2104755ac9a1a81b494db8ff4dbfbfc52744d1cef5284196b37c8",
-      "audioSha256": "2854b8acf4edcb31284555afd531959e70e3bdaafb435f73ee8e76b97c7394a5",
-      "bytes": 303482
+      "contextSha256": "a4fa5e4989a582cc60d702104cfb43e942d7f04fcf505edb0a4fe04f7e94c717",
+      "audioSha256": "55f346c6a20cabd166c5fc03474567a035d764067f9274d6837734c65e4c46bf",
+      "bytes": 318946
     },
     {
       "id": "london-final-contact",
