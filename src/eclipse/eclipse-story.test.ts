@@ -42,31 +42,32 @@ describe("12 August 2026 eclipse story", () => {
     }
   });
 
-  it("starts with the Sun-Moon-Earth alignment and visible lunar motion", () => {
+  it("starts before the Sun-Moon-Earth alignment with visible lunar motion", () => {
     const opening = ECLIPSE_STORY_STEPS[0];
     expect(opening?.orientation).toBe("perspective");
+    expect(opening?.timeUtc).toBe("2026-08-12T15:45:53.800Z");
     expect(opening?.timeRateSecondsPerSecond).toBe(3_600);
     expect(opening?.overlays.orbitGuides).toBe(true);
     expect(opening?.overlays.moonTrail).toBe(false);
     expect(opening?.title).toContain("Sun-Earth line");
-    expect(opening?.description).toContain("Earth and Moon separate");
+    expect(opening?.description).toContain("starts before alignment");
   });
 
-  it("bridges the London view to a physical lunar-limb view", () => {
+  it("bridges the London view to the physical lunar shadow axis", () => {
     const shadowAxis = ECLIPSE_STORY_STEPS.find(
       (step) => step.id === "shadow-axis",
     );
-    const lunarLimb = ECLIPSE_STORY_STEPS.find(
+    const shadowView = ECLIPSE_STORY_STEPS.find(
       (step) => step.id === "shadow-from-moon",
     );
     expect(shadowAxis?.orientation).toBe("perspective");
     expect(shadowAxis?.focusBodyId).toBe("earth");
     expect(shadowAxis?.overlays.orbitGuides).toBe(true);
-    expect(lunarLimb?.focusBodyId).toBe("moon");
-    expect(lunarLimb?.cameraTargetBodyId).toBe("earth");
-    expect(lunarLimb?.observerCameraStyle).toBe("limb");
-    expect(lunarLimb?.cameraZoom).toBe(6);
-    expect(lunarLimb?.timeRateSecondsPerSecond).toBe(120);
+    expect(shadowView?.focusBodyId).toBe("moon");
+    expect(shadowView?.cameraTargetBodyId).toBe("earth");
+    expect(shadowView?.observerCameraStyle).toBe("shadow-axis");
+    expect(shadowView?.cameraZoom).toBe(1);
+    expect(shadowView?.timeRateSecondsPerSecond).toBe(120);
   });
 
   it("uses surface views for each contact phase and totality comparison", () => {

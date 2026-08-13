@@ -78,7 +78,7 @@
     "id": "eclipse-alignment",
     "sequence": "eclipse",
     "audioSource": "/audio/tour/eclipse-alignment.mp3",
-    "text": "Start with a three-quarter view of Earth and the Moon. This angle keeps both bodies separate on screen. The yellow guide fixes the direction of the distant Sun. The Moon passes across that Sun-Earth line as it completes its twenty-seven point three day orbit. Keep this geometry in mind for the close views."
+    "text": "Start with a three-quarter view of Earth and the Moon, two hours before their closest alignment. The yellow guide fixes the direction of the distant Sun. Watch the Moon advance across that guide on its twenty-seven point three day orbit. This motion creates the eclipse geometry used in the close views."
   },
   {
     "id": "london-before-contact",
@@ -108,7 +108,7 @@
     "id": "shadow-from-moon",
     "sequence": "eclipse",
     "audioSource": "/audio/tour/shadow-from-moon.mp3",
-    "text": "We now move into a low lunar orbit, three hundred and fifty kilometres above the Moon's sunlit limb. Earth lies ahead. Watch the small dark umbra move across the rotating planet. Only places inside that moving spot experience totality."
+    "text": "We now follow the Moon's shadow toward Earth and stop about fifty-one thousand kilometres above the planet. The engine uses the live positions and physical sizes of the Sun, Moon, and Earth. At every point on Earth, it calculates how much of the Sun's finite disc the Moon covers. The fully covered area becomes the dark umbra. The partly covered area forms the softer penumbra. Only places inside the moving umbra experience totality."
   },
   {
     "id": "spain-totality",

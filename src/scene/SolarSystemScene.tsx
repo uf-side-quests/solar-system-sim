@@ -9,7 +9,6 @@ import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
-  CircleGeometry,
   Color,
   DoubleSide,
   DynamicDrawUsage,
@@ -22,7 +21,6 @@ import {
   Matrix4,
   Material,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   Points,
@@ -114,7 +112,6 @@ import {
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
   sampleOrientationTransition,
-  sampleCameraTransition,
 } from "./camera-transition";
 import {
   JOVIAN_MONOLITH_BODY_ID,
@@ -638,12 +635,9 @@ type SolarSystemSceneProps = Readonly<{
   cameraZoom: number;
   cameraDistanceOverrideAu: number | undefined;
   cameraTargetBodyId: string | undefined;
-  observerCameraStyle: "surface-facing" | "limb";
+  observerCameraStyle: "surface-facing" | "limb" | "shadow-axis";
   cameraTransitionSequence: number;
   cameraTransitionDurationMs: number;
-  cameraTransitionAutoFrame: boolean;
-  cameraTransitionOverviewAnchorBodyId: string | undefined;
-  cameraTransitionOverviewDistanceAu: number;
   cameraNavigationCommand: CameraNavigationCommand;
   orbitViewEnabled: boolean;
   orbitConfiguration: CameraOrbitConfiguration | null;
@@ -699,9 +693,6 @@ export function SolarSystemScene({
   observerCameraStyle,
   cameraTransitionSequence,
   cameraTransitionDurationMs,
-  cameraTransitionAutoFrame,
-  cameraTransitionOverviewAnchorBodyId,
-  cameraTransitionOverviewDistanceAu,
   cameraNavigationCommand,
   orbitViewEnabled,
   orbitConfiguration,
@@ -755,13 +746,6 @@ export function SolarSystemScene({
   const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
-  const cameraTransitionAutoFrameRef = useRef(cameraTransitionAutoFrame);
-  const cameraTransitionOverviewAnchorBodyIdRef = useRef(
-    cameraTransitionOverviewAnchorBodyId,
-  );
-  const cameraTransitionOverviewDistanceAuRef = useRef(
-    cameraTransitionOverviewDistanceAu,
-  );
   const cameraNavigationCommandRef = useRef(cameraNavigationCommand);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const orbitConfigurationRef = useRef(orbitConfiguration);
@@ -808,11 +792,6 @@ export function SolarSystemScene({
   eclipseShadowVisibleRef.current = eclipseShadowVisible;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
-  cameraTransitionAutoFrameRef.current = cameraTransitionAutoFrame;
-  cameraTransitionOverviewAnchorBodyIdRef.current =
-    cameraTransitionOverviewAnchorBodyId;
-  cameraTransitionOverviewDistanceAuRef.current =
-    cameraTransitionOverviewDistanceAu;
   cameraNavigationCommandRef.current = cameraNavigationCommand;
   orbitViewEnabledRef.current = orbitViewEnabled;
   orbitConfigurationRef.current = orbitConfiguration;
@@ -1264,6 +1243,140 @@ export function SolarSystemScene({
     const atmosphereMeshes = new Map<string, Mesh>();
     const atmosphereMaterials = new Map<string, ShaderMaterial>();
     const surfaceMaterials = new Map<string, MeshStandardMaterial>();
+    type EclipseOcclusionUniforms = Readonly<{
+      sunFromEarthAu: IUniform<Vector3>;
+      moonFromEarthAu: IUniform<Vector3>;
+    }>;
+    const eclipseEarthDefinition = majorBodyById.get("earth");
+    const eclipseMoonDefinition = majorBodyById.get("moon");
+    const eclipseSunDefinition = majorBodyById.get("sun");
+    if (
+      eclipseEarthDefinition === undefined ||
+      eclipseMoonDefinition === undefined ||
+      eclipseSunDefinition === undefined
+    ) {
+      throw new Error("Eclipse shading requires the Sun, Earth, and Moon");
+    }
+    const earthEclipseOcclusionUniforms: EclipseOcclusionUniforms[] = [];
+    const configureEarthEclipseOcclusion = (
+      material: MeshStandardMaterial,
+    ): void => {
+      const uniforms: EclipseOcclusionUniforms = {
+        sunFromEarthAu: { value: new Vector3() },
+        moonFromEarthAu: { value: new Vector3() },
+      };
+      earthEclipseOcclusionUniforms.push(uniforms);
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms["eclipseSunFromEarthAu"] = uniforms.sunFromEarthAu;
+        shader.uniforms["eclipseMoonFromEarthAu"] = uniforms.moonFromEarthAu;
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vEclipseSurfaceDirection;",
+          )
+          .replace(
+            "#include <begin_vertex>",
+            "#include <begin_vertex>\nvEclipseSurfaceDirection = normalize(mat3(modelMatrix) * position);",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            `#include <common>
+uniform vec3 eclipseSunFromEarthAu;
+uniform vec3 eclipseMoonFromEarthAu;
+varying vec3 vEclipseSurfaceDirection;
+
+const float ECLIPSE_PI = 3.141592653589793;
+const float ECLIPSE_EARTH_RADIUS_AU = ${String(
+              eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+            )};
+const float ECLIPSE_MOON_RADIUS_AU = ${String(
+              eclipseMoonDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+            )};
+const float ECLIPSE_SUN_RADIUS_AU = ${String(
+              eclipseSunDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+            )};
+
+float eclipseDiscOverlapFraction(
+  float sunRadius,
+  float moonRadius,
+  float separation
+) {
+  if (separation >= sunRadius + moonRadius) {
+    return 0.0;
+  }
+  if (moonRadius >= separation + sunRadius) {
+    return 1.0;
+  }
+  if (sunRadius >= separation + moonRadius) {
+    return moonRadius * moonRadius / (sunRadius * sunRadius);
+  }
+  float separationSquared = separation * separation;
+  float sunSquared = sunRadius * sunRadius;
+  float moonSquared = moonRadius * moonRadius;
+  float sunSector = acos(clamp(
+    (separationSquared + sunSquared - moonSquared) /
+      (2.0 * separation * sunRadius),
+    -1.0,
+    1.0
+  ));
+  float moonSector = acos(clamp(
+    (separationSquared + moonSquared - sunSquared) /
+      (2.0 * separation * moonRadius),
+    -1.0,
+    1.0
+  ));
+  float lensRoot = sqrt(max(
+    0.0,
+    (-separation + sunRadius + moonRadius) *
+      (separation + sunRadius - moonRadius) *
+      (separation - sunRadius + moonRadius) *
+      (separation + sunRadius + moonRadius)
+  ));
+  float overlapArea =
+    sunSquared * sunSector + moonSquared * moonSector - 0.5 * lensRoot;
+  return clamp(overlapArea / (ECLIPSE_PI * sunSquared), 0.0, 1.0);
+}
+
+float physicalEclipseTransmission() {
+  vec3 surfacePointAu =
+    normalize(vEclipseSurfaceDirection) * ECLIPSE_EARTH_RADIUS_AU;
+  vec3 toSun = eclipseSunFromEarthAu - surfacePointAu;
+  vec3 toMoon = eclipseMoonFromEarthAu - surfacePointAu;
+  float sunDistance = length(toSun);
+  float moonDistance = length(toMoon);
+  float sunAngularRadius = asin(clamp(
+    ECLIPSE_SUN_RADIUS_AU / sunDistance,
+    0.0,
+    1.0
+  ));
+  float moonAngularRadius = asin(clamp(
+    ECLIPSE_MOON_RADIUS_AU / moonDistance,
+    0.0,
+    1.0
+  ));
+  float angularSeparation = acos(clamp(
+    dot(normalize(toSun), normalize(toMoon)),
+    -1.0,
+    1.0
+  ));
+  return 1.0 - eclipseDiscOverlapFraction(
+    sunAngularRadius,
+    moonAngularRadius,
+    angularSeparation
+  );
+}`,
+          )
+          .replace(
+            "#include <opaque_fragment>",
+            `outgoingLight *= mix(0.018, 1.0, physicalEclipseTransmission());
+#include <opaque_fragment>`,
+          );
+      };
+      material.customProgramCacheKey = () =>
+        "earth-finite-solar-disc-eclipse-occlusion-v1";
+      material.needsUpdate = true;
+    };
     const ringVisuals = new Map<
       string,
       Readonly<{
@@ -1282,37 +1395,6 @@ export function SolarSystemScene({
     eclipseShadowGroup.name = "Calculated lunar shadow on Earth";
     eclipseShadowGroup.visible = false;
     scene.add(eclipseShadowGroup);
-    const eclipsePenumbraGeometry = new CircleGeometry(1, 128);
-    const eclipseUmbraGeometry = new CircleGeometry(1, 128);
-    const eclipsePenumbraMaterial = new MeshBasicMaterial({
-      color: 0x10151b,
-      opacity: 0.28,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-    });
-    const eclipseUmbraMaterial = new MeshBasicMaterial({
-      color: 0x000000,
-      opacity: 0.82,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -3,
-    });
-    const eclipsePenumbraMesh = new Mesh(
-      eclipsePenumbraGeometry,
-      eclipsePenumbraMaterial,
-    );
-    const eclipseUmbraMesh = new Mesh(
-      eclipseUmbraGeometry,
-      eclipseUmbraMaterial,
-    );
-    eclipsePenumbraMesh.renderOrder = 8;
-    eclipseUmbraMesh.renderOrder = 9;
-    eclipseShadowGroup.add(eclipsePenumbraMesh, eclipseUmbraMesh);
-    geometries.push(eclipsePenumbraGeometry, eclipseUmbraGeometry);
-    materials.push(eclipsePenumbraMaterial, eclipseUmbraMaterial);
     const eclipseShadowLocator = document.createElement("span");
     eclipseShadowLocator.className = "eclipse-shadow-locator";
     eclipseShadowLocator.textContent = "Umbra";
@@ -1953,6 +2035,9 @@ export function SolarSystemScene({
           roughness: body.type === "moon" ? 0.92 : 0.74,
           metalness: 0,
         });
+        if (body.id === "earth") {
+          configureEarthEclipseOcclusion(surfaceMaterial);
+        }
         surfaceMaterials.set(body.id, surfaceMaterial);
         material = surfaceMaterial;
       }
@@ -3486,6 +3571,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           depthWrite: false,
           alphaTest: 0.018,
         });
+        configureEarthEclipseOcclusion(cloudMaterial);
         earthCloudMaterial = cloudMaterial;
         materials.push(cloudMaterial);
         const clouds = new Mesh(unitSphere, cloudMaterial);
@@ -3671,7 +3757,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastCameraTransitionSequence = cameraTransitionSequenceRef.current;
     let activeCameraTransition:
       | {
-          style: "direct" | "authored";
           sequence: number;
           startedAtMs: number;
           durationMs: number;
@@ -3679,23 +3764,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
           startTarget: Vector3;
           startUp: Vector3;
           orientationTarget: Vector3;
-          overviewStartPosition: Vector3;
-          overviewStartTarget: Vector3;
-          departureAnchor: Vector3;
-          overviewEndPosition: Vector3;
-          overviewEndTarget: Vector3;
-          destinationAnchor: Vector3;
-          destinationOverviewAnchorBodyId: string | undefined;
-          overviewEndDistanceAu: number;
-          isObserverDestination: boolean;
           endPosition: Vector3;
           endTarget: Vector3;
           endOffset: Vector3;
           destinationFocusBodyId: string | null;
           destinationTargetBodyId: string | undefined;
-          departureName: string;
           destinationName: string;
-          journeyDistanceAu: number;
           endUp: Vector3;
           endNear: number;
           endFar: number;
@@ -3995,6 +4069,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       observerBodyId: string,
       observerState: BodyState,
       targetPosition: Vector3,
+      current: SimulationState,
     ): Readonly<{ position: Vector3; up: Vector3 }> => {
       const observerDefinition = majorBodyById.get(observerBodyId);
       if (observerDefinition === undefined) {
@@ -4003,6 +4078,32 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
       }
       const observerCenter = scenePosition(observerState.positionM);
+      if (observerCameraStyleRef.current === "shadow-axis") {
+        const earthState = bodyStateById(current, "earth");
+        if (earthState === undefined) {
+          throw new Error("Eclipse camera requires the Earth state");
+        }
+        const earthPosition = scenePosition(earthState.positionM);
+        const footprintNormal = targetPosition
+          .clone()
+          .sub(earthPosition)
+          .normalize();
+        const cameraDistanceAu =
+          (eclipseEarthDefinition.meanRadiusM * 8) / ASTRONOMICAL_UNIT_M;
+        const position = targetPosition
+          .clone()
+          .add(footprintNormal.multiplyScalar(cameraDistanceAu));
+        container.dataset["cameraObserverAltitudeKm"] = (
+          (cameraDistanceAu * ASTRONOMICAL_UNIT_M) /
+          1_000
+        ).toFixed(3);
+        container.dataset["cameraObserverStyle"] =
+          observerCameraStyleRef.current;
+        return {
+          position,
+          up: ECLIPTIC_NORTH,
+        };
+      }
       const viewpoint =
         observerCameraStyleRef.current === "limb"
           ? limbObserverViewpoint(
@@ -4029,6 +4130,52 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : ECLIPTIC_NORTH,
       };
     };
+
+    const eclipseShadowFootprintPosition = (
+      current: SimulationState,
+    ): Vector3 => {
+      const earthState = bodyStateById(current, "earth");
+      const moonState = bodyStateById(current, "moon");
+      const sunState = bodyStateById(current, "sun");
+      if (
+        earthState === undefined ||
+        moonState === undefined ||
+        sunState === undefined
+      ) {
+        throw new Error(
+          "Eclipse camera requires the Sun, Earth, and Moon state",
+        );
+      }
+      const earthPosition = scenePosition(earthState.positionM);
+      const moonPosition = scenePosition(moonState.positionM);
+      const sunPosition = scenePosition(sunState.positionM);
+      const shadowDirection = moonPosition.clone().sub(sunPosition).normalize();
+      const moonToEarth = earthPosition.clone().sub(moonPosition);
+      const alongAxisAu = moonToEarth.dot(shadowDirection);
+      const closestAxisPoint = moonPosition
+        .clone()
+        .addScaledVector(shadowDirection, alongAxisAu);
+      const axisOffsetAu = closestAxisPoint.distanceTo(earthPosition);
+      const earthRadiusAu =
+        eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
+      if (alongAxisAu <= 0 || axisOffsetAu >= earthRadiusAu) {
+        throw new Error("The live lunar shadow axis does not intersect Earth");
+      }
+      const surfaceOffsetAu = Math.sqrt(
+        earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
+      );
+      return closestAxisPoint.sub(
+        shadowDirection.clone().multiplyScalar(surfaceOffsetAu),
+      );
+    };
+
+    const observerTargetPosition = (
+      current: SimulationState,
+      targetState: BodyState,
+    ): Vector3 =>
+      observerCameraStyleRef.current === "shadow-axis"
+        ? eclipseShadowFootprintPosition(current)
+        : scenePosition(targetState.positionM);
 
     const parentFacingCameraDirection = (
       bodyId: string,
@@ -4193,11 +4340,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
       camera.far = DEFAULT_CAMERA_FAR_AU;
       camera.updateProjectionMatrix();
       if (targetState !== undefined && requestedTargetBodyId !== undefined) {
-        const targetPosition = scenePosition(targetState.positionM);
+        const targetPosition = observerTargetPosition(current, targetState);
         const observerPose = observerCameraPose(
           requestedFocusBodyId,
           focusState,
           targetPosition,
+          current,
         );
         const observerPosition = observerPose.position;
         const observerDistance = observerPosition.distanceTo(targetPosition);
@@ -4311,11 +4459,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
             `Observer view ${requestedFocusBodyId} to ${requestedTargetBodyId} is unavailable`,
           );
         }
-        const targetPosition = scenePosition(targetState.positionM);
+        const targetPosition = observerTargetPosition(current, targetState);
         const observerPose = observerCameraPose(
           requestedFocusBodyId,
           observerState,
           targetPosition,
+          current,
         );
         camera.position.copy(observerPose.position);
         controls.target.copy(targetPosition);
@@ -4524,6 +4673,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       cameraJourney.hidden = true;
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
+      container.dataset["cameraTransitionRemainingDistanceAu"] = "0.000000";
       container.dataset["cameraTransitionSequence"] = String(
         transition.sequence,
       );
@@ -4575,69 +4725,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
         requestedFocusBodyId,
         current,
       );
-      const overviewDistanceAu = cameraTransitionOverviewDistanceAuRef.current;
-      if (!Number.isFinite(overviewDistanceAu) || overviewDistanceAu <= 0) {
-        throw new Error(
-          "Camera transition overview distance must be positive and finite",
-        );
-      }
       const endPosition = camera.position.clone();
       const endTarget = controls.target.clone();
-      const departureBodyId = lastFocusBodyId;
-      const departureState =
-        departureBodyId === null || departureBodyId === undefined
-          ? undefined
-          : bodyStateById(current, departureBodyId);
-      const departureAnchor =
-        departureState === undefined
-          ? startTarget.clone()
-          : scenePosition(departureState.positionM);
-      const destinationOverviewAnchorBodyId =
-        cameraTransitionOverviewAnchorBodyIdRef.current;
-      const destinationOverviewAnchorState =
-        destinationOverviewAnchorBodyId === undefined
-          ? undefined
-          : bodyStateById(current, destinationOverviewAnchorBodyId);
-      if (
-        destinationOverviewAnchorBodyId !== undefined &&
-        destinationOverviewAnchorState === undefined
-      ) {
-        throw new Error(
-          `Camera overview anchor ${destinationOverviewAnchorBodyId} is unavailable`,
-        );
-      }
-      const destinationAnchor =
-        destinationOverviewAnchorState === undefined
-          ? endTarget.clone()
-          : scenePosition(destinationOverviewAnchorState.positionM);
-      const journeyDistanceAu = departureAnchor.equals(destinationAnchor)
-        ? 0
-        : departureAnchor.distanceTo(destinationAnchor);
-      const framingDistanceAu = Math.max(
-        overviewDistanceAu,
-        cameraTransitionAutoFrameRef.current ? journeyDistanceAu * 1.4 : 0,
-      );
-      const isObserverDestination = cameraTargetBodyIdRef.current !== undefined;
-      const observerSeparationAu = destinationAnchor.distanceTo(endTarget);
-      const overviewEndDistanceAu = isObserverDestination
-        ? Math.min(framingDistanceAu, observerSeparationAu * 0.35)
-        : framingDistanceAu;
-      if (
-        !Number.isFinite(overviewEndDistanceAu) ||
-        overviewEndDistanceAu <= 0
-      ) {
-        throw new Error(
-          "Camera transition destination overview distance must be positive and finite",
-        );
-      }
-      const overviewStartTarget = startTarget.clone();
       const startLookDistanceAu = Math.max(
         startPosition.distanceTo(startTarget),
         DEFAULT_CAMERA_NEAR_AU * 10,
       );
-      const destinationLookDirection = destinationAnchor
-        .clone()
-        .sub(startPosition);
+      const destinationLookDirection = endTarget.clone().sub(startPosition);
       const orientationTarget =
         destinationLookDirection.lengthSq() <= Number.EPSILON
           ? endTarget.clone()
@@ -4648,12 +4742,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   .normalize()
                   .multiplyScalar(startLookDistanceAu),
               );
-      const overviewEndTarget = isObserverDestination
-        ? endTarget.clone()
-        : destinationAnchor.clone();
-      const destinationOverviewDirection = isObserverDestination
-        ? endPosition.clone().sub(destinationAnchor).normalize()
-        : PERSPECTIVE_CAMERA_DIRECTION.clone();
       const bodyName = (bodyId: string | null | undefined): string => {
         if (bodyId === null || bodyId === undefined || bodyId === "") {
           return "the Solar System";
@@ -4669,7 +4757,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
       };
       const transitionStartedAtMs = performance.now();
       activeCameraTransition = {
-        style: cameraTransitionAutoFrameRef.current ? "direct" : "authored",
         sequence,
         startedAtMs: transitionStartedAtMs,
         durationMs,
@@ -4677,33 +4764,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
         startTarget,
         startUp,
         orientationTarget,
-        overviewStartPosition: departureAnchor
-          .clone()
-          .add(
-            PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(
-              framingDistanceAu,
-            ),
-          ),
-        overviewStartTarget,
-        departureAnchor,
-        overviewEndPosition: destinationAnchor
-          .clone()
-          .add(
-            destinationOverviewDirection.multiplyScalar(overviewEndDistanceAu),
-          ),
-        overviewEndTarget,
-        destinationAnchor,
-        destinationOverviewAnchorBodyId,
-        overviewEndDistanceAu,
-        isObserverDestination,
         endPosition,
         endTarget,
         endOffset: endPosition.clone().sub(endTarget),
         destinationFocusBodyId: requestedFocusBodyId,
         destinationTargetBodyId: cameraTargetBodyIdRef.current,
-        departureName: bodyName(departureBodyId),
         destinationName: bodyName(requestedFocusBodyId),
-        journeyDistanceAu,
         endUp: camera.up.clone(),
         endNear: camera.near,
         endFar: camera.far,
@@ -4725,19 +4791,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraTransitionPhase"] = "orienting";
       container.dataset["cameraTransitionSequence"] = String(sequence);
       container.dataset["cameraTransitionOverviewAnchor"] =
-        activeCameraTransition.style === "direct"
-          ? "not-used-direct-flight"
-          : "moving-route";
+        "not-used-direct-flight";
       container.dataset["cameraTransitionDestinationAnchor"] =
-        destinationOverviewAnchorBodyId ?? "camera-target";
+        requestedFocusBodyId ?? "camera-target";
       container.dataset["cameraTransitionDurationMs"] = String(durationMs);
       container.dataset["cameraTransitionSpeedDefinition"] =
         "camera-displacement-per-real-second";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterpolation"] =
-        activeCameraTransition.style === "direct"
-          ? "orient-then-logarithmic-approach"
-          : "orient-depart-coast-arrive";
+        "orient-then-direct-flight";
+      container.dataset["cameraTransitionRoute"] = "current-to-destination";
+      container.dataset["cameraTransitionRoutePoints"] = "2";
+      container.dataset["cameraTransitionRemainingDistanceAu"] = startPosition
+        .distanceTo(endPosition)
+        .toFixed(6);
       cameraJourney.hidden = false;
       cameraJourney.title =
         "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
@@ -4796,9 +4863,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
         transition.endPosition.copy(inspectionPose.position);
         transition.endTarget.copy(inspectionPose.target);
         transition.endUp.copy(inspectionPose.up);
-        transition.destinationAnchor.copy(inspectionPose.target);
-        transition.overviewEndTarget.copy(inspectionPose.target);
-        transition.overviewEndPosition.copy(inspectionPose.position);
         transition.endOffset.copy(
           inspectionPose.position.clone().sub(inspectionPose.target),
         );
@@ -4814,23 +4878,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           transition.destinationTargetBodyId === undefined
             ? undefined
             : bodyStateById(current, transition.destinationTargetBodyId);
-        const overviewAnchorState =
-          transition.destinationOverviewAnchorBodyId === undefined
-            ? undefined
-            : bodyStateById(
-                current,
-                transition.destinationOverviewAnchorBodyId,
-              );
         if (focusState !== undefined) {
           transition.endTarget.copy(
             targetState === undefined
               ? scenePosition(focusState.positionM)
-              : scenePosition(targetState.positionM),
-          );
-          transition.destinationAnchor.copy(
-            overviewAnchorState === undefined
-              ? transition.endTarget
-              : scenePosition(overviewAnchorState.positionM),
+              : observerTargetPosition(current, targetState),
           );
           if (
             targetState !== undefined &&
@@ -4840,6 +4892,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               transition.destinationFocusBodyId,
               focusState,
               transition.endTarget,
+              current,
             );
             transition.endPosition.copy(observerPose.position);
             transition.endUp.copy(observerPose.up);
@@ -4848,159 +4901,63 @@ float saturnRingTransmission(vec3 surfacePosition) {
               .copy(transition.endTarget)
               .add(transition.endOffset);
           }
-          transition.overviewEndTarget.copy(
-            transition.isObserverDestination
-              ? transition.endTarget
-              : transition.destinationAnchor,
-          );
-          transition.overviewEndPosition
-            .copy(transition.destinationAnchor)
-            .add(
-              (transition.isObserverDestination
-                ? transition.endPosition
-                    .clone()
-                    .sub(transition.destinationAnchor)
-                    .normalize()
-                : PERSPECTIVE_CAMERA_DIRECTION.clone()
-              ).multiplyScalar(transition.overviewEndDistanceAu),
-            );
         }
       }
-      if (transition.style === "direct") {
-        const directSample = sampleDirectCameraTransition(
-          elapsedMs,
-          transition.durationMs,
-        );
-        container.dataset["cameraTransitionPhase"] = directSample.phase;
-        if (directSample.phase === "settled") {
-          completeCameraTransition();
-          return;
-        }
-        if (directSample.phase === "orienting") {
-          camera.position.copy(transition.startPosition);
-          controls.target.lerpVectors(
-            transition.startTarget,
-            transition.endTarget,
-            directSample.segmentProgress,
-          );
-          camera.up
-            .lerpVectors(
-              transition.startUp,
-              ECLIPTIC_NORTH,
-              directSample.segmentProgress,
-            )
-            .normalize();
-          updateJourneyStatus(
-            `Turning toward ${transition.destinationName}`,
-            false,
-          );
-        } else {
-          interpolateCameraPositionAroundAnchor(
-            camera.position,
-            transition.startPosition,
-            transition.endPosition,
-            transition.endTarget,
-            directSample.segmentProgress,
-          );
-          controls.target.copy(transition.endTarget);
-          camera.up
-            .lerpVectors(
-              ECLIPTIC_NORTH,
-              transition.endUp,
-              directSample.segmentProgress,
-            )
-            .normalize();
-          updateJourneyStatus(
-            directSample.phase === "arriving"
-              ? `Approaching ${transition.destinationName}`
-              : `Travelling to ${transition.destinationName}`,
-            true,
-          );
-        }
-        camera.lookAt(controls.target);
-        return;
-      }
-      const sample = sampleCameraTransition(elapsedMs, transition.durationMs);
-      container.dataset["cameraTransitionPhase"] = sample.phase;
-      if (sample.phase === "settled") {
+      const directSample = sampleDirectCameraTransition(
+        elapsedMs,
+        transition.durationMs,
+      );
+      container.dataset["cameraTransitionPhase"] = directSample.phase;
+      if (directSample.phase === "settled") {
         completeCameraTransition();
         return;
       }
-      let journeyStatus = `Turning toward ${transition.destinationName}`;
-      let measureJourneySpeed = false;
-      if (sample.phase === "orienting") {
+      if (directSample.phase === "orienting") {
         camera.position.copy(transition.startPosition);
         controls.target.lerpVectors(
           transition.startTarget,
           transition.orientationTarget,
-          sample.segmentProgress,
+          directSample.segmentProgress,
         );
         camera.up
           .lerpVectors(
             transition.startUp,
             ECLIPTIC_NORTH,
-            sample.segmentProgress,
+            directSample.segmentProgress,
           )
           .normalize();
-      } else if (sample.phase === "outbound") {
-        interpolateCameraPositionAroundAnchor(
-          camera.position,
+        updateJourneyStatus(
+          `Turning toward ${transition.destinationName}`,
+          false,
+        );
+      } else {
+        camera.position.lerpVectors(
           transition.startPosition,
-          transition.overviewStartPosition,
-          transition.departureAnchor,
-          sample.segmentProgress,
+          transition.endPosition,
+          directSample.segmentProgress,
         );
         controls.target.lerpVectors(
           transition.orientationTarget,
-          transition.overviewStartTarget,
-          sample.segmentProgress,
-        );
-        camera.up.copy(ECLIPTIC_NORTH);
-        journeyStatus = `Departing ${transition.departureName}`;
-        measureJourneySpeed = true;
-      } else if (sample.phase === "overview") {
-        camera.position.lerpVectors(
-          transition.overviewStartPosition,
-          transition.overviewEndPosition,
-          sample.segmentProgress,
-        );
-        controls.target.lerpVectors(
-          transition.overviewStartTarget,
-          transition.overviewEndTarget,
-          sample.segmentProgress,
-        );
-        camera.up.copy(ECLIPTIC_NORTH);
-        container.dataset["cameraTransitionOverviewVisited"] = String(
-          transition.sequence,
-        );
-        container.dataset["cameraTransitionOverviewDistanceAu"] =
-          transition.overviewStartPosition
-            .distanceTo(transition.overviewStartTarget)
-            .toFixed(6);
-        journeyStatus = `Crossing ${formatTacticalDistance(
-          transition.journeyDistanceAu,
-        )} toward ${transition.destinationName}`;
-        measureJourneySpeed = true;
-      } else {
-        interpolateCameraPositionAroundAnchor(
-          camera.position,
-          transition.overviewEndPosition,
-          transition.endPosition,
-          transition.destinationAnchor,
-          sample.segmentProgress,
-        );
-        controls.target.lerpVectors(
-          transition.overviewEndTarget,
           transition.endTarget,
-          sample.segmentProgress,
+          directSample.segmentProgress,
         );
         camera.up
-          .lerpVectors(ECLIPTIC_NORTH, transition.endUp, sample.segmentProgress)
+          .lerpVectors(
+            ECLIPTIC_NORTH,
+            transition.endUp,
+            directSample.segmentProgress,
+          )
           .normalize();
-        journeyStatus = `Arriving at ${transition.destinationName}`;
-        measureJourneySpeed = true;
+        updateJourneyStatus(
+          directSample.phase === "arriving"
+            ? `Approaching ${transition.destinationName}`
+            : `Travelling to ${transition.destinationName}`,
+          true,
+        );
       }
-      updateJourneyStatus(journeyStatus, measureJourneySpeed);
+      container.dataset["cameraTransitionRemainingDistanceAu"] = camera.position
+        .distanceTo(transition.endPosition)
+        .toFixed(6);
       camera.lookAt(controls.target);
     };
 
@@ -5484,6 +5441,25 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const moonDefinitionForEclipse = majorBodyById.get("moon");
         const sunDefinitionForEclipse = majorBodyById.get("sun");
         if (
+          earthStateForEclipse !== undefined &&
+          moonStateForEclipse !== undefined &&
+          sunStateForEclipse !== undefined
+        ) {
+          const earthPosition = scenePosition(earthStateForEclipse.positionM);
+          const moonPosition = scenePosition(moonStateForEclipse.positionM);
+          const sunPosition = scenePosition(sunStateForEclipse.positionM);
+          for (const uniforms of earthEclipseOcclusionUniforms) {
+            uniforms.sunFromEarthAu.value.copy(
+              sunPosition.clone().sub(earthPosition),
+            );
+            uniforms.moonFromEarthAu.value.copy(
+              moonPosition.clone().sub(earthPosition),
+            );
+          }
+          container.dataset["earthEclipseLighting"] =
+            "finite-sun-disc-analytic-occlusion";
+        }
+        if (
           eclipseShadowVisibleRef.current &&
           earthStateForEclipse !== undefined &&
           moonStateForEclipse !== undefined &&
@@ -5520,6 +5496,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
               .clone()
               .sub(earthPosition)
               .normalize();
+            const earthFixedFootprint = outwardNormal.applyQuaternion(
+              bodyOrientationQuaternion("earth", current.timeSeconds)
+                .clone()
+                .invert(),
+            );
+            const footprintLatitudeDeg =
+              (Math.asin(Math.max(-1, Math.min(1, earthFixedFootprint.y))) *
+                180) /
+              Math.PI;
+            const footprintLongitudeDeg =
+              (Math.atan2(earthFixedFootprint.z, earthFixedFootprint.x) * 180) /
+              Math.PI;
+            container.dataset["eclipseShadowLatitudeDeg"] =
+              footprintLatitudeDeg.toFixed(6);
+            container.dataset["eclipseShadowLongitudeDeg"] =
+              footprintLongitudeDeg.toFixed(6);
             const moonSunDistanceM =
               moonPosition.distanceTo(sunPosition) * ASTRONOMICAL_UNIT_M;
             const moonEarthDistanceM =
@@ -5548,15 +5540,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
               new Vector3(0, 0, 1),
               outwardNormal,
             );
-            eclipseUmbraMesh.scale.setScalar(
-              Math.max(
-                umbraRadiusM / ASTRONOMICAL_UNIT_M,
-                earthRadiusAu * 0.008,
-              ),
-            );
-            eclipsePenumbraMesh.scale.setScalar(
-              penumbraRadiusM / ASTRONOMICAL_UNIT_M,
-            );
             eclipseShadowGroup.visible = true;
             container.dataset["eclipseShadowVisible"] = "true";
             container.dataset["eclipseUmbraRadiusKm"] = (
@@ -5573,11 +5556,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
             eclipseShadowGroup.visible = false;
             eclipseShadowLocator.hidden = true;
             container.dataset["eclipseShadowVisible"] = "false";
+            delete container.dataset["eclipseShadowLatitudeDeg"];
+            delete container.dataset["eclipseShadowLongitudeDeg"];
           }
         } else {
           eclipseShadowGroup.visible = false;
           eclipseShadowLocator.hidden = true;
           container.dataset["eclipseShadowVisible"] = "false";
+          delete container.dataset["eclipseShadowLatitudeDeg"];
+          delete container.dataset["eclipseShadowLongitudeDeg"];
         }
 
         const monolithState = jovianMonolithState(current);
@@ -6057,11 +6044,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 requestedTargetBodyId !== undefined &&
                 targetState !== undefined
               ) {
-                const targetPosition = scenePosition(targetState.positionM);
+                const targetPosition = observerTargetPosition(
+                  current,
+                  targetState,
+                );
                 const observerPose = observerCameraPose(
                   requestedFocusBodyId,
                   focusState,
                   targetPosition,
+                  current,
                 );
                 camera.position.copy(observerPose.position);
                 controls.target.copy(targetPosition);
@@ -7595,6 +7586,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           visibleLabelCount += 1;
           occupiedLabelRectangles.push(candidateRectangle);
           label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
+          if (body.id === "earth" || body.id === "moon") {
+            container.dataset[
+              body.id === "earth" ? "earthScreenX" : "moonScreenX"
+            ] = projectedLabelX.toFixed(3);
+            container.dataset[
+              body.id === "earth" ? "earthScreenY" : "moonScreenY"
+            ] = projectedLabelY.toFixed(3);
+          }
         }
         const marker = bodyMarkers.get(body.id);
         if (marker !== undefined) {

@@ -1,11 +1,3 @@
-export type CameraTransitionPhase =
-  "orienting" | "outbound" | "overview" | "inbound" | "settled";
-
-export type CameraTransitionSample = Readonly<{
-  phase: CameraTransitionPhase;
-  segmentProgress: number;
-}>;
-
 export type DirectCameraTransitionPhase =
   "orienting" | "travelling" | "arriving" | "settled";
 
@@ -19,9 +11,6 @@ export type OrientationTransitionSample = Readonly<{
   progress: number;
 }>;
 
-const AUTHORED_ORIENTATION_END = 0.3;
-const OUTBOUND_END = 0.5;
-const INBOUND_START = 0.75;
 const DIRECT_ORIENTATION_END = 0.34;
 const DIRECT_ARRIVAL_START = 0.68;
 const SPEED_OF_LIGHT_MPS = 299_792_458;
@@ -70,53 +59,6 @@ export function interpolateLogarithmicDistance(
     Math.log(startDistance) +
       (Math.log(endDistance) - Math.log(startDistance)) * clampedProgress,
   );
-}
-
-export function sampleCameraTransition(
-  elapsedMs: number,
-  durationMs: number,
-): CameraTransitionSample {
-  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
-    throw new Error(
-      "Camera transition elapsed time must be finite and non-negative",
-    );
-  }
-  if (!Number.isFinite(durationMs) || durationMs <= 0) {
-    throw new Error("Camera transition duration must be positive and finite");
-  }
-  const progress = Math.min(1, elapsedMs / durationMs);
-  if (progress >= 1) {
-    return { phase: "settled", segmentProgress: 1 };
-  }
-  if (progress < AUTHORED_ORIENTATION_END) {
-    return {
-      phase: "orienting",
-      segmentProgress: smootherStep(progress / AUTHORED_ORIENTATION_END),
-    };
-  }
-  if (progress < OUTBOUND_END) {
-    return {
-      phase: "outbound",
-      segmentProgress: smootherStep(
-        (progress - AUTHORED_ORIENTATION_END) /
-          (OUTBOUND_END - AUTHORED_ORIENTATION_END),
-      ),
-    };
-  }
-  if (progress <= INBOUND_START) {
-    return {
-      phase: "overview",
-      segmentProgress: smootherStep(
-        (progress - OUTBOUND_END) / (INBOUND_START - OUTBOUND_END),
-      ),
-    };
-  }
-  return {
-    phase: "inbound",
-    segmentProgress: smootherStep(
-      (progress - INBOUND_START) / (1 - INBOUND_START),
-    ),
-  };
 }
 
 export function sampleDirectCameraTransition(

@@ -9,10 +9,6 @@ async function waitForCameraJourney(
     .not.toBe(previousSequence);
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
-    "orienting",
-  );
-  await expect(scene).toHaveAttribute(
-    "data-camera-transition-phase",
     "settled",
     { timeout: 16_000 },
   );
@@ -162,9 +158,6 @@ test("keeps escape navigation visible and guides the user through scale", async 
     )
     .toBeCloseTo(fittedDistance, 6);
 
-  const previousOverviewSequence = await scene.getAttribute(
-    "data-camera-transition-overview-visited",
-  );
   const sequenceBeforeMoonGap = await scene.getAttribute(
     "data-camera-transition-sequence",
   );
@@ -176,22 +169,17 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
   await waitForCameraJourney(scene, sequenceBeforeMoonGap);
-  await expect
-    .poll(async () =>
-      scene.getAttribute("data-camera-transition-overview-visited"),
-    )
-    .not.toBe(previousOverviewSequence);
   await expect(scene).toHaveAttribute(
-    "data-camera-transition-overview-distance-au",
-    "0.012000",
+    "data-camera-transition-route-points",
+    "2",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-overview-anchor",
-    "moving-route",
+    "not-used-direct-flight",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
-    "orient-depart-coast-arrive",
+    "orient-then-direct-flight",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-duration-ms",

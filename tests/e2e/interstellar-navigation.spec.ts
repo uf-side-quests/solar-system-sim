@@ -42,7 +42,7 @@ test("turns toward a new manual focus before travelling there directly", async (
   await focusObject(page, "Jupiter");
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
-    "orient-then-logarithmic-approach",
+    "orient-then-direct-flight",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
@@ -81,7 +81,11 @@ test("turns toward a new manual focus before travelling there directly", async (
   const arrivalDistances: number[] = [];
   for (let sample = 0; sample < 4; sample += 1) {
     arrivalDistances.push(
-      Number(await scene.getAttribute("data-camera-distance-au")),
+      Number(
+        await scene.getAttribute(
+          "data-camera-transition-remaining-distance-au",
+        ),
+      ),
     );
     await page.locator("canvas.major-body-layer").screenshot({
       path: testInfo.outputPath(`jupiter-arrival-${String(sample + 1)}.png`),

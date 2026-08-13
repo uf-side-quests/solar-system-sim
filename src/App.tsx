@@ -746,7 +746,7 @@ export function App() {
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
-  const [timeRateIndex, setTimeRateIndex] = useState(3);
+  const [timeRateIndex, setTimeRateIndex] = useState(4);
   const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
@@ -2496,8 +2496,10 @@ export function App() {
 
         <time
           className="global-simulation-clock"
-          dateTime={simulationDateUtc(state?.timeSeconds ?? 0).toISOString()}
-          data-time-seconds={(state?.timeSeconds ?? 0).toFixed(3)}
+          dateTime={simulationDateUtc(state?.timeSeconds ?? 0)
+            .toISOString()
+            .replace(/\.\d{3}Z$/u, "Z")}
+          data-time-seconds={(state?.timeSeconds ?? 0).toFixed(0)}
         >
           {formatSimulationDateUtc(state?.timeSeconds ?? 0)}
         </time>
@@ -2579,29 +2581,6 @@ export function App() {
               }
               cameraTransitionSequence={tourTransitionSequence}
               cameraTransitionDurationMs={tourTransitionDurationMs}
-              cameraTransitionAutoFrame={
-                activeTourStep === undefined &&
-                activeCinematicShot?.cameraDistanceAu === undefined
-              }
-              cameraTransitionOverviewAnchorBodyId={
-                activeTourStep?.transitionOverviewAnchorBodyId ??
-                (activeCinematicShot?.cameraTargetBodyId === undefined
-                  ? undefined
-                  : activeCinematicShot.focusBodyId)
-              }
-              cameraTransitionOverviewDistanceAu={
-                activeTourStep?.transitionOverviewDistanceAu ??
-                (activeCinematicShot?.cameraTargetBodyId === undefined
-                  ? undefined
-                  : 0.008) ??
-                (focusBodyId === "" || focusBodyId === "sun"
-                  ? 90
-                  : focusBodyId === ISS_BODY_ID ||
-                      isVoyagerBodyId(focusBodyId) ||
-                      isOperationalSpacecraftBodyId(focusBodyId)
-                    ? 0.000_001
-                    : 0.01)
-              }
               cameraNavigationCommand={cameraNavigationCommand}
               orbitViewEnabled={orbitViewEnabled}
               orbitConfiguration={activeOrbitConfiguration}

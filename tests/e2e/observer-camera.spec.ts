@@ -97,7 +97,15 @@ test("anchors every observer scene at its origin while centring its look-at targ
       await expect(tour).toHaveAttribute("data-tour-target", step.targetBodyId);
       await expect(scene).toHaveAttribute(
         "data-camera-transition-interpolation",
-        "orient-depart-coast-arrive",
+        "orient-then-direct-flight",
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-route",
+        "current-to-destination",
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-route-points",
+        "2",
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-duration-ms",
@@ -109,28 +117,8 @@ test("anchors every observer scene at its origin while centring its look-at targ
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-phase",
-        "overview",
+        "travelling",
         { timeout: 9_000 },
-      );
-      const overviewAnchorPosition = {
-        x: Number(
-          await scene.getAttribute("data-camera-transition-anchor-screen-x"),
-        ),
-        y: Number(
-          await scene.getAttribute("data-camera-transition-anchor-screen-y"),
-        ),
-      };
-      const overviewSceneSize = await scene.evaluate((element) => ({
-        width: element.clientWidth,
-        height: element.clientHeight,
-      }));
-      expect(overviewAnchorPosition.x).toBeCloseTo(
-        overviewSceneSize.width / 2,
-        3,
-      );
-      expect(overviewAnchorPosition.y).toBeCloseTo(
-        overviewSceneSize.height / 2,
-        3,
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-phase",
@@ -143,7 +131,7 @@ test("anchors every observer scene at its origin while centring its look-at targ
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-overview-anchor",
-        "moving-route",
+        "not-used-direct-flight",
       );
       await expect(scene).toHaveAttribute(
         "data-camera-transition-destination-anchor",
