@@ -72,6 +72,7 @@ import type {
 } from "./scene/gravity-potential";
 import { type SimulationFrame } from "./scene/interpolation";
 import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
+import type { ExposureMode } from "./scene/physical-lighting";
 import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
@@ -206,6 +207,11 @@ const CAMERA_ORIENTATION_OPTIONS = [
     id: "sun-facing",
     label: "Sunlit side",
     description: "Look toward the side that faces the Sun.",
+  },
+  {
+    id: "terminator",
+    label: "Day and night",
+    description: "See the physical boundary between sunlight and darkness.",
   },
   {
     id: "parent-facing",
@@ -746,7 +752,7 @@ export function App() {
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
-  const [timeRateIndex, setTimeRateIndex] = useState(3);
+  const [timeRateIndex, setTimeRateIndex] = useState(4);
   const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
@@ -821,6 +827,13 @@ export function App() {
     useState(0);
   const [visualQuality, setVisualQuality] =
     useState<VisualQuality>("photographic");
+  const [exposureMode, setExposureMode] = useState<ExposureMode>("auto");
+  const [manualExposureEv, setManualExposureEv] = useState(0);
+  const [exposureStatus, setExposureStatus] = useState({
+    ev: 0,
+    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
+    mode: "auto" as ExposureMode,
+  });
   const [immersiveMode, setImmersiveMode] = useState(false);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
     useState(false);
@@ -2496,8 +2509,10 @@ export function App() {
 
         <time
           className="global-simulation-clock"
-          dateTime={simulationDateUtc(state?.timeSeconds ?? 0).toISOString()}
-          data-time-seconds={(state?.timeSeconds ?? 0).toFixed(3)}
+          dateTime={simulationDateUtc(state?.timeSeconds ?? 0)
+            .toISOString()
+            .replace(/\.\d{3}Z$/u, "Z")}
+          data-time-seconds={(state?.timeSeconds ?? 0).toFixed(0)}
         >
           {formatSimulationDateUtc(state?.timeSeconds ?? 0)}
         </time>
@@ -2579,29 +2594,6 @@ export function App() {
               }
               cameraTransitionSequence={tourTransitionSequence}
               cameraTransitionDurationMs={tourTransitionDurationMs}
-              cameraTransitionAutoFrame={
-                activeTourStep === undefined &&
-                activeCinematicShot?.cameraDistanceAu === undefined
-              }
-              cameraTransitionOverviewAnchorBodyId={
-                activeTourStep?.transitionOverviewAnchorBodyId ??
-                (activeCinematicShot?.cameraTargetBodyId === undefined
-                  ? undefined
-                  : activeCinematicShot.focusBodyId)
-              }
-              cameraTransitionOverviewDistanceAu={
-                activeTourStep?.transitionOverviewDistanceAu ??
-                (activeCinematicShot?.cameraTargetBodyId === undefined
-                  ? undefined
-                  : 0.008) ??
-                (focusBodyId === "" || focusBodyId === "sun"
-                  ? 90
-                  : focusBodyId === ISS_BODY_ID ||
-                      isVoyagerBodyId(focusBodyId) ||
-                      isOperationalSpacecraftBodyId(focusBodyId)
-                    ? 0.000_001
-                    : 0.01)
-              }
               cameraNavigationCommand={cameraNavigationCommand}
               orbitViewEnabled={orbitViewEnabled}
               orbitConfiguration={activeOrbitConfiguration}
@@ -2612,6 +2604,8 @@ export function App() {
               surfaceObserver={surfaceObserverConfiguration}
               surfaceObserverLookResetToken={surfaceObserverLookResetToken}
               visualQuality={visualQuality}
+              exposureMode={exposureMode}
+              manualExposureEv={manualExposureEv}
               deepSpacePresentation={activeTourStep?.presentation}
               eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
               onSelectBody={handleSceneBodySelection}
@@ -2622,6 +2616,7 @@ export function App() {
               onViewZoomChange={setViewMagnification}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
+              onExposureStatusChange={setExposureStatus}
             />
           </Suspense>
         )}
@@ -3328,6 +3323,41 @@ export function App() {
                 adaptation. Balanced and Battery reduce GPU work without
                 changing positions or physics.
               </small>
+              <label>
+                Exposure
+                <select
+                  aria-label="Exposure mode"
+                  value={exposureMode}
+                  onChange={(event) =>
+                    setExposureMode(event.currentTarget.value as ExposureMode)
+                  }
+                >
+                  <option value="auto">Automatic camera</option>
+                  <option value="manual">Manual EV</option>
+                </select>
+              </label>
+              {exposureMode === "manual" && (
+                <label>
+                  Exposure value
+                  <input
+                    aria-label="Manual exposure EV"
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="0.25"
+                    value={manualExposureEv}
+                    onChange={(event) =>
+                      setManualExposureEv(event.currentTarget.valueAsNumber)
+                    }
+                  />
+                </label>
+              )}
+              <output className="exposure-readout" aria-live="polite">
+                {exposureStatus.mode === "auto" ? "Auto" : "Manual"}{" "}
+                {exposureStatus.ev >= 0 ? "+" : ""}
+                {exposureStatus.ev.toFixed(2)} EV · {"×"}
+                {exposureStatus.multiplier.toFixed(3)}
+              </output>
             </div>
           </section>
 

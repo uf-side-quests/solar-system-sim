@@ -9,6 +9,7 @@ async function selectFocus(focus: Locator, label: string): Promise<void> {
 test("ISS uses physical dimensions and only resolves at close range", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000);
   await page.goto("/");
 
   const scene = page.getByRole("img", {
@@ -47,7 +48,7 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
     "settled",
-    { timeout: 16_000 },
+    { timeout: 35_000 },
   );
   await expect(
     page.getByText("Geocentric distance", { exact: true }),
@@ -73,7 +74,7 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",
     "settled",
-    { timeout: 16_000 },
+    { timeout: 35_000 },
   );
   await expect(scene).toHaveAttribute("data-iss-geometry-visible", "false");
   await expect

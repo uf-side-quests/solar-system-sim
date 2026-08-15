@@ -3,14 +3,12 @@ import type { RefObject } from "react";
 import {
   ACESFilmicToneMapping,
   AdditiveBlending,
-  AmbientLight,
   Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
-  CanvasTexture,
-  CircleGeometry,
   Color,
+  DirectionalLight,
   DoubleSide,
   DynamicDrawUsage,
   GridHelper,
@@ -22,19 +20,17 @@ import {
   Matrix4,
   Material,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   Points,
   PointsMaterial,
   PointLight,
+  PCFShadowMap,
   Quaternion,
   Raycaster,
   RingGeometry,
   Scene,
   SphereGeometry,
-  Sprite,
-  SpriteMaterial,
   SRGBColorSpace,
   ShaderMaterial,
   Texture,
@@ -114,7 +110,6 @@ import {
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
   sampleOrientationTransition,
-  sampleCameraTransition,
 } from "./camera-transition";
 import {
   JOVIAN_MONOLITH_BODY_ID,
@@ -198,9 +193,12 @@ import {
 } from "./wayfinder";
 import {
   nasaEarthCloudAsset,
+  nasaEarthNightLightAsset,
   nasaMaterialPresentationByBodyId,
   nasaMoonHeightAsset,
   nasaSaturnRingAsset,
+  nasaSurfaceNormalByBodyId,
+  nasaSurfaceRoughnessByBodyId,
   nasaTextureByBodyId,
 } from "./visual-assets";
 import type { ReferenceFrame, SemanticZoomLevel, ViewMode } from "./view-mode";
@@ -212,6 +210,12 @@ import {
 } from "./visual-quality";
 import { ROADSTER_BODY_ID, spacecraftAssets } from "./spacecraft-assets";
 import { enforceOpaqueTwoSidedExterior } from "./model-exterior-materials";
+import {
+  eclipseTransmissionAtPoint,
+  exposureMultiplierFromEv,
+  selectSolarOccluders,
+  type ExposureMode,
+} from "./physical-lighting";
 import {
   eclipticDirection,
   eclipticSkyDirection,
@@ -470,60 +474,6 @@ function requiredVectorUniform(
   return { value };
 }
 
-function createSolarCoronaTexture(): CanvasTexture {
-  const size = 512;
-  const center = size / 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-  if (context === null) {
-    throw new Error("Solar corona canvas context is unavailable");
-  }
-
-  const corona = context.createRadialGradient(
-    center,
-    center,
-    size * 0.17,
-    center,
-    center,
-    size * 0.49,
-  );
-  corona.addColorStop(0, "rgba(255, 255, 250, 0.7)");
-  corona.addColorStop(0.3, "rgba(232, 244, 255, 0.24)");
-  corona.addColorStop(0.68, "rgba(205, 225, 244, 0.055)");
-  corona.addColorStop(1, "rgba(190, 216, 240, 0)");
-  context.fillStyle = corona;
-  context.fillRect(0, 0, size, size);
-
-  for (let index = 0; index < 72; index += 1) {
-    const angle = (index / 72) * Math.PI * 2 + Math.sin(index * 4.17) * 0.035;
-    const length = size * (0.29 + ((index * 37) % 19) / 190);
-    const startRadius = size * (0.12 + ((index * 11) % 7) / 700);
-    const startX = center + Math.cos(angle) * startRadius;
-    const startY = center + Math.sin(angle) * startRadius;
-    const endX = center + Math.cos(angle) * length;
-    const endY = center + Math.sin(angle) * length;
-    const bend = Math.sin(index * 2.31) * size * 0.018;
-    context.beginPath();
-    context.moveTo(startX, startY);
-    context.quadraticCurveTo(
-      center + Math.cos(angle) * length * 0.56 - Math.sin(angle) * bend,
-      center + Math.sin(angle) * length * 0.56 + Math.cos(angle) * bend,
-      endX,
-      endY,
-    );
-    context.strokeStyle = `rgba(225, 242, 255, ${String(0.018 + ((index * 13) % 9) / 450)})`;
-    context.lineWidth = 0.6 + ((index * 17) % 6) * 0.28;
-    context.stroke();
-  }
-
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
-
 function bodyStateById(
   state: SimulationState,
   bodyId: string,
@@ -638,12 +588,9 @@ type SolarSystemSceneProps = Readonly<{
   cameraZoom: number;
   cameraDistanceOverrideAu: number | undefined;
   cameraTargetBodyId: string | undefined;
-  observerCameraStyle: "surface-facing" | "limb";
+  observerCameraStyle: "surface-facing" | "limb" | "shadow-axis";
   cameraTransitionSequence: number;
   cameraTransitionDurationMs: number;
-  cameraTransitionAutoFrame: boolean;
-  cameraTransitionOverviewAnchorBodyId: string | undefined;
-  cameraTransitionOverviewDistanceAu: number;
   cameraNavigationCommand: CameraNavigationCommand;
   orbitViewEnabled: boolean;
   orbitConfiguration: CameraOrbitConfiguration | null;
@@ -660,6 +607,8 @@ type SolarSystemSceneProps = Readonly<{
   surfaceObserver: SurfaceObserverConfiguration | null;
   surfaceObserverLookResetToken: number;
   visualQuality: VisualQuality;
+  exposureMode: ExposureMode;
+  manualExposureEv: number;
   deepSpacePresentation:
     "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale" | undefined;
   eclipseShadowVisible: boolean;
@@ -671,6 +620,11 @@ type SolarSystemSceneProps = Readonly<{
   onViewZoomChange(zoom: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
   onGpuError(message: string): void;
+  onExposureStatusChange(status: {
+    ev: number;
+    multiplier: number;
+    mode: ExposureMode;
+  }): void;
 }>;
 
 export function SolarSystemScene({
@@ -699,9 +653,6 @@ export function SolarSystemScene({
   observerCameraStyle,
   cameraTransitionSequence,
   cameraTransitionDurationMs,
-  cameraTransitionAutoFrame,
-  cameraTransitionOverviewAnchorBodyId,
-  cameraTransitionOverviewDistanceAu,
   cameraNavigationCommand,
   orbitViewEnabled,
   orbitConfiguration,
@@ -718,6 +669,8 @@ export function SolarSystemScene({
   surfaceObserver,
   surfaceObserverLookResetToken,
   visualQuality,
+  exposureMode,
+  manualExposureEv,
   deepSpacePresentation,
   eclipseShadowVisible,
   onSelectBody,
@@ -728,6 +681,7 @@ export function SolarSystemScene({
   onViewZoomChange,
   onGpuStatus,
   onGpuError,
+  onExposureStatusChange,
 }: SolarSystemSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(frame);
@@ -755,13 +709,6 @@ export function SolarSystemScene({
   const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
-  const cameraTransitionAutoFrameRef = useRef(cameraTransitionAutoFrame);
-  const cameraTransitionOverviewAnchorBodyIdRef = useRef(
-    cameraTransitionOverviewAnchorBodyId,
-  );
-  const cameraTransitionOverviewDistanceAuRef = useRef(
-    cameraTransitionOverviewDistanceAu,
-  );
   const cameraNavigationCommandRef = useRef(cameraNavigationCommand);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const orbitConfigurationRef = useRef(orbitConfiguration);
@@ -780,9 +727,12 @@ export function SolarSystemScene({
     surfaceObserverLookResetToken,
   );
   const visualQualityRef = useRef(visualQuality);
+  const exposureModeRef = useRef(exposureMode);
+  const manualExposureEvRef = useRef(manualExposureEv);
   const deepSpacePresentationRef = useRef(deepSpacePresentation);
   const onViewZoomChangeRef = useRef(onViewZoomChange);
   const onOrbitViewChangeRef = useRef(onOrbitViewChange);
+  const onExposureStatusChangeRef = useRef(onExposureStatusChange);
   frameRef.current = frame;
   bodyVisibilityRef.current = bodyVisibility;
   focusBodyIdRef.current = focusBodyId;
@@ -808,11 +758,6 @@ export function SolarSystemScene({
   eclipseShadowVisibleRef.current = eclipseShadowVisible;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
-  cameraTransitionAutoFrameRef.current = cameraTransitionAutoFrame;
-  cameraTransitionOverviewAnchorBodyIdRef.current =
-    cameraTransitionOverviewAnchorBodyId;
-  cameraTransitionOverviewDistanceAuRef.current =
-    cameraTransitionOverviewDistanceAu;
   cameraNavigationCommandRef.current = cameraNavigationCommand;
   orbitViewEnabledRef.current = orbitViewEnabled;
   orbitConfigurationRef.current = orbitConfiguration;
@@ -829,9 +774,12 @@ export function SolarSystemScene({
   surfaceObserverRef.current = surfaceObserver;
   surfaceObserverLookResetTokenRef.current = surfaceObserverLookResetToken;
   visualQualityRef.current = visualQuality;
+  exposureModeRef.current = exposureMode;
+  manualExposureEvRef.current = manualExposureEv;
   deepSpacePresentationRef.current = deepSpacePresentation;
   onViewZoomChangeRef.current = onViewZoomChange;
   onOrbitViewChangeRef.current = onOrbitViewChange;
+  onExposureStatusChangeRef.current = onExposureStatusChange;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -856,6 +804,8 @@ export function SolarSystemScene({
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFShadowMap;
     renderer.toneMappingExposure =
       VISUAL_QUALITY_PROFILES[visualQualityRef.current].baseExposure;
     renderer.domElement.className = "major-body-layer";
@@ -1164,11 +1114,20 @@ export function SolarSystemScene({
       container.dataset["cameraOrientation"] = "custom";
     };
     controls.addEventListener("start", handleControlStart);
-    const ambientLight = new AmbientLight(0x7894b4, 0.045);
-    scene.add(ambientLight);
     const sunlight = new PointLight(0xfff8ec, 7, 0, 2);
     sunlight.name = "Sunlight direction source";
     scene.add(sunlight);
+    const localModelSunlight = new DirectionalLight(0xfff8ec, 7);
+    localModelSunlight.name = "Focused model solar shadow light";
+    localModelSunlight.castShadow = true;
+    localModelSunlight.layers.set(2);
+    localModelSunlight.shadow.mapSize.set(2048, 2048);
+    localModelSunlight.shadow.bias = -0.00002;
+    localModelSunlight.shadow.normalBias = 0;
+    localModelSunlight.visible = false;
+    scene.add(localModelSunlight);
+    scene.add(localModelSunlight.target);
+    camera.layers.enable(2);
     container.dataset["solarIlluminationModel"] = "inverse-square";
 
     const starGeometry = new BufferGeometry();
@@ -1264,6 +1223,172 @@ export function SolarSystemScene({
     const atmosphereMeshes = new Map<string, Mesh>();
     const atmosphereMaterials = new Map<string, ShaderMaterial>();
     const surfaceMaterials = new Map<string, MeshStandardMaterial>();
+    type SolarOcclusionUniforms = Readonly<{
+      receiverBodyId: string;
+      sunFromReceiverAu: IUniform<Vector3>;
+      occluderCount: IUniform<number>;
+      occluderFromReceiverAu: IUniform<Vector3[]>;
+      occluderRadiusAu: IUniform<Float32Array>;
+    }>;
+    const eclipseSunDefinition = majorBodyById.get("sun");
+    const eclipseEarthDefinition = majorBodyById.get("earth");
+    if (
+      eclipseSunDefinition === undefined ||
+      eclipseEarthDefinition === undefined
+    ) {
+      throw new Error(
+        "Physical lighting requires the Sun and Earth definitions",
+      );
+    }
+    const solarOcclusionUniforms: SolarOcclusionUniforms[] = [];
+    const configureSolarOcclusion = (
+      material: MeshStandardMaterial,
+      receiverBodyId: string,
+      receiverRadiusAu: number,
+    ): void => {
+      const uniforms: SolarOcclusionUniforms = {
+        receiverBodyId,
+        sunFromReceiverAu: { value: new Vector3() },
+        occluderCount: { value: 0 },
+        occluderFromReceiverAu: {
+          value: Array.from({ length: 8 }, () => new Vector3()),
+        },
+        occluderRadiusAu: { value: new Float32Array(8) },
+      };
+      solarOcclusionUniforms.push(uniforms);
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms["solarSunFromReceiverAu"] = uniforms.sunFromReceiverAu;
+        shader.uniforms["solarOccluderCount"] = uniforms.occluderCount;
+        shader.uniforms["solarOccluderFromReceiverAu"] =
+          uniforms.occluderFromReceiverAu;
+        shader.uniforms["solarOccluderRadiusAu"] = uniforms.occluderRadiusAu;
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vSolarSurfaceOffsetAu;",
+          )
+          .replace(
+            "#include <begin_vertex>",
+            "#include <begin_vertex>\nvSolarSurfaceOffsetAu = mat3(modelMatrix) * position;",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            `#include <common>
+uniform vec3 solarSunFromReceiverAu;
+uniform int solarOccluderCount;
+uniform vec3 solarOccluderFromReceiverAu[8];
+uniform float solarOccluderRadiusAu[8];
+varying vec3 vSolarSurfaceOffsetAu;
+
+const float ECLIPSE_PI = 3.141592653589793;
+const float ECLIPSE_SUN_RADIUS_AU = ${String(
+              eclipseSunDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+            )};
+const float ECLIPSE_RECEIVER_RADIUS_AU = ${String(receiverRadiusAu)};
+
+float eclipseDiscOverlapFraction(
+  float sunRadius,
+  float moonRadius,
+  float separation
+) {
+  if (separation >= sunRadius + moonRadius) {
+    return 0.0;
+  }
+  if (moonRadius >= separation + sunRadius) {
+    return 1.0;
+  }
+  if (sunRadius >= separation + moonRadius) {
+    return moonRadius * moonRadius / (sunRadius * sunRadius);
+  }
+  float separationSquared = separation * separation;
+  float sunSquared = sunRadius * sunRadius;
+  float moonSquared = moonRadius * moonRadius;
+  float sunSector = acos(clamp(
+    (separationSquared + sunSquared - moonSquared) /
+      (2.0 * separation * sunRadius),
+    -1.0,
+    1.0
+  ));
+  float moonSector = acos(clamp(
+    (separationSquared + moonSquared - sunSquared) /
+      (2.0 * separation * moonRadius),
+    -1.0,
+    1.0
+  ));
+  float lensRoot = sqrt(max(
+    0.0,
+    (-separation + sunRadius + moonRadius) *
+      (separation + sunRadius - moonRadius) *
+      (separation - sunRadius + moonRadius) *
+      (separation + sunRadius + moonRadius)
+  ));
+  float overlapArea =
+    sunSquared * sunSector + moonSquared * moonSector - 0.5 * lensRoot;
+  return clamp(overlapArea / (ECLIPSE_PI * sunSquared), 0.0, 1.0);
+}
+
+float physicalEclipseTransmission() {
+  vec3 physicalSurfaceOffsetAu =
+    normalize(vSolarSurfaceOffsetAu) * ECLIPSE_RECEIVER_RADIUS_AU;
+  vec3 toSun = solarSunFromReceiverAu - physicalSurfaceOffsetAu;
+  float sunDistance = length(toSun);
+  float sunAngularRadius = asin(clamp(
+    ECLIPSE_SUN_RADIUS_AU / sunDistance,
+    0.0,
+    1.0
+  ));
+  vec3 sunDirection = normalize(toSun);
+  float transmission = 1.0;
+  for (int index = 0; index < 8; index++) {
+    if (index >= solarOccluderCount) break;
+    vec3 toOccluder =
+      solarOccluderFromReceiverAu[index] - physicalSurfaceOffsetAu;
+    float occluderDistance = length(toOccluder);
+    float occluderAngularRadius = asin(clamp(
+      solarOccluderRadiusAu[index] / occluderDistance,
+      0.0,
+      1.0
+    ));
+    float angularSeparation = acos(clamp(
+      dot(sunDirection, normalize(toOccluder)),
+      -1.0,
+      1.0
+    ));
+    transmission *= 1.0 - eclipseDiscOverlapFraction(
+      sunAngularRadius,
+      occluderAngularRadius,
+      angularSeparation
+    );
+  }
+  return clamp(transmission, 0.0, 1.0);
+}`,
+          )
+          .replace(
+            "#include <emissivemap_fragment>",
+            `#include <emissivemap_fragment>
+${
+  receiverBodyId === "earth"
+    ? `float solarSurfaceCosine = dot(
+  normalize(vSolarSurfaceOffsetAu),
+  normalize(solarSunFromReceiverAu)
+);
+totalEmissiveRadiance *= 1.0 - smoothstep(-0.20, 0.15, solarSurfaceCosine);`
+    : ""
+}`,
+          )
+          .replace(
+            "#include <lights_fragment_end>",
+            `#include <lights_fragment_end>
+float solarTransmission = physicalEclipseTransmission();
+reflectedLight.directDiffuse *= solarTransmission;
+reflectedLight.directSpecular *= solarTransmission;`,
+          );
+      };
+      material.customProgramCacheKey = () =>
+        "all-body-finite-solar-disc-eclipse-occlusion-v2";
+      material.needsUpdate = true;
+    };
     const ringVisuals = new Map<
       string,
       Readonly<{
@@ -1282,37 +1407,6 @@ export function SolarSystemScene({
     eclipseShadowGroup.name = "Calculated lunar shadow on Earth";
     eclipseShadowGroup.visible = false;
     scene.add(eclipseShadowGroup);
-    const eclipsePenumbraGeometry = new CircleGeometry(1, 128);
-    const eclipseUmbraGeometry = new CircleGeometry(1, 128);
-    const eclipsePenumbraMaterial = new MeshBasicMaterial({
-      color: 0x10151b,
-      opacity: 0.28,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-    });
-    const eclipseUmbraMaterial = new MeshBasicMaterial({
-      color: 0x000000,
-      opacity: 0.82,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -3,
-    });
-    const eclipsePenumbraMesh = new Mesh(
-      eclipsePenumbraGeometry,
-      eclipsePenumbraMaterial,
-    );
-    const eclipseUmbraMesh = new Mesh(
-      eclipseUmbraGeometry,
-      eclipseUmbraMaterial,
-    );
-    eclipsePenumbraMesh.renderOrder = 8;
-    eclipseUmbraMesh.renderOrder = 9;
-    eclipseShadowGroup.add(eclipsePenumbraMesh, eclipseUmbraMesh);
-    geometries.push(eclipsePenumbraGeometry, eclipseUmbraGeometry);
-    materials.push(eclipsePenumbraMaterial, eclipseUmbraMaterial);
     const eclipseShadowLocator = document.createElement("span");
     eclipseShadowLocator.className = "eclipse-shadow-locator";
     eclipseShadowLocator.textContent = "Umbra";
@@ -1801,9 +1895,8 @@ export function SolarSystemScene({
       return texture;
     };
 
-    const solarCoronaTexture = createSolarCoronaTexture();
-    textures.push(solarCoronaTexture);
-    let solarCoronaMaterial: SpriteMaterial | undefined;
+    let solarCoronaMaterial: ShaderMaterial | undefined;
+    let solarCoronaMesh: Mesh | undefined;
     let earthCloudMaterial: MeshStandardMaterial | undefined;
 
     const atmospherePresentations: Readonly<
@@ -1932,13 +2025,13 @@ export function SolarSystemScene({
               float granulation = fbm(vUv * vec2(240.0, 120.0));
               float largerCells = fbm(vUv * vec2(54.0, 27.0) + vec2(8.7, 3.1));
               float limb = max(dot(vNormal, normalize(-vViewPosition)), 0.0);
-              vec3 granuleEdge = vec3(0.92, 0.46, 0.08);
-              vec3 warmWhite = vec3(1.0, 0.94, 0.78);
-              vec3 photosphere = vec3(1.0, 0.78, 0.38);
+              vec3 granuleEdge = vec3(1.0, 0.72, 0.36);
+              vec3 warmWhite = vec3(1.0, 0.965, 0.90);
+              vec3 photosphere = vec3(1.0, 0.88, 0.64);
               float cellContrast = smoothstep(0.28, 0.76, granulation);
               vec3 color = mix(granuleEdge, photosphere, 0.68 + cellContrast * 0.25);
               color = mix(color, warmWhite, smoothstep(0.45, 0.82, largerCells) * 0.38);
-              color *= 0.56 + pow(limb, 0.5) * 0.48;
+              color *= 0.40 + 0.60 * pow(limb, 0.55);
               gl_FragColor = vec4(color, 1.0);
             }
           `,
@@ -1953,6 +2046,20 @@ export function SolarSystemScene({
           roughness: body.type === "moon" ? 0.92 : 0.74,
           metalness: 0,
         });
+        if (body.id === "earth" && nasaEarthNightLightAsset !== undefined) {
+          surfaceMaterial.emissive.setHex(0xffd59a);
+          surfaceMaterial.emissiveMap = loadTexture(
+            nasaEarthNightLightAsset.file,
+            true,
+          );
+          surfaceMaterial.emissiveIntensity = 0.32;
+          container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
+        }
+        configureSolarOcclusion(
+          surfaceMaterial,
+          body.id,
+          body.meanRadiusM / ASTRONOMICAL_UNIT_M,
+        );
         surfaceMaterials.set(body.id, surfaceMaterial);
         material = surfaceMaterial;
       }
@@ -1998,29 +2105,87 @@ export function SolarSystemScene({
         chromosphere.scale.setScalar(1.018);
         mesh.add(chromosphere);
 
-        const coronaMaterial = new SpriteMaterial({
-          map: solarCoronaTexture,
-          color: 0xf2f8ff,
+        const coronaMaterial = new ShaderMaterial({
+          uniforms: {
+            opacity: {
+              value:
+                VISUAL_QUALITY_PROFILES[visualQualityRef.current].coronaOpacity,
+            },
+            cameraPositionLocal: { value: new Vector3(0, 0, 8) },
+          },
+          vertexShader: `
+            varying vec3 vLocalPosition;
+            void main() {
+              vLocalPosition = position;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform float opacity;
+            uniform vec3 cameraPositionLocal;
+            varying vec3 vLocalPosition;
+
+            void main() {
+              vec3 rayDirection = normalize(vLocalPosition - cameraPositionLocal);
+              float closestDistance = max(
+                0.0,
+                -dot(cameraPositionLocal, rayDirection)
+              );
+              vec3 closestPoint =
+                cameraPositionLocal + rayDirection * closestDistance;
+              const float photosphereRadius = 0.3125;
+              float radius = length(closestPoint) / photosphereRadius;
+              if (radius < 0.985 || radius > 3.15) discard;
+
+              vec3 direction = normalize(closestPoint);
+              float azimuth = atan(direction.z, direction.x);
+              float latitude = abs(direction.y);
+              float polarStreamer = pow(latitude, 1.8) * 1.35;
+              float equatorialSheet =
+                exp(-pow(latitude / 0.22, 2.0)) * 0.48;
+              float broadStreamers = pow(
+                0.5 + 0.5 * sin(azimuth * 5.0 + sin(azimuth * 3.0) * 1.2),
+                1.8
+              );
+              float fineStreamers =
+                0.82 + 0.18 * sin(azimuth * 17.0 + radius * 5.5);
+              float radialFalloff = pow(radius, -3.65);
+              float outerFade = 1.0 - smoothstep(2.45, 3.15, radius);
+              float density = radialFalloff * outerFade *
+                (0.34 + polarStreamer + equatorialSheet + broadStreamers * 0.32) *
+                fineStreamers;
+              float alpha = clamp(density * opacity * 1.35, 0.0, 0.82);
+              if (alpha < 0.001) discard;
+              vec3 electronScattering = mix(
+                vec3(1.0, 0.88, 0.70),
+                vec3(0.78, 0.88, 1.0),
+                smoothstep(1.0, 2.8, radius)
+              );
+              gl_FragColor = vec4(electronScattering * alpha, alpha);
+            }
+          `,
           transparent: true,
-          opacity:
-            VISUAL_QUALITY_PROFILES[visualQualityRef.current].coronaOpacity,
           blending: AdditiveBlending,
           depthWrite: false,
           depthTest: true,
           toneMapped: false,
+          side: DoubleSide,
         });
         solarCoronaMaterial = coronaMaterial;
         materials.push(coronaMaterial);
-        const corona = new Sprite(coronaMaterial);
-        corona.name = "Sun procedural corona presentation";
+        const corona = new Mesh(unitSphere, coronaMaterial);
+        corona.name = "Sun electron-scattering corona shell";
         corona.userData["bodyId"] = body.id;
-        corona.scale.set(5.4, 5.4, 1);
+        corona.scale.setScalar(3.2);
         corona.renderOrder = -1;
         mesh.add(corona);
+        solarCoronaMesh = corona;
 
-        container.dataset["solarPresentation"] = "procedural-non-observational";
-        container.dataset["solarPhotosphere"] = "procedural-granulation";
-        container.dataset["solarCoronaLayers"] = "2";
+        container.dataset["solarPresentation"] =
+          "physical-limb-darkening-and-corona-scattering";
+        container.dataset["solarPhotosphere"] =
+          "temperature-colour-procedural-granulation";
+        container.dataset["solarCoronaLayers"] = "3d-shell";
         container.dataset["solarProminenceCount"] = "0";
       }
 
@@ -2063,20 +2228,24 @@ export function SolarSystemScene({
                   .atmosphereStrength,
             },
             solarFlux: { value: 1 },
-            sunPositionWorld: { value: sunlight.position },
+            eclipseTransmission: { value: 1 },
+            sunDirectionLocal: { value: new Vector3(1, 0, 0) },
+            cameraPositionLocal: { value: new Vector3(0, 0, 4) },
+            planetRadius: {
+              value:
+                1 /
+                (body.id === "earth"
+                  ? 1.025
+                  : body.type === "moon"
+                    ? 1.02
+                    : 1.012),
+            },
           },
           vertexShader: `
-            varying vec3 vWorldNormal;
-            varying vec3 vWorldPosition;
-            varying vec3 vViewNormal;
-            varying vec3 vViewPosition;
+            varying vec3 vAtmospherePosition;
             void main() {
-              vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-              vWorldNormal = normalize(mat3(modelMatrix) * normal);
-              vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-              vViewNormal = normalize(normalMatrix * normal);
-              vViewPosition = viewPosition.xyz;
-              gl_Position = projectionMatrix * viewPosition;
+              vAtmospherePosition = position;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
           `,
           fragmentShader: `
@@ -2088,23 +2257,59 @@ export function SolarSystemScene({
             uniform float mieG;
             uniform float qualityStrength;
             uniform float solarFlux;
-            uniform vec3 sunPositionWorld;
-            varying vec3 vWorldNormal;
-            varying vec3 vWorldPosition;
-            varying vec3 vViewNormal;
-            varying vec3 vViewPosition;
-            void main() {
-              vec3 normal = normalize(vWorldNormal);
-              vec3 lightDirection = normalize(sunPositionWorld - vWorldPosition);
-              vec3 viewDirection = normalize(-vViewPosition);
-              float viewCosine = max(
-                dot(normalize(vViewNormal), viewDirection),
-                0.0
+            uniform float eclipseTransmission;
+            uniform vec3 sunDirectionLocal;
+            uniform vec3 cameraPositionLocal;
+            uniform float planetRadius;
+            varying vec3 vAtmospherePosition;
+
+            float outerSphereExit(vec3 origin, vec3 direction) {
+              float projected = dot(origin, direction);
+              float discriminant = projected * projected - dot(origin, origin) + 1.0;
+              return max(0.0, -projected + sqrt(max(discriminant, 0.0)));
+            }
+
+            float innerSphereEntry(vec3 origin, vec3 direction) {
+              float projected = dot(origin, direction);
+              float discriminant =
+                projected * projected - dot(origin, origin) + planetRadius * planetRadius;
+              if (discriminant <= 0.0) return 1e9;
+              float distance = -projected - sqrt(discriminant);
+              return distance > 0.0 ? distance : 1e9;
+            }
+
+            vec2 densityAt(vec3 position) {
+              float height = clamp(
+                (length(position) - planetRadius) / (1.0 - planetRadius),
+                0.0,
+                1.0
               );
-              float tangentPath = pow(1.0 - viewCosine, 0.58);
-              float sunCosine = dot(normal, lightDirection);
-              float daylight = smoothstep(-0.24, 0.18, sunCosine);
-              float scatteringAngleCosine = dot(viewDirection, lightDirection);
+              return vec2(exp(-height * 7.5), exp(-height * 22.0));
+            }
+
+            vec2 sunOpticalDepth(vec3 origin) {
+              float pathLength = outerSphereExit(origin, sunDirectionLocal);
+              float stepLength = pathLength / 4.0;
+              vec2 depth = vec2(0.0);
+              for (int sampleIndex = 0; sampleIndex < 4; sampleIndex++) {
+                float distance = (float(sampleIndex) + 0.5) * stepLength;
+                depth += densityAt(origin + sunDirectionLocal * distance) * stepLength;
+              }
+              return depth;
+            }
+
+            void main() {
+              vec3 rayDirection = normalize(vAtmospherePosition - cameraPositionLocal);
+              vec3 rayOrigin = vAtmospherePosition - rayDirection * 0.0001;
+              float pathLength = min(
+                outerSphereExit(rayOrigin, rayDirection),
+                innerSphereEntry(rayOrigin, rayDirection)
+              );
+              if (pathLength <= 0.0) discard;
+              float stepLength = pathLength / 8.0;
+              vec2 viewDepth = vec2(0.0);
+              vec3 accumulated = vec3(0.0);
+              float scatteringAngleCosine = dot(-rayDirection, sunDirectionLocal);
               float rayleighPhase =
                 3.0 * (1.0 + scatteringAngleCosine * scatteringAngleCosine) /
                 (16.0 * PI);
@@ -2115,17 +2320,24 @@ export function SolarSystemScene({
               float miePhase =
                 (1.0 - mieG * mieG) /
                 (4.0 * PI * pow(mieDenominator, 1.5));
-              vec3 scattering =
-                rayleighColor * rayleighStrength * rayleighPhase +
-                mieColor * mieStrength * min(miePhase, 2.4);
-              float opticalDepth =
-                tangentPath * daylight * qualityStrength * solarFlux;
-              float alpha = clamp(
-                opticalDepth * (rayleighStrength + mieStrength) * 2.1,
-                0.0,
-                0.62
-              );
-              gl_FragColor = vec4(scattering * opticalDepth * 3.4, alpha);
+              for (int sampleIndex = 0; sampleIndex < 8; sampleIndex++) {
+                float distance = (float(sampleIndex) + 0.5) * stepLength;
+                vec3 samplePosition = rayOrigin + rayDirection * distance;
+                vec2 localDensity = densityAt(samplePosition);
+                viewDepth += localDensity * stepLength;
+                vec2 totalDepth = viewDepth + sunOpticalDepth(samplePosition);
+                vec3 extinction = exp(
+                  -(rayleighColor * totalDepth.x * rayleighStrength * 4.0 +
+                    mieColor * totalDepth.y * mieStrength * 4.0)
+                );
+                vec3 scatterSource =
+                  rayleighColor * localDensity.x * rayleighStrength * rayleighPhase +
+                  mieColor * localDensity.y * mieStrength * min(miePhase, 2.4);
+                accumulated += extinction * scatterSource * stepLength;
+              }
+              vec3 radiance = accumulated * solarFlux * eclipseTransmission * qualityStrength * 5.0;
+              float alpha = clamp(max(radiance.r, max(radiance.g, radiance.b)), 0.0, 0.72);
+              gl_FragColor = vec4(radiance, alpha);
             }
           `,
           transparent: true,
@@ -2142,7 +2354,7 @@ export function SolarSystemScene({
         atmosphereMeshes.set(body.id, atmosphere);
         atmosphereMaterials.set(body.id, atmosphereMaterial);
         container.dataset["atmosphereModel"] =
-          "sunlit-single-scattering-approximation";
+          "optical-depth-ray-marched-single-scattering";
       }
 
       if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
@@ -2453,7 +2665,10 @@ export function SolarSystemScene({
           }
           surfaceShadowSunDirectionLocal = { value: new Vector3(0, 1, 0) };
           const shadowSunUniform = surfaceShadowSunDirectionLocal;
+          const configureExistingSurfaceShader =
+            saturnSurfaceMaterial.onBeforeCompile.bind(saturnSurfaceMaterial);
           saturnSurfaceMaterial.onBeforeCompile = (shader) => {
+            configureExistingSurfaceShader(shader, renderer);
             shader.uniforms["ringShadowProfile"] = {
               value: observedRingTexture,
             };
@@ -2518,8 +2733,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
 #include <opaque_fragment>`,
               );
           };
+          const existingProgramCacheKey =
+            saturnSurfaceMaterial.customProgramCacheKey();
           saturnSurfaceMaterial.customProgramCacheKey = () =>
-            "saturn-cassini-ring-shadow-v3";
+            `${existingProgramCacheKey}-saturn-cassini-ring-shadow-v4`;
           saturnSurfaceMaterial.needsUpdate = true;
         }
         ringVisuals.set(body.id, {
@@ -2613,6 +2830,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     container.dataset["apolloTraverseAuthority"] = "NASA-LROC-PDS";
 
     const sourcedModelGroups = new Map<string, Group>();
+    let activeLocalShadowGroup: Object3D | undefined;
     const sourcedModelSelectableMeshes: Mesh[] = [];
     const sourcedModelStatus = document.createElement("span");
     sourcedModelStatus.className = "scene-error";
@@ -2711,6 +2929,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 ? mesh.material
                 : [mesh.material];
               for (const material of loadedMaterials) {
+                if (
+                  asset.bodyId === "death-star-2" &&
+                  material instanceof MeshStandardMaterial
+                ) {
+                  material.emissive.set(0x000000);
+                  material.emissiveIntensity = 0;
+                  material.emissiveMap = null;
+                  material.needsUpdate = true;
+                }
                 materials.push(material);
                 for (const propertyName of Object.keys(material)) {
                   const value: unknown = Reflect.get(material, propertyName);
@@ -3471,6 +3698,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
           );
         },
       );
+      const normalAsset = nasaSurfaceNormalByBodyId.get(bodyId);
+      if (normalAsset !== undefined) {
+        surfaceMaterial.normalMap = loadTexture(normalAsset.file, false);
+        surfaceMaterial.normalScale.set(0.75, 0.75);
+      }
+      const roughnessAsset = nasaSurfaceRoughnessByBodyId.get(bodyId);
+      if (roughnessAsset !== undefined) {
+        surfaceMaterial.roughnessMap = loadTexture(roughnessAsset.file, false);
+        surfaceMaterial.roughness = 1;
+      }
       if (bodyId === "moon" && nasaMoonHeightAsset !== undefined) {
         surfaceMaterial.bumpMap = loadTexture(nasaMoonHeightAsset.file, false);
         surfaceMaterial.bumpScale = 0.018;
@@ -3486,6 +3723,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
           depthWrite: false,
           alphaTest: 0.018,
         });
+        const earthDefinition = majorBodyById.get("earth");
+        if (earthDefinition === undefined) {
+          throw new Error("Earth clouds require the Earth definition");
+        }
+        configureSolarOcclusion(
+          cloudMaterial,
+          "earth",
+          earthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+        );
         earthCloudMaterial = cloudMaterial;
         materials.push(cloudMaterial);
         const clouds = new Mesh(unitSphere, cloudMaterial);
@@ -3671,7 +3917,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastCameraTransitionSequence = cameraTransitionSequenceRef.current;
     let activeCameraTransition:
       | {
-          style: "direct" | "authored";
           sequence: number;
           startedAtMs: number;
           durationMs: number;
@@ -3679,23 +3924,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
           startTarget: Vector3;
           startUp: Vector3;
           orientationTarget: Vector3;
-          overviewStartPosition: Vector3;
-          overviewStartTarget: Vector3;
-          departureAnchor: Vector3;
-          overviewEndPosition: Vector3;
-          overviewEndTarget: Vector3;
-          destinationAnchor: Vector3;
-          destinationOverviewAnchorBodyId: string | undefined;
-          overviewEndDistanceAu: number;
-          isObserverDestination: boolean;
           endPosition: Vector3;
           endTarget: Vector3;
           endOffset: Vector3;
           destinationFocusBodyId: string | null;
           destinationTargetBodyId: string | undefined;
-          departureName: string;
           destinationName: string;
-          journeyDistanceAu: number;
           endUp: Vector3;
           endNear: number;
           endFar: number;
@@ -3726,6 +3960,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastSceneMutationKey = "";
     let lastVisualQuality: VisualQuality | undefined;
     let currentExposure = renderer.toneMappingExposure;
+    let lastReportedExposureEv = Number.NaN;
+    let lastReportedExposureMode: ExposureMode | undefined;
     let lastRenderedAtMs = performance.now();
     let frameIntervalEmaMs = 1000 / 60;
 
@@ -3769,7 +4005,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
       }
       if (solarCoronaMaterial !== undefined) {
-        solarCoronaMaterial.opacity = profile.coronaOpacity;
+        setRequiredNumberUniform(
+          solarCoronaMaterial,
+          "opacity",
+          profile.coronaOpacity,
+        );
       }
       if (earthCloudMaterial !== undefined) {
         earthCloudMaterial.opacity =
@@ -3995,6 +4235,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       observerBodyId: string,
       observerState: BodyState,
       targetPosition: Vector3,
+      current: SimulationState,
     ): Readonly<{ position: Vector3; up: Vector3 }> => {
       const observerDefinition = majorBodyById.get(observerBodyId);
       if (observerDefinition === undefined) {
@@ -4003,6 +4244,32 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
       }
       const observerCenter = scenePosition(observerState.positionM);
+      if (observerCameraStyleRef.current === "shadow-axis") {
+        const earthState = bodyStateById(current, "earth");
+        if (earthState === undefined) {
+          throw new Error("Eclipse camera requires the Earth state");
+        }
+        const earthPosition = scenePosition(earthState.positionM);
+        const footprintNormal = targetPosition
+          .clone()
+          .sub(earthPosition)
+          .normalize();
+        const cameraDistanceAu =
+          (eclipseEarthDefinition.meanRadiusM * 8) / ASTRONOMICAL_UNIT_M;
+        const position = targetPosition
+          .clone()
+          .add(footprintNormal.multiplyScalar(cameraDistanceAu));
+        container.dataset["cameraObserverAltitudeKm"] = (
+          (cameraDistanceAu * ASTRONOMICAL_UNIT_M) /
+          1_000
+        ).toFixed(3);
+        container.dataset["cameraObserverStyle"] =
+          observerCameraStyleRef.current;
+        return {
+          position,
+          up: ECLIPTIC_NORTH,
+        };
+      }
       const viewpoint =
         observerCameraStyleRef.current === "limb"
           ? limbObserverViewpoint(
@@ -4029,6 +4296,52 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : ECLIPTIC_NORTH,
       };
     };
+
+    const eclipseShadowFootprintPosition = (
+      current: SimulationState,
+    ): Vector3 => {
+      const earthState = bodyStateById(current, "earth");
+      const moonState = bodyStateById(current, "moon");
+      const sunState = bodyStateById(current, "sun");
+      if (
+        earthState === undefined ||
+        moonState === undefined ||
+        sunState === undefined
+      ) {
+        throw new Error(
+          "Eclipse camera requires the Sun, Earth, and Moon state",
+        );
+      }
+      const earthPosition = scenePosition(earthState.positionM);
+      const moonPosition = scenePosition(moonState.positionM);
+      const sunPosition = scenePosition(sunState.positionM);
+      const shadowDirection = moonPosition.clone().sub(sunPosition).normalize();
+      const moonToEarth = earthPosition.clone().sub(moonPosition);
+      const alongAxisAu = moonToEarth.dot(shadowDirection);
+      const closestAxisPoint = moonPosition
+        .clone()
+        .addScaledVector(shadowDirection, alongAxisAu);
+      const axisOffsetAu = closestAxisPoint.distanceTo(earthPosition);
+      const earthRadiusAu =
+        eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
+      if (alongAxisAu <= 0 || axisOffsetAu >= earthRadiusAu) {
+        throw new Error("The live lunar shadow axis does not intersect Earth");
+      }
+      const surfaceOffsetAu = Math.sqrt(
+        earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
+      );
+      return closestAxisPoint.sub(
+        shadowDirection.clone().multiplyScalar(surfaceOffsetAu),
+      );
+    };
+
+    const observerTargetPosition = (
+      current: SimulationState,
+      targetState: BodyState,
+    ): Vector3 =>
+      observerCameraStyleRef.current === "shadow-axis"
+        ? eclipseShadowFootprintPosition(current)
+        : scenePosition(targetState.positionM);
 
     const parentFacingCameraDirection = (
       bodyId: string,
@@ -4193,11 +4506,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
       camera.far = DEFAULT_CAMERA_FAR_AU;
       camera.updateProjectionMatrix();
       if (targetState !== undefined && requestedTargetBodyId !== undefined) {
-        const targetPosition = scenePosition(targetState.positionM);
+        const targetPosition = observerTargetPosition(current, targetState);
         const observerPose = observerCameraPose(
           requestedFocusBodyId,
           focusState,
           targetPosition,
+          current,
         );
         const observerPosition = observerPose.position;
         const observerDistance = observerPosition.distanceTo(targetPosition);
@@ -4311,11 +4625,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
             `Observer view ${requestedFocusBodyId} to ${requestedTargetBodyId} is unavailable`,
           );
         }
-        const targetPosition = scenePosition(targetState.positionM);
+        const targetPosition = observerTargetPosition(current, targetState);
         const observerPose = observerCameraPose(
           requestedFocusBodyId,
           observerState,
           targetPosition,
+          current,
         );
         camera.position.copy(observerPose.position);
         controls.target.copy(targetPosition);
@@ -4380,6 +4695,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
           scenePosition(sunState.positionM),
           current?.timeSeconds ?? 0,
         );
+        camera.up.copy(ECLIPTIC_NORTH);
+      } else if (
+        preset === "terminator" &&
+        focusState !== undefined &&
+        sunState !== undefined
+      ) {
+        const sunwardDirection = scenePosition(sunState.positionM)
+          .sub(target)
+          .normalize();
+        direction = sunwardDirection.cross(ECLIPTIC_NORTH).normalize();
+        if (direction.lengthSq() < 1e-12) {
+          direction.copy(ECLIPTIC_FORWARD);
+        }
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (preset === "parent-facing" && focusState !== undefined) {
         direction = parentFacingCameraDirection(
@@ -4515,6 +4843,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         transition.destinationTargetBodyId !== undefined
           ? "observer-and-target"
           : settledPreset === "sun-facing" ||
+              settledPreset === "terminator" ||
               settledPreset === "parent-facing" ||
               settledPreset === "velocity" ||
               settledPreset === "orbital-plane"
@@ -4524,6 +4853,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       cameraJourney.hidden = true;
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
+      container.dataset["cameraTransitionRemainingDistanceAu"] = "0.000000";
       container.dataset["cameraTransitionSequence"] = String(
         transition.sequence,
       );
@@ -4575,69 +4905,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
         requestedFocusBodyId,
         current,
       );
-      const overviewDistanceAu = cameraTransitionOverviewDistanceAuRef.current;
-      if (!Number.isFinite(overviewDistanceAu) || overviewDistanceAu <= 0) {
-        throw new Error(
-          "Camera transition overview distance must be positive and finite",
-        );
-      }
       const endPosition = camera.position.clone();
       const endTarget = controls.target.clone();
-      const departureBodyId = lastFocusBodyId;
-      const departureState =
-        departureBodyId === null || departureBodyId === undefined
-          ? undefined
-          : bodyStateById(current, departureBodyId);
-      const departureAnchor =
-        departureState === undefined
-          ? startTarget.clone()
-          : scenePosition(departureState.positionM);
-      const destinationOverviewAnchorBodyId =
-        cameraTransitionOverviewAnchorBodyIdRef.current;
-      const destinationOverviewAnchorState =
-        destinationOverviewAnchorBodyId === undefined
-          ? undefined
-          : bodyStateById(current, destinationOverviewAnchorBodyId);
-      if (
-        destinationOverviewAnchorBodyId !== undefined &&
-        destinationOverviewAnchorState === undefined
-      ) {
-        throw new Error(
-          `Camera overview anchor ${destinationOverviewAnchorBodyId} is unavailable`,
-        );
-      }
-      const destinationAnchor =
-        destinationOverviewAnchorState === undefined
-          ? endTarget.clone()
-          : scenePosition(destinationOverviewAnchorState.positionM);
-      const journeyDistanceAu = departureAnchor.equals(destinationAnchor)
-        ? 0
-        : departureAnchor.distanceTo(destinationAnchor);
-      const framingDistanceAu = Math.max(
-        overviewDistanceAu,
-        cameraTransitionAutoFrameRef.current ? journeyDistanceAu * 1.4 : 0,
-      );
-      const isObserverDestination = cameraTargetBodyIdRef.current !== undefined;
-      const observerSeparationAu = destinationAnchor.distanceTo(endTarget);
-      const overviewEndDistanceAu = isObserverDestination
-        ? Math.min(framingDistanceAu, observerSeparationAu * 0.35)
-        : framingDistanceAu;
-      if (
-        !Number.isFinite(overviewEndDistanceAu) ||
-        overviewEndDistanceAu <= 0
-      ) {
-        throw new Error(
-          "Camera transition destination overview distance must be positive and finite",
-        );
-      }
-      const overviewStartTarget = startTarget.clone();
       const startLookDistanceAu = Math.max(
         startPosition.distanceTo(startTarget),
         DEFAULT_CAMERA_NEAR_AU * 10,
       );
-      const destinationLookDirection = destinationAnchor
-        .clone()
-        .sub(startPosition);
+      const destinationLookDirection = endTarget.clone().sub(startPosition);
       const orientationTarget =
         destinationLookDirection.lengthSq() <= Number.EPSILON
           ? endTarget.clone()
@@ -4648,12 +4922,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   .normalize()
                   .multiplyScalar(startLookDistanceAu),
               );
-      const overviewEndTarget = isObserverDestination
-        ? endTarget.clone()
-        : destinationAnchor.clone();
-      const destinationOverviewDirection = isObserverDestination
-        ? endPosition.clone().sub(destinationAnchor).normalize()
-        : PERSPECTIVE_CAMERA_DIRECTION.clone();
       const bodyName = (bodyId: string | null | undefined): string => {
         if (bodyId === null || bodyId === undefined || bodyId === "") {
           return "the Solar System";
@@ -4669,7 +4937,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
       };
       const transitionStartedAtMs = performance.now();
       activeCameraTransition = {
-        style: cameraTransitionAutoFrameRef.current ? "direct" : "authored",
         sequence,
         startedAtMs: transitionStartedAtMs,
         durationMs,
@@ -4677,33 +4944,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
         startTarget,
         startUp,
         orientationTarget,
-        overviewStartPosition: departureAnchor
-          .clone()
-          .add(
-            PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(
-              framingDistanceAu,
-            ),
-          ),
-        overviewStartTarget,
-        departureAnchor,
-        overviewEndPosition: destinationAnchor
-          .clone()
-          .add(
-            destinationOverviewDirection.multiplyScalar(overviewEndDistanceAu),
-          ),
-        overviewEndTarget,
-        destinationAnchor,
-        destinationOverviewAnchorBodyId,
-        overviewEndDistanceAu,
-        isObserverDestination,
         endPosition,
         endTarget,
         endOffset: endPosition.clone().sub(endTarget),
         destinationFocusBodyId: requestedFocusBodyId,
         destinationTargetBodyId: cameraTargetBodyIdRef.current,
-        departureName: bodyName(departureBodyId),
         destinationName: bodyName(requestedFocusBodyId),
-        journeyDistanceAu,
         endUp: camera.up.clone(),
         endNear: camera.near,
         endFar: camera.far,
@@ -4725,19 +4971,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraTransitionPhase"] = "orienting";
       container.dataset["cameraTransitionSequence"] = String(sequence);
       container.dataset["cameraTransitionOverviewAnchor"] =
-        activeCameraTransition.style === "direct"
-          ? "not-used-direct-flight"
-          : "moving-route";
+        "not-used-direct-flight";
       container.dataset["cameraTransitionDestinationAnchor"] =
-        destinationOverviewAnchorBodyId ?? "camera-target";
+        requestedFocusBodyId ?? "camera-target";
       container.dataset["cameraTransitionDurationMs"] = String(durationMs);
       container.dataset["cameraTransitionSpeedDefinition"] =
         "camera-displacement-per-real-second";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterpolation"] =
-        activeCameraTransition.style === "direct"
-          ? "orient-then-logarithmic-approach"
-          : "orient-depart-coast-arrive";
+        "orient-then-direct-flight";
+      container.dataset["cameraTransitionRoute"] = "current-to-destination";
+      container.dataset["cameraTransitionRoutePoints"] = "2";
+      container.dataset["cameraTransitionRemainingDistanceAu"] = startPosition
+        .distanceTo(endPosition)
+        .toFixed(6);
       cameraJourney.hidden = false;
       cameraJourney.title =
         "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
@@ -4796,9 +5043,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
         transition.endPosition.copy(inspectionPose.position);
         transition.endTarget.copy(inspectionPose.target);
         transition.endUp.copy(inspectionPose.up);
-        transition.destinationAnchor.copy(inspectionPose.target);
-        transition.overviewEndTarget.copy(inspectionPose.target);
-        transition.overviewEndPosition.copy(inspectionPose.position);
         transition.endOffset.copy(
           inspectionPose.position.clone().sub(inspectionPose.target),
         );
@@ -4814,23 +5058,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           transition.destinationTargetBodyId === undefined
             ? undefined
             : bodyStateById(current, transition.destinationTargetBodyId);
-        const overviewAnchorState =
-          transition.destinationOverviewAnchorBodyId === undefined
-            ? undefined
-            : bodyStateById(
-                current,
-                transition.destinationOverviewAnchorBodyId,
-              );
         if (focusState !== undefined) {
           transition.endTarget.copy(
             targetState === undefined
               ? scenePosition(focusState.positionM)
-              : scenePosition(targetState.positionM),
-          );
-          transition.destinationAnchor.copy(
-            overviewAnchorState === undefined
-              ? transition.endTarget
-              : scenePosition(overviewAnchorState.positionM),
+              : observerTargetPosition(current, targetState),
           );
           if (
             targetState !== undefined &&
@@ -4840,6 +5072,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               transition.destinationFocusBodyId,
               focusState,
               transition.endTarget,
+              current,
             );
             transition.endPosition.copy(observerPose.position);
             transition.endUp.copy(observerPose.up);
@@ -4848,159 +5081,63 @@ float saturnRingTransmission(vec3 surfacePosition) {
               .copy(transition.endTarget)
               .add(transition.endOffset);
           }
-          transition.overviewEndTarget.copy(
-            transition.isObserverDestination
-              ? transition.endTarget
-              : transition.destinationAnchor,
-          );
-          transition.overviewEndPosition
-            .copy(transition.destinationAnchor)
-            .add(
-              (transition.isObserverDestination
-                ? transition.endPosition
-                    .clone()
-                    .sub(transition.destinationAnchor)
-                    .normalize()
-                : PERSPECTIVE_CAMERA_DIRECTION.clone()
-              ).multiplyScalar(transition.overviewEndDistanceAu),
-            );
         }
       }
-      if (transition.style === "direct") {
-        const directSample = sampleDirectCameraTransition(
-          elapsedMs,
-          transition.durationMs,
-        );
-        container.dataset["cameraTransitionPhase"] = directSample.phase;
-        if (directSample.phase === "settled") {
-          completeCameraTransition();
-          return;
-        }
-        if (directSample.phase === "orienting") {
-          camera.position.copy(transition.startPosition);
-          controls.target.lerpVectors(
-            transition.startTarget,
-            transition.endTarget,
-            directSample.segmentProgress,
-          );
-          camera.up
-            .lerpVectors(
-              transition.startUp,
-              ECLIPTIC_NORTH,
-              directSample.segmentProgress,
-            )
-            .normalize();
-          updateJourneyStatus(
-            `Turning toward ${transition.destinationName}`,
-            false,
-          );
-        } else {
-          interpolateCameraPositionAroundAnchor(
-            camera.position,
-            transition.startPosition,
-            transition.endPosition,
-            transition.endTarget,
-            directSample.segmentProgress,
-          );
-          controls.target.copy(transition.endTarget);
-          camera.up
-            .lerpVectors(
-              ECLIPTIC_NORTH,
-              transition.endUp,
-              directSample.segmentProgress,
-            )
-            .normalize();
-          updateJourneyStatus(
-            directSample.phase === "arriving"
-              ? `Approaching ${transition.destinationName}`
-              : `Travelling to ${transition.destinationName}`,
-            true,
-          );
-        }
-        camera.lookAt(controls.target);
-        return;
-      }
-      const sample = sampleCameraTransition(elapsedMs, transition.durationMs);
-      container.dataset["cameraTransitionPhase"] = sample.phase;
-      if (sample.phase === "settled") {
+      const directSample = sampleDirectCameraTransition(
+        elapsedMs,
+        transition.durationMs,
+      );
+      container.dataset["cameraTransitionPhase"] = directSample.phase;
+      if (directSample.phase === "settled") {
         completeCameraTransition();
         return;
       }
-      let journeyStatus = `Turning toward ${transition.destinationName}`;
-      let measureJourneySpeed = false;
-      if (sample.phase === "orienting") {
+      if (directSample.phase === "orienting") {
         camera.position.copy(transition.startPosition);
         controls.target.lerpVectors(
           transition.startTarget,
           transition.orientationTarget,
-          sample.segmentProgress,
+          directSample.segmentProgress,
         );
         camera.up
           .lerpVectors(
             transition.startUp,
             ECLIPTIC_NORTH,
-            sample.segmentProgress,
+            directSample.segmentProgress,
           )
           .normalize();
-      } else if (sample.phase === "outbound") {
-        interpolateCameraPositionAroundAnchor(
-          camera.position,
+        updateJourneyStatus(
+          `Turning toward ${transition.destinationName}`,
+          false,
+        );
+      } else {
+        camera.position.lerpVectors(
           transition.startPosition,
-          transition.overviewStartPosition,
-          transition.departureAnchor,
-          sample.segmentProgress,
+          transition.endPosition,
+          directSample.segmentProgress,
         );
         controls.target.lerpVectors(
           transition.orientationTarget,
-          transition.overviewStartTarget,
-          sample.segmentProgress,
-        );
-        camera.up.copy(ECLIPTIC_NORTH);
-        journeyStatus = `Departing ${transition.departureName}`;
-        measureJourneySpeed = true;
-      } else if (sample.phase === "overview") {
-        camera.position.lerpVectors(
-          transition.overviewStartPosition,
-          transition.overviewEndPosition,
-          sample.segmentProgress,
-        );
-        controls.target.lerpVectors(
-          transition.overviewStartTarget,
-          transition.overviewEndTarget,
-          sample.segmentProgress,
-        );
-        camera.up.copy(ECLIPTIC_NORTH);
-        container.dataset["cameraTransitionOverviewVisited"] = String(
-          transition.sequence,
-        );
-        container.dataset["cameraTransitionOverviewDistanceAu"] =
-          transition.overviewStartPosition
-            .distanceTo(transition.overviewStartTarget)
-            .toFixed(6);
-        journeyStatus = `Crossing ${formatTacticalDistance(
-          transition.journeyDistanceAu,
-        )} toward ${transition.destinationName}`;
-        measureJourneySpeed = true;
-      } else {
-        interpolateCameraPositionAroundAnchor(
-          camera.position,
-          transition.overviewEndPosition,
-          transition.endPosition,
-          transition.destinationAnchor,
-          sample.segmentProgress,
-        );
-        controls.target.lerpVectors(
-          transition.overviewEndTarget,
           transition.endTarget,
-          sample.segmentProgress,
+          directSample.segmentProgress,
         );
         camera.up
-          .lerpVectors(ECLIPTIC_NORTH, transition.endUp, sample.segmentProgress)
+          .lerpVectors(
+            ECLIPTIC_NORTH,
+            transition.endUp,
+            directSample.segmentProgress,
+          )
           .normalize();
-        journeyStatus = `Arriving at ${transition.destinationName}`;
-        measureJourneySpeed = true;
+        updateJourneyStatus(
+          directSample.phase === "arriving"
+            ? `Approaching ${transition.destinationName}`
+            : `Travelling to ${transition.destinationName}`,
+          true,
+        );
       }
-      updateJourneyStatus(journeyStatus, measureJourneySpeed);
+      container.dataset["cameraTransitionRemainingDistanceAu"] = camera.position
+        .distanceTo(transition.endPosition)
+        .toFixed(6);
       camera.lookAt(controls.target);
     };
 
@@ -5179,10 +5316,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
         }
       }
       const activeVisualProfile = VISUAL_QUALITY_PROFILES[activeVisualQuality];
-      const targetExposure = solarExposureForDistanceAu(
-        activeVisualQuality,
-        exposureDistanceFromSunAu,
-      );
+      const targetExposure =
+        exposureModeRef.current === "manual"
+          ? activeVisualProfile.baseExposure *
+            exposureMultiplierFromEv(manualExposureEvRef.current)
+          : solarExposureForDistanceAu(
+              activeVisualQuality,
+              exposureDistanceFromSunAu,
+            );
       currentExposure = adaptExposure(
         currentExposure,
         targetExposure,
@@ -5199,9 +5340,28 @@ float saturnRingTransmission(vec3 surfacePosition) {
           );
         }
       }
-      ambientLight.intensity = 0.045 / currentExposure;
       container.dataset["cameraExposure"] = currentExposure.toFixed(5);
       container.dataset["cameraExposureTarget"] = targetExposure.toFixed(5);
+      container.dataset["cameraExposureMode"] = exposureModeRef.current;
+      container.dataset["cameraExposureEv"] = Math.log2(
+        currentExposure / activeVisualProfile.baseExposure,
+      ).toFixed(3);
+      const currentExposureEv = Math.log2(
+        currentExposure / activeVisualProfile.baseExposure,
+      );
+      if (
+        lastReportedExposureMode !== exposureModeRef.current ||
+        !Number.isFinite(lastReportedExposureEv) ||
+        Math.abs(currentExposureEv - lastReportedExposureEv) >= 0.01
+      ) {
+        lastReportedExposureEv = currentExposureEv;
+        lastReportedExposureMode = exposureModeRef.current;
+        onExposureStatusChangeRef.current({
+          ev: currentExposureEv,
+          multiplier: currentExposure,
+          mode: exposureModeRef.current,
+        });
+      }
       container.dataset["exposureReferenceDistanceAu"] =
         exposureDistanceFromSunAu?.toFixed(6) ?? "system-overview";
 
@@ -5249,6 +5409,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               trailFadeRef.current,
               clearTrailsTokenRef.current,
               resetViewTokenRef.current,
+              sourcedModelsLoadedCount,
             ].join("|");
       if (current !== undefined && sceneMutationKey !== lastSceneMutationKey) {
         lastSceneMutationKey = sceneMutationKey;
@@ -5484,6 +5645,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const moonDefinitionForEclipse = majorBodyById.get("moon");
         const sunDefinitionForEclipse = majorBodyById.get("sun");
         if (
+          earthStateForEclipse !== undefined &&
+          moonStateForEclipse !== undefined &&
+          sunStateForEclipse !== undefined
+        ) {
+          container.dataset["earthEclipseLighting"] =
+            "all-body-finite-sun-disc-analytic-occlusion";
+        }
+        if (
           eclipseShadowVisibleRef.current &&
           earthStateForEclipse !== undefined &&
           moonStateForEclipse !== undefined &&
@@ -5520,6 +5689,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
               .clone()
               .sub(earthPosition)
               .normalize();
+            const earthFixedFootprint = outwardNormal.applyQuaternion(
+              bodyOrientationQuaternion("earth", current.timeSeconds)
+                .clone()
+                .invert(),
+            );
+            const footprintLatitudeDeg =
+              (Math.asin(Math.max(-1, Math.min(1, earthFixedFootprint.y))) *
+                180) /
+              Math.PI;
+            const footprintLongitudeDeg =
+              (Math.atan2(earthFixedFootprint.z, earthFixedFootprint.x) * 180) /
+              Math.PI;
+            container.dataset["eclipseShadowLatitudeDeg"] =
+              footprintLatitudeDeg.toFixed(6);
+            container.dataset["eclipseShadowLongitudeDeg"] =
+              footprintLongitudeDeg.toFixed(6);
             const moonSunDistanceM =
               moonPosition.distanceTo(sunPosition) * ASTRONOMICAL_UNIT_M;
             const moonEarthDistanceM =
@@ -5548,15 +5733,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
               new Vector3(0, 0, 1),
               outwardNormal,
             );
-            eclipseUmbraMesh.scale.setScalar(
-              Math.max(
-                umbraRadiusM / ASTRONOMICAL_UNIT_M,
-                earthRadiusAu * 0.008,
-              ),
-            );
-            eclipsePenumbraMesh.scale.setScalar(
-              penumbraRadiusM / ASTRONOMICAL_UNIT_M,
-            );
             eclipseShadowGroup.visible = true;
             container.dataset["eclipseShadowVisible"] = "true";
             container.dataset["eclipseUmbraRadiusKm"] = (
@@ -5573,11 +5749,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
             eclipseShadowGroup.visible = false;
             eclipseShadowLocator.hidden = true;
             container.dataset["eclipseShadowVisible"] = "false";
+            delete container.dataset["eclipseShadowLatitudeDeg"];
+            delete container.dataset["eclipseShadowLongitudeDeg"];
           }
         } else {
           eclipseShadowGroup.visible = false;
           eclipseShadowLocator.hidden = true;
           container.dataset["eclipseShadowVisible"] = "false";
+          delete container.dataset["eclipseShadowLatitudeDeg"];
+          delete container.dataset["eclipseShadowLongitudeDeg"];
         }
 
         const monolithState = jovianMonolithState(current);
@@ -5857,6 +6037,149 @@ float saturnRingTransmission(vec3 surfacePosition) {
           const sunScenePosition = scenePosition(sunState.positionM);
           sunlight.position.copy(sunScenePosition);
           eclipticGrid.position.copy(sunScenePosition);
+          const localShadowBodyId = focusBodyIdRef.current;
+          const localShadowGroup =
+            localShadowBodyId === null
+              ? undefined
+              : localShadowBodyId === JOVIAN_MONOLITH_BODY_ID
+                ? monolithMesh
+                : (sourcedModelGroups.get(localShadowBodyId) ??
+                  fictionalOrbiterGroups.get(localShadowBodyId));
+          const localShadowState =
+            localShadowBodyId === null
+              ? undefined
+              : bodyStateById(current, localShadowBodyId);
+          const localShadowRadiusM =
+            localShadowBodyId === null
+              ? undefined
+              : spacecraftBoundingRadiusM(localShadowBodyId);
+          if (activeLocalShadowGroup !== localShadowGroup) {
+            activeLocalShadowGroup?.traverse((object) => {
+              if (object instanceof Mesh) {
+                object.layers.enable(0);
+                object.layers.disable(2);
+              }
+            });
+            activeLocalShadowGroup = localShadowGroup;
+            activeLocalShadowGroup?.traverse((object) => {
+              if (object instanceof Mesh) {
+                object.layers.disable(0);
+                object.layers.enable(2);
+              }
+            });
+          }
+          if (
+            localShadowGroup !== undefined &&
+            localShadowState !== undefined &&
+            localShadowRadiusM !== undefined &&
+            localShadowGroup.children.length > 0
+          ) {
+            const localShadowPosition = scenePosition(
+              localShadowState.positionM,
+            );
+            const localShadowRadiusAu =
+              localShadowRadiusM / ASTRONOMICAL_UNIT_M;
+            const sunDirection = sunScenePosition
+              .clone()
+              .sub(localShadowPosition)
+              .normalize();
+            localModelSunlight.position
+              .copy(localShadowPosition)
+              .addScaledVector(sunDirection, localShadowRadiusAu * 20);
+            localModelSunlight.target.position.copy(localShadowPosition);
+            localModelSunlight.target.updateMatrixWorld();
+            localModelSunlight.shadow.camera.left = -localShadowRadiusAu * 1.4;
+            localModelSunlight.shadow.camera.right = localShadowRadiusAu * 1.4;
+            localModelSunlight.shadow.camera.top = localShadowRadiusAu * 1.4;
+            localModelSunlight.shadow.camera.bottom =
+              -localShadowRadiusAu * 1.4;
+            localModelSunlight.shadow.camera.near = localShadowRadiusAu;
+            localModelSunlight.shadow.camera.far = localShadowRadiusAu * 40;
+            localModelSunlight.shadow.camera.updateProjectionMatrix();
+            const localDistanceAu =
+              localShadowPosition.distanceTo(sunScenePosition);
+            localModelSunlight.intensity =
+              7 / Math.max(localDistanceAu * localDistanceAu, 0.0016);
+            localModelSunlight.visible = true;
+            container.dataset["localShadowBody"] =
+              localShadowBodyId ?? "unavailable";
+            container.dataset["localShadowMap"] = "pcf-2048";
+          } else {
+            localModelSunlight.visible = false;
+            delete container.dataset["localShadowBody"];
+            container.dataset["localShadowMap"] = "inactive";
+          }
+          const solarOccluderCandidates = majorBodySnapshot.bodies
+            .filter((body) => body.id !== "sun")
+            .map((body) => {
+              const state = bodyStateById(current, body.id);
+              if (state === undefined) {
+                throw new Error(
+                  `Solar occluder state ${body.id} is unavailable`,
+                );
+              }
+              return {
+                id: body.id,
+                positionAu: scenePosition(state.positionM),
+                radiusAu: body.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              };
+            });
+          let activeSolarOcclusionReceiverCount = 0;
+          for (const uniforms of solarOcclusionUniforms) {
+            const receiverState = bodyStateById(
+              current,
+              uniforms.receiverBodyId,
+            );
+            const receiverDefinition = majorBodyById.get(
+              uniforms.receiverBodyId,
+            );
+            if (
+              receiverState === undefined ||
+              receiverDefinition === undefined
+            ) {
+              throw new Error(
+                `Solar receiver ${uniforms.receiverBodyId} is unavailable`,
+              );
+            }
+            const receiverPosition = scenePosition(receiverState.positionM);
+            uniforms.sunFromReceiverAu.value.copy(
+              sunScenePosition.clone().sub(receiverPosition),
+            );
+            const selectedOccluders = selectSolarOccluders(
+              uniforms.receiverBodyId,
+              receiverPosition,
+              receiverDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              sunScenePosition,
+              eclipseSunDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              solarOccluderCandidates,
+            );
+            uniforms.occluderCount.value = selectedOccluders.length;
+            if (selectedOccluders.length > 0) {
+              activeSolarOcclusionReceiverCount += 1;
+            }
+            for (let index = 0; index < 8; index += 1) {
+              const selected = selectedOccluders[index];
+              const relativePosition =
+                uniforms.occluderFromReceiverAu.value[index];
+              if (relativePosition === undefined) {
+                throw new Error("Solar occluder uniform array is incomplete");
+              }
+              relativePosition.copy(
+                selected === undefined
+                  ? new Vector3()
+                  : selected.positionAu.clone().sub(receiverPosition),
+              );
+              uniforms.occluderRadiusAu.value[index] = selected?.radiusAu ?? 0;
+            }
+          }
+          container.dataset["solarOcclusionModel"] =
+            "all-major-bodies-finite-disc";
+          container.dataset["solarOcclusionReceiverCount"] = String(
+            solarOcclusionUniforms.length,
+          );
+          container.dataset["activeSolarOcclusionReceiverCount"] = String(
+            activeSolarOcclusionReceiverCount,
+          );
           for (const [bodyId, atmosphereMaterial] of atmosphereMaterials) {
             const bodyState = bodyStateById(current, bodyId);
             if (bodyState === undefined) {
@@ -5865,11 +6188,53 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const distanceFromSunAu = scenePosition(
               bodyState.positionM,
             ).distanceTo(sunScenePosition);
+            const receiverPosition = scenePosition(bodyState.positionM);
+            const receiverDefinition = majorBodyById.get(bodyId);
+            if (receiverDefinition === undefined) {
+              throw new Error(`Atmosphere definition ${bodyId} is unavailable`);
+            }
+            const selectedAtmosphereOccluders = selectSolarOccluders(
+              bodyId,
+              receiverPosition,
+              receiverDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              sunScenePosition,
+              eclipseSunDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              solarOccluderCandidates,
+            );
+            setRequiredNumberUniform(
+              atmosphereMaterial,
+              "eclipseTransmission",
+              eclipseTransmissionAtPoint(
+                receiverPosition,
+                sunScenePosition,
+                eclipseSunDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+                selectedAtmosphereOccluders,
+              ),
+            );
             setRequiredNumberUniform(
               atmosphereMaterial,
               "solarFlux",
               1 / Math.max(distanceFromSunAu * distanceFromSunAu, 0.0016),
             );
+            const atmosphereMesh = atmosphereMeshes.get(bodyId);
+            if (atmosphereMesh === undefined) {
+              throw new Error(`Atmosphere mesh ${bodyId} is unavailable`);
+            }
+            atmosphereMesh.updateWorldMatrix(true, false);
+            const localSunPosition = atmosphereMesh.worldToLocal(
+              sunScenePosition.clone(),
+            );
+            const localBodyCenter = atmosphereMesh.worldToLocal(
+              scenePosition(bodyState.positionM),
+            );
+            requiredVectorUniform(
+              atmosphereMaterial,
+              "sunDirectionLocal",
+            ).value.copy(localSunPosition.sub(localBodyCenter).normalize());
+            requiredVectorUniform(
+              atmosphereMaterial,
+              "cameraPositionLocal",
+            ).value.copy(atmosphereMesh.worldToLocal(camera.position.clone()));
           }
           for (const [bodyId, ringVisual] of ringVisuals) {
             const bodyState = bodyStateById(current, bodyId);
@@ -6043,6 +6408,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 requestedTargetBodyId === undefined;
               const presetContinuouslyTracked =
                 requestedPreset === "sun-facing" ||
+                requestedPreset === "terminator" ||
                 requestedPreset === "parent-facing" ||
                 requestedPreset === "velocity" ||
                 requestedPreset === "orbital-plane";
@@ -6057,11 +6423,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 requestedTargetBodyId !== undefined &&
                 targetState !== undefined
               ) {
-                const targetPosition = scenePosition(targetState.positionM);
+                const targetPosition = observerTargetPosition(
+                  current,
+                  targetState,
+                );
                 const observerPose = observerCameraPose(
                   requestedFocusBodyId,
                   focusState,
                   targetPosition,
+                  current,
                 );
                 camera.position.copy(observerPose.position);
                 controls.target.copy(targetPosition);
@@ -7595,6 +7965,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           visibleLabelCount += 1;
           occupiedLabelRectangles.push(candidateRectangle);
           label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
+          if (body.id === "earth" || body.id === "moon") {
+            container.dataset[
+              body.id === "earth" ? "earthScreenX" : "moonScreenX"
+            ] = projectedLabelX.toFixed(3);
+            container.dataset[
+              body.id === "earth" ? "earthScreenY" : "moonScreenY"
+            ] = projectedLabelY.toFixed(3);
+          }
         }
         const marker = bodyMarkers.get(body.id);
         if (marker !== undefined) {
@@ -7658,6 +8036,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        monolithLabel.dataset["screenX"] = screenX.toFixed(3);
+        monolithLabel.dataset["screenY"] = screenY.toFixed(3);
+        monolithLabel.dataset["radiusPixels"] = radiusPixels.toFixed(3);
         if (labelVisible) {
           monolithLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
           visibleLabelCount += 1;
@@ -7821,6 +8202,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        const datasetPrefix = orbiter.id.replaceAll("-", "");
+        label.dataset["screenX"] = screenX.toFixed(3);
+        label.dataset["screenY"] = screenY.toFixed(3);
+        label.dataset["radiusPixels"] = radiusPixels.toFixed(3);
         if (labelVisible) {
           label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
           visibleLabelCount += 1;
@@ -7835,7 +8220,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
           marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
           visibleOrreryMarkerCount += 1;
         }
-        const datasetPrefix = orbiter.id.replaceAll("-", "");
         container.dataset[`${datasetPrefix}RadiusPixels`] =
           radiusPixels.toFixed(3);
         container.dataset[`${datasetPrefix}GeometryVisible`] =
@@ -8334,8 +8718,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
           0,
           Math.min(1, (obscuration - 0.985) / 0.014),
         );
-        solarCoronaMaterial.opacity =
-          profileOpacity + (0.82 - profileOpacity) * eclipseBoost;
+        setRequiredNumberUniform(
+          solarCoronaMaterial,
+          "opacity",
+          profileOpacity + (0.32 - profileOpacity) * eclipseBoost,
+        );
+        if (solarCoronaMesh === undefined) {
+          throw new Error("The solar corona mesh is unavailable");
+        }
+        solarCoronaMesh.updateWorldMatrix(true, false);
+        requiredVectorUniform(
+          solarCoronaMaterial,
+          "cameraPositionLocal",
+        ).value.copy(solarCoronaMesh.worldToLocal(camera.position.clone()));
         container.dataset["solarCoronaEclipseBoost"] = eclipseBoost.toFixed(4);
       }
       if (eclipseShadowGroup.visible) {
@@ -8359,6 +8754,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         }
       }
       renderer.render(scene, camera);
+      container.dataset["shaderProgramCount"] = String(
+        renderer.info.programs?.length ?? 0,
+      );
       container.dataset["renderFrameIntervalMs"] =
         frameIntervalEmaMs.toFixed(2);
       container.dataset["renderFps"] = (
@@ -8532,7 +8930,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       data-star-reference-frame="ICRS"
       data-star-tooltip-delay-ms={STAR_TOOLTIP_DELAY_MS}
       data-surface-lighting="inverse-square-solar-point-light-auto-exposure"
-      data-atmosphere-rendering="sunlit-single-scattering-phase-functions"
+      data-atmosphere-rendering="optical-depth-ray-marched-single-scattering"
       data-heliopause-voyager-1-au={VOYAGER_1_HELIOPAUSE_AU}
       data-heliopause-voyager-2-au={VOYAGER_2_HELIOPAUSE_AU}
       data-oort-inner-min-au={OORT_CLOUD_INNER_MIN_AU}

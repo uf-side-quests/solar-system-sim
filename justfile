@@ -18,3 +18,8 @@ build-wasm:
 
 complete:
     pnpm complete
+
+# Build and publish the public SPA to its permanent here.now site.
+publish:
+    pnpm build
+    bash /Users/laurencehook/.codex/skills/here-now/scripts/publish.sh dist --slug fern-essence-m26j --spa --client codex

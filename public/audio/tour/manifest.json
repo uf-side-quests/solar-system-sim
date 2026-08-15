@@ -1,6 +1,6 @@
 {
   "artifact": "solar-system-time-explorer.tour-narration",
-  "generatedAt": "2026-08-12T10:21:38.770Z",
+  "generatedAt": "2026-08-12T14:38:24.352Z",
   "provider": "ElevenLabs",
   "disclosure": "AI-generated speech from original educational scripts",
   "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
@@ -153,19 +153,19 @@
       "id": "eclipse-alignment",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/eclipse-alignment.mp3",
-      "textSha256": "22a1f529be04052d90d8f0ff6b9112a249de8e3a867c1bba67af1ce738d81467",
-      "contextSha256": "37c5bfdc091d47d00e9670096e279024f81e2063b6ac1447383f218f9fd27651",
-      "audioSha256": "772dd3ea33c296ec1affe1462af841aae248ba5f3e12989c149cdaed44877cea",
-      "bytes": 324380
+      "textSha256": "933a609cb8b33051fe4a3f0f9c9230a78b166d4ae9da9fadbe2d8fb720f1f5bf",
+      "contextSha256": "105e91a8b5fd4219a2902fba451f9c6c724020af96dc5092c21d627965869224",
+      "audioSha256": "fbcd555b7355880ee49012bbad5996e1e18ec88a2eab74eb402578e3b908ddcd",
+      "bytes": 318946
     },
     {
       "id": "london-before-contact",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/london-before-contact.mp3",
       "textSha256": "67c415d72796429446d27a2ab63664a0db31d4fb55768c1c609d998e35efeaac",
-      "contextSha256": "fd28b8d56110a3c6523ab2823abf0953341a00c2eb2b84d8cd820a6dce2f6e2e",
-      "audioSha256": "5a2fd9c01a105f30c1b2b12d02c288c477b55bf82781b74a62d682335be81489",
-      "bytes": 297631
+      "contextSha256": "584ce2cf9ca720fad14396acb6bb726fd58f67982e81914f85e1336079e79b19",
+      "audioSha256": "13027ef3802af0a88256a5dbecf18be4161d0b938a33a843ccd163adc1e3a3e6",
+      "bytes": 303482
     },
     {
       "id": "london-first-contact",
@@ -190,27 +190,27 @@
       "sequence": "eclipse",
       "audioSource": "/audio/tour/shadow-axis.mp3",
       "textSha256": "b394bb26ff10a002b9825a8a7f879e76872046aa14c0ce65f65a23605d860f36",
-      "contextSha256": "460e7660dc3b2713cf32fb7745f6d86205638a32a3a3abf793fa268edd1ea24c",
-      "audioSha256": "588ace54a6783e831b8c6e2ae87ba43be9b1a7d4b217ed5824ac5a0e5e55fd5a",
-      "bytes": 317693
+      "contextSha256": "b2a6813437a6ab5a04e8a8b788b53f6b4b9edda1129bbc1d4254e5bfd867832a",
+      "audioSha256": "b79452c0c38d1e193b8e98777f16b2e863f8e3dc311aa6f3d0e52e42e2e8b4fb",
+      "bytes": 307244
     },
     {
       "id": "shadow-from-moon",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/shadow-from-moon.mp3",
-      "textSha256": "770aa96309e6eacc40e8397e5d5680454812beab228c196094f798702761406c",
-      "contextSha256": "6d9980bcd7ef391ff3afc682432ace8329d56a4e624de7654dff15a6932219dd",
-      "audioSha256": "b6c6fb636816dd5affbaa4957a7fd39bebd3972ecdae4130b844e7caa40582c4",
-      "bytes": 278404
+      "textSha256": "4d1525a1f8f18646d1bd0b7593e513527a060117af5d1b9fce830c0304c988f9",
+      "contextSha256": "76a1f9d5041aeaef39e2939d8757256e6821b513a3ef146e1f458bc0d0fcd305",
+      "audioSha256": "1a6857323375a2beb4552718d6986ad0925dbc7377f02a66c0c3acb921f9a069",
+      "bytes": 489892
     },
     {
       "id": "spain-totality",
       "sequence": "eclipse",
       "audioSource": "/audio/tour/spain-totality.mp3",
       "textSha256": "aaa8d840d9817f90d076568882ef7de775f44607a188010a908e534ab27e4f66",
-      "contextSha256": "a4fa5e4989a582cc60d702104cfb43e942d7f04fcf505edb0a4fe04f7e94c717",
-      "audioSha256": "55f346c6a20cabd166c5fc03474567a035d764067f9274d6837734c65e4c46bf",
-      "bytes": 318946
+      "contextSha256": "7fd50d97c733bd3d11b9b28eccaf3ba933d9ec4436334f0193a79d5c2ae0bda5",
+      "audioSha256": "aa6c7018667653bc1d339c932abe7ed3c39e698b5621ba5a4f6d5ce5f15c6367",
+      "bytes": 305572
     },
     {
       "id": "london-final-contact",

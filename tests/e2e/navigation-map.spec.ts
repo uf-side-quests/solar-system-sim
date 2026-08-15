@@ -40,7 +40,7 @@ test("chooses an AU map range and travels to an object", async ({
   await page.getByRole("button", { name: "Travel" }).click();
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
-    "orient-then-logarithmic-approach",
+    "orient-then-direct-flight",
   );
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",

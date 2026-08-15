@@ -3,6 +3,7 @@ export type CameraOrientationPreset =
   | "overhead"
   | "edge-on"
   | "sun-facing"
+  | "terminator"
   | "parent-facing"
   | "velocity"
   | "orbital-plane"

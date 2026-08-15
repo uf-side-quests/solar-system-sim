@@ -112,13 +112,16 @@ The USS Defiant uses a textured high-detail free model at its 170.68 metre produ
 It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
-Planet surfaces use inverse-square Sun-position point lighting with smooth focus-distance exposure adaptation, so outer planets receive the correct weaker incident flux without becoming unreadable.
-Atmosphere shells use body-specific Rayleigh and Mie phase approximations driven by the live Sun direction, so the dark hemisphere does not receive a false bright rim.
+Planet surfaces use inverse-square solar lighting without global ambient fill.
+Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
+One finite solar-disc model darkens every major-body surface and atmosphere during partial, annular, or total occlusion.
+Atmospheres integrate view and solar optical depth through body-specific exponential Rayleigh and Mie density profiles.
+The Earth uses NASA Black Marble night emission and Blue Marble-derived roughness, while the Moon uses a LOLA-derived normal map.
 Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes mutual planet-ring shadowing, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
 The command bar includes a native Full screen action that expands the simulation to the display, hides application controls and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
-The Sun combines a granular procedural photosphere, subtle chromosphere rim, and restrained diffuse corona.
+The Sun combines a limb-darkened granular photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
 The renderer does not invent prominence or flare geometry because no generic animation can truthfully claim the Sun's actual activity at arbitrary simulation times.
 The background contains 8,789 stars from the ESA Hipparcos catalogue with Johnson V magnitude below 6.5.
 Catalogue ICRS positions are propagated from J1991.25 to the simulation date using the published proper-motion components where both are available, while missing motion remains explicitly unknown and fixed at the catalogue epoch.
@@ -253,7 +256,8 @@ They do not yet receive planetary perturbations or perturb the massive REBOUND s
 
 The star layer is astrometric within the installed Hipparcos data and its linear proper-motion model, but point size, opacity, and B-V colour mapping are perceptual rendering treatments rather than calibrated photometry.
 Atmosphere, corona, and ring-band shaders are disclosed rendering treatments rather than new measured surface data.
-Inter-body eclipse shadows are not yet modelled; the current lighting accurately supplies Sun-facing illumination and day-night terminators but does not claim occultation shadows.
+Finite-disc inter-body eclipses use each body's live physical position and radius.
+The model calculates surface-point parallax, partial overlap, annularity, totality, and atmospheric attenuation.
 The gravity overlay is Newtonian potential on a two-dimensional J2000 ecliptic-parallel slice.
 Local detail normalizes the selected field to expose nearby structure, while absolute comparison uses one fixed Sun-referenced logarithmic scale that correctly makes planetary wells appear much shallower.
 Its logarithmic contours and rendered depth are perceptual mappings of calculated potential, not additional forces, physical deformation, or general-relativistic curvature.

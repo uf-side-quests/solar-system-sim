@@ -5,7 +5,6 @@ import {
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
   sampleOrientationTransition,
-  sampleCameraTransition,
 } from "./camera-transition";
 
 describe("camera transition", () => {
@@ -33,33 +32,30 @@ describe("camera transition", () => {
     expect(() => sampleOrientationTransition(0, 0)).toThrow(/duration/u);
   });
 
-  it("orients, departs, crosses the overview continuously, and settles into the authored shot", () => {
-    expect(sampleCameraTransition(0, 3_000)).toEqual({
+  it("turns, travels on one route, and settles into the selected shot", () => {
+    expect(sampleDirectCameraTransition(0, 3_000)).toEqual({
       phase: "orienting",
       segmentProgress: 0,
     });
-    expect(sampleCameraTransition(1_000, 3_000).phase).toBe("outbound");
-    const coast = sampleCameraTransition(1_875, 3_000);
-    expect(coast.phase).toBe("overview");
-    expect(coast.segmentProgress).toBeCloseTo(0.5);
-    expect(sampleCameraTransition(2_400, 3_000).phase).toBe("inbound");
-    expect(sampleCameraTransition(3_000, 3_000)).toEqual({
+    expect(sampleDirectCameraTransition(1_500, 3_000).phase).toBe("travelling");
+    expect(sampleDirectCameraTransition(2_400, 3_000).phase).toBe("arriving");
+    expect(sampleDirectCameraTransition(3_000, 3_000)).toEqual({
       phase: "settled",
       segmentProgress: 1,
     });
   });
 
-  it("does not introduce a frozen overview beat", () => {
-    const early = sampleCameraTransition(1_650, 3_000);
-    const late = sampleCameraTransition(2_100, 3_000);
-    expect(early.phase).toBe("overview");
-    expect(late.phase).toBe("overview");
+  it("continues along the direct route without an overview stop", () => {
+    const early = sampleDirectCameraTransition(1_650, 3_000);
+    const late = sampleDirectCameraTransition(2_100, 3_000);
+    expect(early.phase).toBe("travelling");
+    expect(late.phase).toBe("travelling");
     expect(late.segmentProgress).toBeGreaterThan(early.segmentProgress);
   });
 
   it("fails explicitly for invalid timing inputs", () => {
-    expect(() => sampleCameraTransition(-1, 3_000)).toThrow(/elapsed/u);
-    expect(() => sampleCameraTransition(0, 0)).toThrow(/duration/u);
+    expect(() => sampleDirectCameraTransition(-1, 3_000)).toThrow(/elapsed/u);
+    expect(() => sampleDirectCameraTransition(0, 0)).toThrow(/duration/u);
   });
 
   it("changes scale geometrically instead of rushing near the close endpoint", () => {

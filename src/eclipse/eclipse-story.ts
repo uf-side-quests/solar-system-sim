@@ -64,9 +64,7 @@ export type EclipseStoryStep = Readonly<{
   cameraTargetBodyId?: string;
   orientation: Exclude<CameraOrientationPreset, "custom">;
   cameraDistanceAu: number | "observer-separation";
-  observerCameraStyle?: "surface-facing" | "limb";
-  transitionOverviewAnchorBodyId: string;
-  transitionOverviewDistanceAu: number;
+  observerCameraStyle?: "surface-facing" | "limb" | "shadow-axis";
   cameraZoom: number;
   timeRateSecondsPerSecond: number;
   timeRateLabel: string;
@@ -117,13 +115,11 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: 0.009,
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.012,
     cameraZoom: 1.5,
     timeRateSecondsPerSecond: 3_600,
-    timeRateLabel: "1 hour per second · the Moon advances along its orbit",
-    timeUtc: "2026-08-12T17:45:53.800Z",
-    timeSeconds: simulationSecondsForUtc("2026-08-12T17:45:53.800Z"),
+    timeRateLabel: "1 hour per second · the Moon crosses the alignment",
+    timeUtc: "2026-08-12T15:45:53.800Z",
+    timeSeconds: simulationSecondsForUtc("2026-08-12T15:45:53.800Z"),
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: {
@@ -131,10 +127,10 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
       orbitGuides: true,
     },
     eyebrow: "Establish the three bodies",
-    title: "The eclipse begins when the Moon crosses the Sun-Earth line",
+    title: "Watch the Moon cross the Sun-Earth line",
     scale: "Moon: 384,000 km away · Sun: 150 million km away",
     description:
-      "This three-quarter view keeps Earth and Moon separate on screen. The yellow guide fixes the Sun's direction while the Moon advances along its physical orbit.",
+      "This view starts before alignment. The yellow guide fixes the Sun's direction while the Moon crosses it on its physical orbit.",
     visualKey:
       "Physical Earth-Moon sizes · thin blue curve is the lunar orbit · yellow guide gives the Sun direction",
     narration: narrationFor("eclipse-alignment"),
@@ -144,8 +140,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.006,
     cameraZoom: 24,
     timeRateSecondsPerSecond: 60,
     timeRateLabel:
@@ -174,8 +168,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.006,
     cameraZoom: 32,
     timeRateSecondsPerSecond: 60,
     timeRateLabel: "1 minute per second · the lunar silhouette advances",
@@ -203,8 +195,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.006,
     cameraZoom: 32,
     timeRateSecondsPerSecond: 1,
     timeRateLabel: "real time · the maximum remains easy to examine",
@@ -232,8 +222,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: 0.009,
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.012,
     cameraZoom: 1.5,
     timeRateSecondsPerSecond: 60,
     timeRateLabel: "1 minute per second · the shadow moves across Earth",
@@ -258,12 +246,10 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     id: "shadow-from-moon",
     focusBodyId: "moon",
     cameraTargetBodyId: "earth",
-    observerCameraStyle: "limb",
+    observerCameraStyle: "shadow-axis",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "moon",
-    transitionOverviewDistanceAu: 0.006,
-    cameraZoom: 6,
+    cameraZoom: 1,
     timeRateSecondsPerSecond: 120,
     timeRateLabel:
       "2 minutes per second · the umbra crosses the rotating Earth",
@@ -272,13 +258,13 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: noDecorativeOverlays,
-    eyebrow: "Move to the lunar horizon",
-    title: "Look from above the Moon's limb toward Earth",
+    eyebrow: "Follow the shadow",
+    title: "Look along the Moon's shadow toward Earth",
     scale: "The central shadow crosses the North Atlantic",
     description:
-      "The camera enters a low lunar orbit, 350 kilometres above the Moon's sunlit limb. The dark umbra now moves across the rotating Earth.",
+      "The camera follows the live Sun-Moon shadow axis and stops 51,000 kilometres above Earth. The dark umbra now crosses the centre of the rotating planet.",
     visualKey:
-      "Physical Earth-Moon separation · true-size shadow · locator marks its centre · lunar horizon below",
+      "Physical Earth-Moon separation · finite Sun-disc shadow · locator marks the umbra centre",
     narration: narrationFor("shadow-from-moon"),
   },
   {
@@ -286,8 +272,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.006,
     cameraZoom: 32,
     timeRateSecondsPerSecond: 1,
     timeRateLabel: "real time · totality lasts about 1 minute 49 seconds here",
@@ -315,8 +299,6 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     focusBodyId: "earth",
     orientation: "perspective",
     cameraDistanceAu: "observer-separation",
-    transitionOverviewAnchorBodyId: "earth",
-    transitionOverviewDistanceAu: 0.006,
     cameraZoom: 8,
     timeRateSecondsPerSecond: 60,
     timeRateLabel: "1 minute per second · the Moon leaves the solar disc",

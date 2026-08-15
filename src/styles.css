@@ -961,9 +961,9 @@ h1 {
 
 .global-simulation-clock {
   position: absolute;
-  z-index: 8;
+  z-index: 60;
   top: 3.5rem;
-  right: 0.9rem;
+  left: 0.9rem;
   padding: 0.25rem 0.42rem;
   color: #9eb5c6;
   border: 1px solid rgb(115 153 181 / 18%);
@@ -974,10 +974,6 @@ h1 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.025em;
   pointer-events: none;
-}
-
-.app-shell.is-immersive .global-simulation-clock {
-  display: none;
 }
 
 .gravity-field-legend {
@@ -1965,6 +1961,13 @@ h1 {
   color: var(--muted);
   font-size: 0.65rem;
   line-height: 1.45;
+}
+
+.exposure-readout {
+  align-self: end;
+  color: #cfeaff;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .camera-orbit-control {

@@ -8,14 +8,23 @@ test("shows direct view-angle actions before advanced camera settings", async ({
   await expect(page.locator("canvas.major-body-layer")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator(".global-simulation-clock")).toContainText("UTC");
+  const clock = page.locator(".global-simulation-clock");
+  await expect(clock).toHaveText(
+    /\d{2} [A-Z][a-z]{2} \d{4} · \d{2}:\d{2}:\d{2} UTC/u,
+  );
+  await expect(clock).toBeInViewport();
   await page.getByRole("button", { name: "Display" }).click();
+  await expect(clock).toBeVisible();
+  await expect(clock).toBeInViewport();
   await page.getByRole("tab", { name: "Camera" }).click();
 
   const viewAngles = page.getByRole("group", { name: "View angle" });
   await expect(viewAngles).toBeVisible();
   await expect(viewAngles).toBeInViewport();
-  await expect(viewAngles.getByRole("button")).toHaveCount(7);
+  await expect(viewAngles.getByRole("button")).toHaveCount(8);
+  await expect(
+    viewAngles.getByRole("button", { name: "Day and night" }),
+  ).toBeVisible();
   await expect(
     viewAngles.getByRole("button", { name: "3D view" }),
   ).toHaveAttribute("aria-pressed", "true");

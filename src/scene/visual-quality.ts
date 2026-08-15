@@ -19,7 +19,7 @@ export const VISUAL_QUALITY_PROFILES: Readonly<
     baseExposure: 0.95,
     exposureHalfLifeSeconds: 0.35,
     atmosphereStrength: 0.58,
-    coronaOpacity: 0.09,
+    coronaOpacity: 0.003,
     textureAnisotropyLimit: 4,
   },
   balanced: {
@@ -28,7 +28,7 @@ export const VISUAL_QUALITY_PROFILES: Readonly<
     baseExposure: 1,
     exposureHalfLifeSeconds: 0.6,
     atmosphereStrength: 0.82,
-    coronaOpacity: 0.13,
+    coronaOpacity: 0.005,
     textureAnisotropyLimit: 8,
   },
   photographic: {
@@ -37,7 +37,7 @@ export const VISUAL_QUALITY_PROFILES: Readonly<
     baseExposure: 1.05,
     exposureHalfLifeSeconds: 0.9,
     atmosphereStrength: 1,
-    coronaOpacity: 0.16,
+    coronaOpacity: 0.008,
     textureAnisotropyLimit: 16,
   },
 };
