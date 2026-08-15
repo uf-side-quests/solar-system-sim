@@ -1963,6 +1963,13 @@ h1 {
   line-height: 1.45;
 }
 
+.exposure-readout {
+  align-self: end;
+  color: #cfeaff;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .camera-orbit-control {
   grid-column: 1 / -1;
 }

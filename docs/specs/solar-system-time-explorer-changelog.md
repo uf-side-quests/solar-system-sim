@@ -10,6 +10,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [3.0.0] - 2026-08-13
+
+### Added in 3.0.0
+
+- Added REQ-182 through REQ-188 for finite-disc eclipses, local shadows, exposure control, material maps, optical-depth atmospheres, the physical Sun, and terminator views.
+- Added checksummed NASA Black Marble night emission, a LOLA-derived Moon normal map, and a declared Blue Marble-derived Earth roughness map.
+- Added rendered reference-image tests for eclipse phases, Earth terminator contrast, and Death Star II local solar shadows.
+
+### Changed in 3.0.0
+
+- Removed global ambient fill and retained one controlled inverse-square solar light path.
+- Replaced the empirical atmosphere rim with optical-depth Rayleigh and Mie integration.
+- Replaced the camera-facing solar glow with a three-dimensional limb-darkened photosphere, chromosphere, and electron-scattering corona.
+
 ## [2.9.0] - 2026-08-11
 
 ### Added in 2.9.0

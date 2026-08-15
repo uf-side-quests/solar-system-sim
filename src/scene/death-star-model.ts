@@ -43,9 +43,8 @@ function createPanelledHullMaterial(): MeshPhysicalMaterial {
     map: hullTexture,
     bumpMap: hullTexture,
     bumpScale: 0.0035,
-    emissive: 0x3f4547,
-    emissiveMap: hullTexture,
-    emissiveIntensity: 0.18,
+    emissive: 0x000000,
+    emissiveIntensity: 0,
     metalness: 0.34,
     roughness: 0.74,
     clearcoat: 0.025,
@@ -67,9 +66,8 @@ function createInteriorMaterial(): MeshPhysicalMaterial {
     map: interiorTexture,
     bumpMap: interiorTexture,
     bumpScale: 0.005,
-    emissive: 0x252a2d,
-    emissiveMap: interiorTexture,
-    emissiveIntensity: 0.16,
+    emissive: 0x000000,
+    emissiveIntensity: 0,
     metalness: 0.48,
     roughness: 0.76,
     side: DoubleSide,
@@ -312,8 +310,8 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   const structure = new MeshStandardMaterial({
     name: "Fictional exposed construction interior",
     color: 0x303638,
-    emissive: 0x101416,
-    emissiveIntensity: 0.08,
+    emissive: 0x000000,
+    emissiveIntensity: 0,
     metalness: 0.56,
     roughness: 0.74,
   });
@@ -325,8 +323,8 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   const dish = interior.clone();
   dish.name = "Fictional recessed superlaser reflector";
   dish.color.setHex(0x687074);
-  dish.emissive.setHex(0x202628);
-  dish.emissiveIntensity = 0.12;
+  dish.emissive.setHex(0x000000);
+  dish.emissiveIntensity = 0;
   dish.metalness = 0.42;
   dish.roughness = 0.68;
   dish.depthTest = false;

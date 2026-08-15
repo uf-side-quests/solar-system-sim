@@ -26,7 +26,7 @@
     "data:horizons-satellites": "node scripts/fetch-horizons-known-satellites.mjs",
     "data:horizons-regression": "node scripts/fetch-horizons-regression.mjs",
     "data:naif": "node scripts/generate-naif-snapshots.mjs",
-    "data:nasa-assets": "node scripts/fetch-nasa-assets.mjs",
+    "data:nasa-assets": "node scripts/fetch-nasa-assets.mjs && node scripts/install-authority-surface-maps.mjs && node scripts/derive-authority-material-maps.mjs",
     "data:stars": "node scripts/fetch-hipparcos-stars.mjs",
     "audio:tour": "node scripts/generate-tour-narration.mjs",
     "wasm:build": "bash scripts/build-rebound-wasm.sh",

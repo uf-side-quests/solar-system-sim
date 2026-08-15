@@ -24,6 +24,48 @@ async function focusBody(
   );
 }
 
+async function hemisphereLuminance(
+  image: Buffer,
+  centreX: number,
+  centreY: number,
+  radius: number,
+): Promise<Readonly<{ left: number; right: number }>> {
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let leftTotal = 0;
+  let leftCount = 0;
+  let rightTotal = 0;
+  let rightCount = 0;
+  const sampleRadius = radius * 0.72;
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const localX = x - centreX;
+      const localY = y - centreY;
+      if (localX * localX + localY * localY > sampleRadius * sampleRadius) {
+        continue;
+      }
+      const offset = (y * info.width + x) * info.channels;
+      const luminance =
+        (data[offset] ?? 0) * 0.2126 +
+        (data[offset + 1] ?? 0) * 0.7152 +
+        (data[offset + 2] ?? 0) * 0.0722;
+      if (localX < -radius * 0.08) {
+        leftTotal += luminance;
+        leftCount += 1;
+      } else if (localX > radius * 0.08) {
+        rightTotal += luminance;
+        rightCount += 1;
+      }
+    }
+  }
+  if (leftCount === 0 || rightCount === 0) {
+    throw new Error("The reference body has no image samples");
+  }
+  return { left: leftTotal / leftCount, right: rightTotal / rightCount };
+}
+
 test("uses photographic rendering with inverse-square sunlight and measured diagnostics", async ({
   page,
 }, testInfo) => {
@@ -52,8 +94,15 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
     "inverse-square",
   );
   await expect(scene).toHaveAttribute(
+    "data-solar-occlusion-model",
+    "all-major-bodies-finite-disc",
+  );
+  expect(
+    Number(await scene.getAttribute("data-solar-occlusion-receiver-count")),
+  ).toBeGreaterThan(20);
+  await expect(scene).toHaveAttribute(
     "data-atmosphere-model",
-    "sunlit-single-scattering-approximation",
+    "optical-depth-ray-marched-single-scattering",
   );
   await expect(scene).toHaveAttribute(
     "data-saturn-ring-lighting",
@@ -82,6 +131,21 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
   );
 
   await page.getByRole("button", { name: "Display" }).click();
+  const exposureMode = page.getByRole("combobox", { name: "Exposure mode" });
+  await expect(exposureMode).toHaveValue("auto");
+  await expect(scene).toHaveAttribute("data-camera-exposure-mode", "auto");
+  await exposureMode.selectOption("manual");
+  const manualExposure = page.getByRole("slider", {
+    name: "Manual exposure EV",
+  });
+  await manualExposure.fill("2");
+  await expect(scene).toHaveAttribute("data-camera-exposure-mode", "manual");
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-camera-exposure-ev")),
+    )
+    .toBeGreaterThan(1.8);
+  await exposureMode.selectOption("auto");
   const quality = page.getByRole("combobox", { name: "Rendering quality" });
   await quality.selectOption("battery");
   await expect(scene).toHaveAttribute("data-visual-quality", "battery");
@@ -123,6 +187,10 @@ test("uses photographic rendering with inverse-square sunlight and measured diag
     {
       timeout: 60_000,
     },
+  );
+  await expect(scene).toHaveAttribute(
+    "data-earth-night-light-asset",
+    "NASA-Black-Marble-2016",
   );
   expect(
     Number(await scene.getAttribute("data-camera-exposure-target")),
@@ -323,14 +391,97 @@ test("renders the restrained solar photosphere in the authored close-view scene"
   await expect(scene).toHaveAttribute("data-focus-body", "sun");
   await expect(scene).toHaveAttribute(
     "data-solar-presentation",
-    "procedural-non-observational",
+    "physical-limb-darkening-and-corona-scattering",
   );
+  await expect(scene).toHaveAttribute("data-solar-corona-layers", "3d-shell");
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
   const canvas = page.locator("canvas.major-body-layer");
   const capture = await canvas.screenshot({ animations: "disabled" });
   expect(capture.byteLength).toBeGreaterThan(10_000);
   await page.screenshot({
     path: testInfo.outputPath("photographic-sun-close.png"),
+    animations: "disabled",
+  });
+});
+
+test("matches the reference image for a physical terminator", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const canvas = page.locator("canvas.major-body-layer");
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+
+  await focusBody(page, scene, "Earth", "earth");
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+  await page.getByRole("button", { name: "Day and night" }).click();
+  await expect(scene).toHaveAttribute("data-camera-orientation", "terminator");
+  await expect(scene).toHaveAttribute(
+    "data-orientation-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Close" }).click();
+  const earthFrame = await canvas.screenshot({ animations: "disabled" });
+  const earthLabel = page.locator('.body-label[data-body-id="earth"]');
+  const earthLuminance = await hemisphereLuminance(
+    earthFrame,
+    Number(await earthLabel.getAttribute("data-screen-x")),
+    Number(await earthLabel.getAttribute("data-screen-y")),
+    Number(await earthLabel.getAttribute("data-radius-pixels")),
+  );
+  expect(
+    Math.max(earthLuminance.left, earthLuminance.right) /
+      Math.max(1, Math.min(earthLuminance.left, earthLuminance.right)),
+  ).toBeGreaterThan(2.2);
+  await page.screenshot({
+    path: testInfo.outputPath("reference-earth-terminator.png"),
+    animations: "disabled",
+  });
+});
+
+test("matches the reference image for the Death Star II local shadow", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const canvas = page.locator("canvas.major-body-layer");
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await focusBody(page, scene, "Death Star II (fictional)", "death-star-2");
+  await expect(scene).toHaveAttribute("data-deathstar2-model-loaded", "true", {
+    timeout: 60_000,
+  });
+  await expect(scene).toHaveAttribute("data-local-shadow-body", "death-star-2");
+  await expect(scene).toHaveAttribute("data-local-shadow-map", "pcf-2048");
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+  await page.getByRole("button", { name: "Day and night" }).click();
+  await expect(scene).toHaveAttribute("data-camera-orientation", "terminator");
+  await page.getByRole("button", { name: "Close" }).click();
+  const modelFrame = await canvas.screenshot({ animations: "disabled" });
+  expect(modelFrame.byteLength).toBeGreaterThan(10_000);
+  const modelLabel = page.locator('.body-label[data-body-id="death-star-2"]');
+  const modelLuminance = await hemisphereLuminance(
+    modelFrame,
+    Number(await modelLabel.getAttribute("data-screen-x")),
+    Number(await modelLabel.getAttribute("data-screen-y")),
+    Number(await modelLabel.getAttribute("data-radius-pixels")),
+  );
+  expect(
+    Math.max(modelLuminance.left, modelLuminance.right) /
+      Math.max(1, Math.min(modelLuminance.left, modelLuminance.right)),
+  ).toBeGreaterThan(1.25);
+  await page.screenshot({
+    path: testInfo.outputPath("reference-death-star-local-shadow.png"),
     animations: "disabled",
   });
 });

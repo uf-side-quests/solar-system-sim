@@ -9,12 +9,16 @@ const assetSchema = z.object({
     "surface-height",
     "cloud-opacity",
     "ring-color-opacity",
+    "night-emission",
+    "surface-normal",
+    "surface-roughness",
   ]),
   file: z.string().startsWith("/textures/nasa/"),
   classification: z.enum([
     "observational-composite",
     "measured-topography",
     "visualization",
+    "authority-derived-material",
   ]),
   coverage: z.enum([
     "global",
@@ -93,6 +97,22 @@ export const nasaEarthCloudAsset = nasaTextureSnapshot.assets.find(
   (asset) => asset.id === "earth-clouds",
 );
 
+export const nasaEarthNightLightAsset = nasaTextureSnapshot.assets.find(
+  (asset) => asset.id === "earth-night-lights",
+);
+
 export const nasaSaturnRingAsset = nasaTextureSnapshot.assets.find(
   (asset) => asset.id === "saturn-rings",
+);
+
+export const nasaSurfaceNormalByBodyId = new Map(
+  nasaTextureSnapshot.assets
+    .filter((asset) => asset.role === "surface-normal")
+    .map((asset) => [asset.id.replace(/-normal$/u, ""), asset] as const),
+);
+
+export const nasaSurfaceRoughnessByBodyId = new Map(
+  nasaTextureSnapshot.assets
+    .filter((asset) => asset.role === "surface-roughness")
+    .map((asset) => [asset.id.replace(/-roughness$/u, ""), asset] as const),
 );

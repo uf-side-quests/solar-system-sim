@@ -21,7 +21,10 @@ test("shows direct view-angle actions before advanced camera settings", async ({
   const viewAngles = page.getByRole("group", { name: "View angle" });
   await expect(viewAngles).toBeVisible();
   await expect(viewAngles).toBeInViewport();
-  await expect(viewAngles.getByRole("button")).toHaveCount(7);
+  await expect(viewAngles.getByRole("button")).toHaveCount(8);
+  await expect(
+    viewAngles.getByRole("button", { name: "Day and night" }),
+  ).toBeVisible();
   await expect(
     viewAngles.getByRole("button", { name: "3D view" }),
   ).toHaveAttribute("aria-pressed", "true");

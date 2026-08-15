@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 
 const STORY_SCENES = [
   ["eclipse-alignment", "Watch the Moon cross the Sun-Earth line"],
@@ -145,6 +146,47 @@ test("shows every eclipse phase with live physical geometry", async ({
       expect(
         Number(await scene.getAttribute("data-solar-eclipse-obscuration")),
       ).toBeGreaterThan(0.99);
+      const eclipseFrame = await page
+        .locator("canvas.major-body-layer")
+        .screenshot({ animations: "disabled" });
+      const sunLabel = page.locator('.body-label[data-body-id="sun"]');
+      const sunX = Number(await sunLabel.getAttribute("data-screen-x"));
+      const sunY = Number(await sunLabel.getAttribute("data-screen-y"));
+      const sunRadius = Number(
+        await sunLabel.getAttribute("data-radius-pixels"),
+      );
+      const { data, info } = await sharp(eclipseFrame)
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      let coreTotal = 0;
+      let coreCount = 0;
+      let coronaMaximum = 0;
+      for (let y = 0; y < info.height; y += 1) {
+        for (let x = 0; x < info.width; x += 1) {
+          const distance = Math.hypot(x - sunX, y - sunY);
+          const offset = (y * info.width + x) * info.channels;
+          const luminance =
+            (data[offset] ?? 0) * 0.2126 +
+            (data[offset + 1] ?? 0) * 0.7152 +
+            (data[offset + 2] ?? 0) * 0.0722;
+          if (distance < sunRadius * 0.58) {
+            coreTotal += luminance;
+            coreCount += 1;
+          } else if (
+            distance > sunRadius * 1.02 &&
+            distance < sunRadius * 1.8
+          ) {
+            coronaMaximum = Math.max(coronaMaximum, luminance);
+          }
+        }
+      }
+      expect(coreTotal / coreCount).toBeLessThan(8);
+      expect(coronaMaximum).toBeGreaterThan(60);
+      await testInfo.attach("reference-total-eclipse", {
+        body: eclipseFrame,
+        contentType: "image/png",
+      });
     }
     if (stepId === "shadow-from-moon") {
       await expect(scene).toHaveAttribute("data-camera-observer-body", "moon");
@@ -163,7 +205,7 @@ test("shows every eclipse phase with live physical geometry", async ({
       );
       await expect(scene).toHaveAttribute(
         "data-earth-eclipse-lighting",
-        "finite-sun-disc-analytic-occlusion",
+        "all-body-finite-sun-disc-analytic-occlusion",
       );
       expect(
         Number(await scene.getAttribute("data-eclipse-umbra-radius-km")),

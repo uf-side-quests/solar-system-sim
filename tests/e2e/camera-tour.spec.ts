@@ -32,13 +32,13 @@ test("keeps escape navigation visible and guides the user through scale", async 
   await expect(cameraNavigation).toBeVisible();
   await expect(scene).toHaveAttribute(
     "data-solar-presentation",
-    "procedural-non-observational",
+    "physical-limb-darkening-and-corona-scattering",
   );
   await expect(scene).toHaveAttribute(
     "data-solar-photosphere",
-    "procedural-granulation",
+    "temperature-colour-procedural-granulation",
   );
-  await expect(scene).toHaveAttribute("data-solar-corona-layers", "2");
+  await expect(scene).toHaveAttribute("data-solar-corona-layers", "3d-shell");
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
   await expect(page.getByRole("button", { name: "Zoom out" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();

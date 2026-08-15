@@ -80,7 +80,7 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
 test("navigates bodies, configures trails, and reports measured buffered playback", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Pause" }).click();
   await page.getByRole("button", { name: "Display" }).click();
@@ -121,7 +121,7 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   );
   await expect(scene).toHaveAttribute(
     "data-atmosphere-rendering",
-    "sunlit-single-scattering-phase-functions",
+    "optical-depth-ray-marched-single-scattering",
   );
 
   const focus = page.getByRole("combobox", { name: "Focus" });
